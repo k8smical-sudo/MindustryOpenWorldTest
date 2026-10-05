@@ -449,7 +449,6 @@ public class MundoInfinitoMod extends Mod{
                                 Core.app.post(() -> {
                                     if(epoca != mia) return;
                                     restaurar(cx, cy);
-                                    notificarChunk(cx, cy);
                                 });
                                 try{ Thread.sleep(5); }catch(InterruptedException e){ return; }
                             }
@@ -468,17 +467,6 @@ public class MundoInfinitoMod extends Mod{
 
         static boolean enMapa(int cx, int cy){
             return cx >= 0 && cy >= 0 && cx < N_CHUNKS && cy < N_CHUNKS;
-        }
-
-        /** Avisa al renderizador de los tiles nuevos (chunks creados con el juego ya en marcha). */
-        static void notificarChunk(int cx, int cy){
-            if(Vars.world.isGenerating()) return;
-            for(int lx = 0; lx < TAM_CHUNK; lx++){
-                for(int ly = 0; ly < TAM_CHUNK; ly++){
-                    Tile t = Vars.world.tile(cx * TAM_CHUNK + lx, cy * TAM_CHUNK + ly);
-                    if(t != null) Vars.world.notifyChanged(t);
-                }
-            }
         }
 
         /** Despeja un área de 9x9 y coloca el núcleo y un portal a 7 tiles. Solo en el hilo principal. */

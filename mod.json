@@ -1,10 +1,10 @@
-{
-    "name": "mod-template",
-    "displayName": "Mod Template",
-    "description": "Mindustry Java mod template, complete with EntityAnno integration.",
-    "version": "1.0.0",
-    "minGameVersion": "160",
-    "author": "You",
-    "java": true,
-    "main": "template.ModTemplate"
-}
+  {
+          "name": "mundo-infinito",
+                "displayName": "Mundo Infinito",
+                      "description": "Mundo abierto infinito por chunks con portales entre Serpulo y Erekir.",
+                            "version": "1.0.0",
+                                  "minGameVersion": "160",
+                                        "author": "k8smical-sudo",
+                                              "java": true,
+                                                    "main": "mundoinfinito.MundoInfinitoMod"
+                                                      }

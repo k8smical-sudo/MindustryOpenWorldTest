@@ -5,6 +5,7 @@ import arc.Events;
 import arc.files.Fi;
 import arc.func.Cons;
 import arc.math.Mathf;
+import arc.math.geom.Point2;
 import arc.scene.ui.TextButton;
 import arc.scene.ui.layout.Table;
 import arc.struct.Bits;
@@ -34,6 +35,7 @@ import mindustry.gen.Groups;
 import mindustry.gen.Unit;
 import mindustry.mod.Mod;
 import mindustry.type.Item;
+import mindustry.type.UnitType;
 import mindustry.type.ItemStack;
 import mindustry.ui.Styles;
 import mindustry.ui.dialogs.BaseDialog;
@@ -78,8 +80,12 @@ import java.util.zip.GZIPOutputStream;
 public class MundoInfinitoMod extends Mod{
 
     public static final int TAM_CHUNK = 32;
-    public static final int[] TAMANOS = {500, 800, 1000};
-    public static final String[] NOMBRES_TAM = {"Pequeño (500x500)", "Mediano (800x800)", "Grande (1000x1000)"};
+    /** Tamaño de la VENTANA cargada en RAM (el mundo virtual es de ±30 000 000 tiles, como el límite de Minecraft). */
+    public static final int[] TAMANOS = {640, 800, 992};
+    public static final String[] NOMBRES_TAM = {"Ligero (ventana 640)", "Normal (ventana 800)", "Amplio (ventana 992)"};
+    public static final int LIMITE_MUNDO = 30_000_000;      // borde del mundo virtual, igual que Minecraft Java
+    public static final int REGION_CHUNKS = 16;             // 16x16 chunks por archivo de región (512x512 tiles)
+    public static final int MARGEN_REBASE = 5;              // chunks al borde de la ventana que disparan la reubicación
     public static final String URL_SEMILLAS = "https://raw.githubusercontent.com/TU_USUARIO/mundo-infinito-semillas/main/semillas/actual.json"; // TODO: URL real
     public static final int TIMEOUT_HTTP_MS = 4000;
 
@@ -328,9 +334,9 @@ public class MundoInfinitoMod extends Mod{
         }
 
         /** Perlin 2D, rango aprox [-0.707, 0.707]. */
-        static float perlin(float x, float y, int s){
+        static float perlin(double x, double y, int s){
             int x0 = (int)Math.floor(x), y0 = (int)Math.floor(y);
-            float fx = x - x0, fy = y - y0;
+            float fx = (float)(x - x0), fy = (float)(y - y0);
             float u = quintica(fx), v = quintica(fy);
             float a = grad(x0, y0, s, fx, fy), b = grad(x0 + 1, y0, s, fx - 1f, fy);
             float c = grad(x0, y0 + 1, s, fx, fy - 1f), d = grad(x0 + 1, y0 + 1, s, fx - 1f, fy - 1f);
@@ -339,15 +345,16 @@ public class MundoInfinitoMod extends Mod{
         }
 
         /** fBm normalizado a [0,1]. escala = tamaño de la mancha principal en tiles. Cada octava se rota para evitar rejillas. */
-        static float fbm(int s, float escala, int oct, float x, float y){
-            float f = 1f / escala, amp = 1f, sum = 0f, tot = 0f, cx = x, cy = y;
+        static float fbm(int s, float escala, int oct, double x, double y){
+            double f = 1.0 / escala, cx = x, cy = y;
+            float amp = 1f, sum = 0f, tot = 0f;
             for(int i = 0; i < oct; i++){
-                sum += perlin(cx * f + i * 31.7f, cy * f + i * 17.3f, s + i * 131) * amp;
+                sum += perlin(cx * f + i * 31.7, cy * f + i * 17.3, s + i * 131) * amp;
                 tot += amp;
                 amp *= 0.5f;
-                f *= 2f;
-                float nx = cx * 0.8f - cy * 0.6f;
-                cy = cx * 0.6f + cy * 0.8f;
+                f *= 2.0;
+                double nx = cx * 0.8 - cy * 0.6;
+                cy = cx * 0.6 + cy * 0.8;
                 cx = nx;
             }
             float v = 0.5f + 0.5f * (sum / tot) * 1.4142f;
@@ -413,7 +420,7 @@ public class MundoInfinitoMod extends Mod{
         static int enDeposito(boolean ere, int s, int x, int y, int cx, int cy, float[] ini){
             // iniciales
             for(int k = 0; k < ini.length; k += 4){
-                float dx = x - ini[k + 1], dy = y - ini[k + 2], r = ini[k + 3];
+                float dx = (float)(x - (double)ini[k + 1]), dy = (float)(y - (double)ini[k + 2]), r = ini[k + 3];
                 float d2 = dx * dx + dy * dy;
                 if(d2 > r * r * 2.2f) continue;
                 float rr = r * (0.8f + 0.45f * fbm(s + 700 + k, 7f, 2, x, y));
@@ -426,13 +433,14 @@ public class MundoInfinitoMod extends Mod{
             for(int di = -1; di <= 1; di++){
                 for(int dj = -1; dj <= 1; dj++){
                     int i = ci + di, j = cj + dj;
-                    float px = i * CELDA_MENA + 10f + rnd(i, j, s + 7001) * (CELDA_MENA - 20f);
-                    float py = j * CELDA_MENA + 10f + rnd(i, j, s + 7002) * (CELDA_MENA - 20f);
-                    float dx = x - px, dy = y - py;
+                    float prx = 10f + rnd(i, j, s + 7001) * (CELDA_MENA - 20f);
+                    float pry = 10f + rnd(i, j, s + 7002) * (CELDA_MENA - 20f);
+                    float dx = (x - i * CELDA_MENA) - prx, dy = (y - j * CELDA_MENA) - pry; // relativo a la celda: exacto a cualquier distancia
                     if(dx * dx + dy * dy > 150f) continue; // radio máx ~ 12
-                    float dsp = (float)Math.hypot(px - cx, py - cy);
+                    double pxv = (double)i * CELDA_MENA + prx, pyv = (double)j * CELDA_MENA + pry;
+                    float dsp = (float)Math.hypot(pxv - cx, pyv - cy);
                     if(dsp < 40f) continue;
-                    float riqueza = fbm(s + 81, 500f, 2, px, py);
+                    float riqueza = fbm(s + 81, 500f, 2, pxv, pyv);
                     float p = (0.28f + 0.55f * riqueza) * (0.35f + 0.65f * Math.min(1f, (dsp - 40f) / 140f));
                     if(rnd(i, j, s + 7003) > p) continue;
                     // tipo por pesos entre los desbloqueados a esa distancia
@@ -463,9 +471,9 @@ public class MundoInfinitoMod extends Mod{
                 for(int dj = -1; dj <= 1; dj++){
                     int i = ci + di, j = cj + dj;
                     if(rnd(i, j, s + 5001) > 0.30f) continue;
-                    float px = i * 64 + 12f + rnd(i, j, s + 5002) * 40f, py = j * 64 + 12f + rnd(i, j, s + 5003) * 40f;
+                    float prx = 12f + rnd(i, j, s + 5002) * 40f, pry = 12f + rnd(i, j, s + 5003) * 40f;
                     float r = 5f + rnd(i, j, s + 5004) * 6.5f;
-                    float dx = x - px, dy = y - py;
+                    float dx = (x - i * 64) - prx, dy = (y - j * 64) - pry;
                     float d = (float)Math.sqrt(dx * dx + dy * dy) + (fbm(s + 5005, 5f, 2, x, y) - 0.5f) * 2f;
                     if(d < r) return 1 + 10 * Math.min(99, (int)(d / r * 100f)) + (r > 8.5f ? 5000 : 0);
                     if(d < r + 1.8f) return 2;
@@ -494,7 +502,7 @@ public class MundoInfinitoMod extends Mod{
         }
 
         // ---- Pisos base ----
-        static int pisoSerpulo(int s, int x, int y, float dist, float wx, float wy){
+        static int pisoSerpulo(int s, int x, int y, float dist, double wx, double wy){
             float h = est(fbm(s, 170f, 5, wx, wy), K_ALTURA);
             float t = est(fbm(s + 11, 420f, 4, wx, wy), K_TEMP);
             float w = suave(1f - dist / 140f);
@@ -533,7 +541,7 @@ public class MundoInfinitoMod extends Mod{
             return p;
         }
 
-        static int pisoErekir(int s, int x, int y, float dist, float wx, float wy){
+        static int pisoErekir(int s, int x, int y, float dist, double wx, double wy){
             float h = est(fbm(s, 170f, 5, wx, wy), K_ALTURA);
             float w = suave(1f - dist / 120f);
             h = lerp(h, 0.2f, w * 0.9f);
@@ -589,10 +597,10 @@ public class MundoInfinitoMod extends Mod{
          * out[3]=prop (0 nada, 1 decoración del piso, 2 cristal, 3 cristal vibrante).
          */
         static void muestrear(boolean ere, int s, int x, int y, int cx, int cy, float[] ini, int[] out){
-            float dx0 = x - cx, dy0 = y - cy;
+            double dx0 = (double)x - cx, dy0 = (double)y - cy;
             float dist = (float)Math.sqrt(dx0 * dx0 + dy0 * dy0);
-            float wx = x + (fbm(s + 50, 90f, 3, x, y) - 0.5f) * 70f;
-            float wy = y + (fbm(s + 51, 90f, 3, x + 500f, y + 500f) - 0.5f) * 70f;
+            double wx = x + (fbm(s + 50, 90f, 3, x, y) - 0.5) * 70.0;
+            double wy = y + (fbm(s + 51, 90f, 3, x + 500.0, y + 500.0) - 0.5) * 70.0;
 
             int p = ere ? pisoErekir(s, x, y, dist, wx, wy) : pisoSerpulo(s, x, y, dist, wx, wy);
             boolean spawn = dist < RADIO_SPAWN_LIBRE;
@@ -772,6 +780,15 @@ public class MundoInfinitoMod extends Mod{
     }
 
     // ==================================================================
+    // Utilidades de carga (seguras también en modo headless)
+    // ==================================================================
+    static final class Carga{
+        static void mostrar(String t){ if(!Vars.headless && Vars.ui != null) Vars.ui.loadfrag.show(t); }
+        static void texto(String t){ if(!Vars.headless && Vars.ui != null) Vars.ui.loadfrag.setText(t); }
+        static void ocultar(){ if(!Vars.headless && Vars.ui != null) Vars.ui.loadfrag.hide(); }
+    }
+
+    // ==================================================================
     // Datos de un chunk calculado en segundo plano
     // ==================================================================
     static final class ChunkData{
@@ -786,18 +803,29 @@ public class MundoInfinitoMod extends Mod{
             this.epoca = epoca;
         }
 
-        /** Pura: no toca el mundo. Seguro en hilos secundarios. */
-        static ChunkData generar(Paleta pal, boolean ere, int semilla, int tam, int cx, int cy, int epoca){
+        /**
+         * Pura: no toca el mundo. Seguro en hilos secundarios.
+         * (ox, oy) = origen VIRTUAL de la ventana: el terreno depende solo de coordenadas virtuales,
+         * así que al deslizar la ventana el mundo es idéntico y sin costuras.
+         */
+        static ChunkData generar(Paleta pal, boolean ere, int semilla, int tam, int cx, int cy, int epoca, int ox, int oy){
             ChunkData d = new ChunkData(cx, cy, epoca);
-            int centro = tam / 2;
-            float[] ini = Muestreo.iniciales(ere, semilla, centro, centro);
+            float[] ini = Muestreo.iniciales(ere, semilla, 0, 0);   // el spawn del mundo está en el origen virtual (0,0)
             int[] out = new int[4];
+            int bordePiso = pal.idPiso[Muestreo.P_STONE], bordeMuro = pal.idMuroDePiso[Muestreo.P_STONE];
             for(int ly = 0; ly < TAM_CHUNK; ly++){
                 for(int lx = 0; lx < TAM_CHUNK; lx++){
                     int x = cx * TAM_CHUNK + lx, y = cy * TAM_CHUNK + ly;
                     if(x >= tam || y >= tam) continue;
-                    Muestreo.muestrear(ere, semilla, x, y, centro, centro, ini, out);
+                    int vx = ox + x, vy = oy + y;
                     int i = ly * TAM_CHUNK + lx;
+                    if(vx < -LIMITE_MUNDO || vx > LIMITE_MUNDO || vy < -LIMITE_MUNDO || vy > LIMITE_MUNDO){
+                        // más allá del borde del mundo (±30 000 000): muro sólido, como el world border de Minecraft
+                        d.piso[i] = (short)bordePiso;
+                        d.bloque[i] = (short)bordeMuro;
+                        continue;
+                    }
+                    Muestreo.muestrear(ere, semilla, vx, vy, 0, 0, ini, out);
                     d.piso[i] = (short)pal.idPiso[out[0]];
                     d.mena[i] = (short)pal.idMena[out[1]];
                     int b = 0;
@@ -814,186 +842,360 @@ public class MundoInfinitoMod extends Mod{
     }
 
     // ==================================================================
-    // Persistencia de una dimensión (edificios + núcleos + niebla + chunks)
+    // Registro de un edificio guardado (coordenadas VIRTUALES)
     // ==================================================================
-    static final class Datos{
-        float px, py;
-        int[] chunks = new int[0];
-        final Seq<Reg> edificios = new Seq<>();
-        final Seq<RegNucleo> nucleos = new Seq<>();
-        byte[] niebla;
-        int nieblaW, nieblaH;
+    static final class Reg{
+        int x, y, rot, ver, equipo;
+        String bloque;
+        byte[] datos = new byte[0];
+        int cfgTipo;          // 0 nada, 1 Point2, 2 Point2[], 3 byte[]  (configs RELATIVAS: sobreviven a mover la ventana)
+        int[] cfg;
+        byte[] cfgBytes;
 
-        static final class Reg{
-            int x, y, rot, ver;
-            String bloque;
-            int equipo;
-            byte[] datos;
+        static Reg desde(Building b, int ox, int oy){
+            Reg r = new Reg();
+            r.x = ox + b.tile.x;
+            r.y = oy + b.tile.y;
+            r.bloque = b.block.name;
+            r.equipo = b.team.id;
+            r.rot = b.rotation;
+            r.ver = b.version();
+            try{
+                ByteArrayOutputStream bb = new ByteArrayOutputStream();
+                DataOutputStream bo = new DataOutputStream(bb);
+                b.writeAll(Writes.get(bo));
+                bo.flush();
+                r.datos = bb.toByteArray();
+            }catch(Throwable t){
+                r.datos = new byte[0];
+            }
+            try{
+                Object c = b.config();
+                if(c instanceof Point2){
+                    Point2 p = (Point2)c;
+                    r.cfgTipo = 1;
+                    r.cfg = new int[]{p.x, p.y};
+                }else if(c instanceof Point2[]){
+                    Point2[] ps = (Point2[])c;
+                    r.cfgTipo = 2;
+                    r.cfg = new int[ps.length * 2];
+                    for(int i = 0; i < ps.length; i++){ r.cfg[i * 2] = ps[i].x; r.cfg[i * 2 + 1] = ps[i].y; }
+                }else if(c instanceof byte[]){
+                    r.cfgTipo = 3;
+                    r.cfgBytes = (byte[])c;
+                }
+            }catch(Throwable ignored){}
+            return r;
         }
 
-        static final class RegNucleo{
-            int x, y;
-            final Seq<String> items = new Seq<>();
-            final Seq<Integer> cantidades = new Seq<>();
+        Object configObjeto(){
+            if(cfgTipo == 1) return new Point2(cfg[0], cfg[1]);
+            if(cfgTipo == 2){
+                Point2[] ps = new Point2[cfg.length / 2];
+                for(int i = 0; i < ps.length; i++) ps[i] = new Point2(cfg[i * 2], cfg[i * 2 + 1]);
+                return ps;
+            }
+            if(cfgTipo == 3) return cfgBytes;
+            return null;
         }
 
-        /** Hilo principal: lee el mundo vivo y lo convierte en bytes. */
-        static byte[] serializar(float px, float py){
+        void escribir(DataOutputStream out) throws java.io.IOException{
+            out.writeInt(x);
+            out.writeInt(y);
+            out.writeUTF(bloque);
+            out.writeByte(equipo);
+            out.writeByte(rot);
+            out.writeByte(ver);
+            out.writeInt(datos.length);
+            out.write(datos);
+            out.writeByte(cfgTipo);
+            if(cfgTipo == 1 || cfgTipo == 2){
+                out.writeInt(cfg.length);
+                for(int v : cfg) out.writeInt(v);
+            }else if(cfgTipo == 3){
+                out.writeInt(cfgBytes.length);
+                out.write(cfgBytes);
+            }
+        }
+
+        static Reg leer(DataInputStream in) throws java.io.IOException{
+            Reg r = new Reg();
+            r.x = in.readInt();
+            r.y = in.readInt();
+            r.bloque = in.readUTF();
+            r.equipo = in.readUnsignedByte();
+            r.rot = in.readByte();
+            r.ver = in.readByte();
+            r.datos = new byte[in.readInt()];
+            in.readFully(r.datos);
+            r.cfgTipo = in.readByte();
+            if(r.cfgTipo == 1 || r.cfgTipo == 2){
+                r.cfg = new int[in.readInt()];
+                for(int i = 0; i < r.cfg.length; i++) r.cfg[i] = in.readInt();
+            }else if(r.cfgTipo == 3){
+                r.cfgBytes = new byte[in.readInt()];
+                in.readFully(r.cfgBytes);
+            }
+            return r;
+        }
+    }
+
+    // ==================================================================
+    // Almacén de REGIONES (como los archivos .mca de Minecraft):
+    // 16x16 chunks por archivo, indexados por coordenadas virtuales => tamaño de mundo ilimitado en disco.
+    // ==================================================================
+    static final class Regiones{
+        static final class ChunkGuardado{
+            final Seq<Reg> edificios = new Seq<>();
+            int[] niebla; // 32 enteros: una fila de 32 bits por fila del chunk (null = nada explorado)
+        }
+
+        static final class Region{
+            final int rx, ry;
+            final java.util.HashMap<Integer, ChunkGuardado> chunks = new java.util.HashMap<>();
+            boolean sucia;
+            Region(int rx, int ry){ this.rx = rx; this.ry = ry; }
+        }
+
+        static Meta meta;
+        static Dimension dim;
+        static final java.util.HashMap<Long, Region> regiones = new java.util.HashMap<>();
+
+        static void iniciar(Meta m, Dimension d){
+            meta = m;
+            dim = d;
+            regiones.clear();
+        }
+
+        static long k(int rx, int ry){
+            return ((long)rx << 32) ^ (ry & 0xffffffffL);
+        }
+
+        static Fi archivo(int rx, int ry){
+            return Almacen.carpeta(meta.id).child(dim.name()).child("r." + rx + "." + ry + ".dat");
+        }
+
+        static Region region(int rx, int ry){
+            long key = k(rx, ry);
+            Region r = regiones.get(key);
+            if(r != null) return r;
+            r = new Region(rx, ry);
+            Fi f = archivo(rx, ry);
+            if(f.exists()) leer(r, f);
+            regiones.put(key, r);
+            return r;
+        }
+
+        static int indice(int vcx, int vcy){
+            return Math.floorMod(vcy, REGION_CHUNKS) * REGION_CHUNKS + Math.floorMod(vcx, REGION_CHUNKS);
+        }
+
+        static ChunkGuardado chunk(int vcx, int vcy, boolean crear){
+            Region r = region(Math.floorDiv(vcx, REGION_CHUNKS), Math.floorDiv(vcy, REGION_CHUNKS));
+            int idx = indice(vcx, vcy);
+            ChunkGuardado c = r.chunks.get(idx);
+            if(c == null && crear){
+                c = new ChunkGuardado();
+                r.chunks.put(idx, c);
+            }
+            if(crear) r.sucia = true;
+            return c;
+        }
+
+        static void leer(Region r, Fi f){
+            try{
+                DataInputStream in = new DataInputStream(new GZIPInputStream(f.read()));
+                in.readInt(); // versión
+                int n = in.readInt();
+                for(int i = 0; i < n; i++){
+                    int idx = in.readShort();
+                    ChunkGuardado c = new ChunkGuardado();
+                    int nb = in.readInt();
+                    for(int j = 0; j < nb; j++) c.edificios.add(Reg.leer(in));
+                    if(in.readBoolean()){
+                        c.niebla = new int[32];
+                        for(int j = 0; j < 32; j++) c.niebla[j] = in.readInt();
+                    }
+                    r.chunks.put(idx, c);
+                }
+                in.close();
+            }catch(Throwable t){
+                Log.err("[MundoInfinito] Región ilegible " + f.name(), t);
+            }
+        }
+
+        static byte[] bytes(Region r){
+            if(r.chunks.isEmpty()) return null; // región vacía => se borra el archivo
             try{
                 ByteArrayOutputStream bos = new ByteArrayOutputStream();
                 DataOutputStream out = new DataOutputStream(new GZIPOutputStream(bos));
-                out.writeInt(1);
-                out.writeFloat(px);
-                out.writeFloat(py);
-
-                // chunks generados
-                out.writeInt(Streamer.generados.size);
-                IntSet.IntSetIterator it = Streamer.generados.iterator();
-                while(it.hasNext) out.writeInt(it.next());
-
-                // edificios del jugador
-                Seq<Building> lista = new Seq<>();
-                for(Building b : Groups.build){
-                    if(b.team != Team.sharded || !b.isValid() || b.tile == null || b.tile.build != b) continue;
-                    lista.add(b);
+                out.writeInt(3);
+                out.writeInt(r.chunks.size());
+                for(java.util.Map.Entry<Integer, ChunkGuardado> e : r.chunks.entrySet()){
+                    out.writeShort(e.getKey());
+                    ChunkGuardado c = e.getValue();
+                    out.writeInt(c.edificios.size);
+                    for(Reg x : c.edificios) x.escribir(out);
+                    out.writeBoolean(c.niebla != null);
+                    if(c.niebla != null) for(int v : c.niebla) out.writeInt(v);
                 }
-                out.writeInt(lista.size);
-                for(Building b : lista){
-                    out.writeShort(b.tile.x);
-                    out.writeShort(b.tile.y);
-                    out.writeUTF(b.block.name);
-                    out.writeByte(b.team.id);
-                    out.writeByte(b.rotation);
-                    out.writeByte(b.version());
-                    ByteArrayOutputStream bb = new ByteArrayOutputStream();
-                    byte[] datos;
-                    try{
-                        DataOutputStream bo = new DataOutputStream(bb);
-                        b.writeAll(Writes.get(bo));
-                        bo.flush();
-                        datos = bb.toByteArray();
-                    }catch(Throwable t){
-                        datos = new byte[0];
-                    }
-                    out.writeInt(datos.length);
-                    out.write(datos);
-                }
-
-                // inventario de núcleos (logic.play() lo vacía; se restaura después)
-                Seq<CoreBlock.CoreBuild> nucs = Vars.state.teams.cores(Team.sharded);
-                out.writeInt(nucs.size);
-                for(CoreBlock.CoreBuild c : nucs){
-                    out.writeShort(c.tile.x);
-                    out.writeShort(c.tile.y);
-                    Seq<String> nombres = new Seq<>();
-                    Seq<Integer> cants = new Seq<>();
-                    c.items.each((item, amount) -> {
-                        if(amount > 0){
-                            nombres.add(item.name);
-                            cants.add(amount);
-                        }
-                    });
-                    out.writeInt(nombres.size);
-                    for(int i = 0; i < nombres.size; i++){
-                        out.writeUTF(nombres.get(i));
-                        out.writeInt(cants.get(i));
-                    }
-                }
-
-                // niebla descubierta (RLE)
-                Bits desc = Vars.fogControl == null ? null : Vars.fogControl.getDiscovered(Team.sharded);
-                int w = Vars.world.width(), h = Vars.world.height();
-                if(desc == null){
-                    out.writeInt(0);
-                }else{
-                    ByteArrayOutputStream fb = new ByteArrayOutputStream();
-                    int size = w * h, pos = 0;
-                    while(pos < size){
-                        boolean cur = desc.get(pos);
-                        int consec = 0;
-                        while(consec < 127 && pos < size && desc.get(pos) == cur){
-                            consec++;
-                            pos++;
-                        }
-                        fb.write((cur ? 0x80 : 0) | consec);
-                    }
-                    byte[] fbytes = fb.toByteArray();
-                    out.writeInt(fbytes.length);
-                    out.writeShort(w);
-                    out.writeShort(h);
-                    out.write(fbytes);
-                }
-
                 out.close();
                 return bos.toByteArray();
             }catch(Throwable t){
-                Log.err("[MundoInfinito] No se pudo serializar", t);
+                Log.err("[MundoInfinito] No se pudo serializar región", t);
                 return null;
             }
         }
 
-        static Datos leer(Fi f){
-            try{
-                InputStream in = f.read();
-                DataInputStream din = new DataInputStream(new GZIPInputStream(in));
-                Datos d = new Datos();
-                din.readInt(); // versión
-                d.px = din.readFloat();
-                d.py = din.readFloat();
-                int nc = din.readInt();
-                d.chunks = new int[nc];
-                for(int i = 0; i < nc; i++) d.chunks[i] = din.readInt();
+        /** Hilo principal: serializa las regiones modificadas (rápido). La escritura a disco la hace otro hilo. */
+        static java.util.HashMap<Fi, byte[]> serializarSucias(){
+            java.util.HashMap<Fi, byte[]> r = new java.util.HashMap<>();
+            for(Region reg : regiones.values()){
+                if(!reg.sucia) continue;
+                r.put(archivo(reg.rx, reg.ry), bytes(reg));
+                reg.sucia = false;
+            }
+            return r;
+        }
 
-                int nb = din.readInt();
-                for(int i = 0; i < nb; i++){
-                    Reg r = new Reg();
-                    r.x = din.readShort();
-                    r.y = din.readShort();
-                    r.bloque = din.readUTF();
-                    r.equipo = din.readUnsignedByte();
-                    r.rot = din.readByte();
-                    r.ver = din.readByte();
-                    int len = din.readInt();
-                    r.datos = new byte[len];
-                    din.readFully(r.datos);
-                    d.edificios.add(r);
-                }
+        /** Libera de RAM las regiones limpias que quedaron lejos de la ventana. */
+        static void evictar(){
+            if(Streamer.nch <= 0) return;
+            int vcx0 = Streamer.ox / TAM_CHUNK, vcy0 = Streamer.oy / TAM_CHUNK;
+            int minX = Math.floorDiv(vcx0, REGION_CHUNKS) - 1, maxX = Math.floorDiv(vcx0 + Streamer.nch, REGION_CHUNKS) + 1;
+            int minY = Math.floorDiv(vcy0, REGION_CHUNKS) - 1, maxY = Math.floorDiv(vcy0 + Streamer.nch, REGION_CHUNKS) + 1;
+            Seq<Long> borrar = new Seq<>();
+            for(java.util.Map.Entry<Long, Region> e : regiones.entrySet()){
+                Region r = e.getValue();
+                if(!r.sucia && (r.rx < minX || r.rx > maxX || r.ry < minY || r.ry > maxY)) borrar.add(e.getKey());
+            }
+            for(Long key : borrar) regiones.remove(key);
+        }
+    }
 
-                int nn = din.readInt();
-                for(int i = 0; i < nn; i++){
-                    RegNucleo n = new RegNucleo();
-                    n.x = din.readShort();
-                    n.y = din.readShort();
-                    int ni = din.readInt();
-                    for(int k = 0; k < ni; k++){
-                        n.items.add(din.readUTF());
-                        n.cantidades.add(din.readInt());
+    // ==================================================================
+    // Estado pequeño de una dimensión (posición, inventario, unidades)
+    // ==================================================================
+    static final class Datos{
+        int ox, oy;                 // origen virtual de la ventana al guardar
+        double vx, vy;              // posición virtual del jugador (tiles)
+        String tipoJugador = "";
+        final Seq<String> itemsN = new Seq<>();
+        final Seq<Integer> itemsC = new Seq<>();
+        final Seq<RegUnidad> unidades = new Seq<>();
+
+        static final class RegUnidad{
+            String tipo;
+            double vx, vy;
+            float rot, vida;
+        }
+
+        /** Hilo principal: fotografía del estado vivo. */
+        static Datos capturar(double vx, double vy){
+            Datos d = new Datos();
+            d.ox = Streamer.ox;
+            d.oy = Streamer.oy;
+            d.vx = vx;
+            d.vy = vy;
+            Unit pu = Vars.player == null ? null : Vars.player.unit();
+            if(pu != null && !Vars.player.dead() && pu.type != null) d.tipoJugador = pu.type.name;
+
+            Seq<CoreBlock.CoreBuild> nucs = Vars.state.teams.cores(Team.sharded);
+            if(!nucs.isEmpty()){
+                nucs.first().items.each((item, amount) -> {
+                    if(amount > 0){
+                        d.itemsN.add(item.name);
+                        d.itemsC.add(amount);
                     }
-                    d.nucleos.add(n);
-                }
+                });
+            }
+            int cuenta = 0;
+            for(Unit u : Groups.unit){
+                if(u.team != Team.sharded || !u.isValid() || u.isPlayer() || u.type == null) continue;
+                RegUnidad r = new RegUnidad();
+                r.tipo = u.type.name;
+                r.vx = d.ox + u.x / 8.0;
+                r.vy = d.oy + u.y / 8.0;
+                r.rot = u.rotation;
+                r.vida = u.health;
+                d.unidades.add(r);
+                if(++cuenta >= 300) break;
+            }
+            return d;
+        }
 
-                int fl = din.readInt();
-                if(fl > 0){
-                    d.nieblaW = din.readShort();
-                    d.nieblaH = din.readShort();
-                    d.niebla = new byte[fl];
-                    din.readFully(d.niebla);
+        byte[] bytes(){
+            try{
+                ByteArrayOutputStream bos = new ByteArrayOutputStream();
+                DataOutputStream out = new DataOutputStream(new GZIPOutputStream(bos));
+                out.writeInt(3);
+                out.writeInt(ox);
+                out.writeInt(oy);
+                out.writeDouble(vx);
+                out.writeDouble(vy);
+                out.writeUTF(tipoJugador);
+                out.writeInt(itemsN.size);
+                for(int i = 0; i < itemsN.size; i++){
+                    out.writeUTF(itemsN.get(i));
+                    out.writeInt(itemsC.get(i));
                 }
-                din.close();
-                return d;
+                out.writeInt(unidades.size);
+                for(RegUnidad u : unidades){
+                    out.writeUTF(u.tipo);
+                    out.writeDouble(u.vx);
+                    out.writeDouble(u.vy);
+                    out.writeFloat(u.rot);
+                    out.writeFloat(u.vida);
+                }
+                out.close();
+                return bos.toByteArray();
             }catch(Throwable t){
-                Log.err("[MundoInfinito] Archivo de dimensión ilegible", t);
+                Log.err("[MundoInfinito] No se pudo serializar el estado", t);
                 return null;
             }
         }
 
         static void escribirArchivo(Fi f, byte[] bytes){
             try{
+                f.parent().mkdirs();
                 OutputStream os = f.write(false);
                 os.write(bytes);
                 os.close();
             }catch(Throwable t){
                 Log.err("[MundoInfinito] No se pudo escribir " + f.name(), t);
+            }
+        }
+
+        static Datos leer(Fi f){
+            try{
+                DataInputStream in = new DataInputStream(new GZIPInputStream(f.read()));
+                Datos d = new Datos();
+                in.readInt();
+                d.ox = in.readInt();
+                d.oy = in.readInt();
+                d.vx = in.readDouble();
+                d.vy = in.readDouble();
+                d.tipoJugador = in.readUTF();
+                int ni = in.readInt();
+                for(int i = 0; i < ni; i++){
+                    d.itemsN.add(in.readUTF());
+                    d.itemsC.add(in.readInt());
+                }
+                int nu = in.readInt();
+                for(int i = 0; i < nu; i++){
+                    RegUnidad u = new RegUnidad();
+                    u.tipo = in.readUTF();
+                    u.vx = in.readDouble();
+                    u.vy = in.readDouble();
+                    u.rot = in.readFloat();
+                    u.vida = in.readFloat();
+                    d.unidades.add(u);
+                }
+                in.close();
+                return d;
+            }catch(Throwable t){
+                Log.err("[MundoInfinito] Estado de dimensión ilegible", t);
+                return null;
             }
         }
     }
@@ -1002,9 +1204,10 @@ public class MundoInfinitoMod extends Mod{
     // STREAMING DE CHUNKS (equivalente a la carga de chunks de Minecraft)
     // ==================================================================
     static final class Streamer{
-        static final long PRESUPUESTO_NS = 2_500_000L;  // 2.5 ms por frame para aplicar chunks
+        static final long PRESUPUESTO_NS = 2_500_000L;           // 2.5 ms por frame para aplicar chunks
+        static final long PRESUPUESTO_RESTAURAR_NS = 9_000_000L; // con la pantalla de carga puesta se puede gastar más
         static final int R_JUGADOR = 3, R_CAMARA = 2, R_UNIDAD = 2, R_EDIFICIO = 1;
-        static final int MAX_PETICIONES = 14;           // chunks nuevos pedidos por escaneo
+        static final int MAX_PETICIONES = 14;
 
         static volatile boolean activo = false;
         static volatile int epoca = 0;
@@ -1012,19 +1215,25 @@ public class MundoInfinitoMod extends Mod{
         static Meta meta;
         static Dimension dim;
         static Paleta paleta;
-        static int nch;                                  // chunks por lado
-        static final IntSet generados = new IntSet();    // ya aplicados al mundo
+        static volatile int ox, oy;                      // origen VIRTUAL de la ventana (tiles, múltiplo de 32)
+        static volatile int nch;                         // chunks por lado de la ventana
+        static final IntSet generados = new IntSet();    // aplicados al mundo
         static final IntSet solicitados = new IntSet();  // en cola / calculando / esperando aplicar
+        static final IntSet requeridos = new IntSet();   // chunks con edificios o zona explorada (hay que generarlos)
         static final ArrayDeque<Integer> cola = new ArrayDeque<>();
         static final ConcurrentLinkedQueue<ChunkData> listos = new ConcurrentLinkedQueue<>();
-        static final java.util.HashMap<Integer, Seq<Datos.Reg>> pendientes = new java.util.HashMap<>();
+        static final ArrayDeque<Reg> colaRestaurar = new ArrayDeque<>();
+        static final Seq<Reg> configsPendientes = new Seq<>();
+        static final java.util.HashMap<Integer, int[]> fogPend = new java.util.HashMap<>();
+        static boolean restaurando = false;
+        static int totalRestaurar = 1;
+        static Datos datosPendientes;
         static Thread trabajador;
 
-        static int[] guardados = new int[0];            // chunks explorados en la sesión anterior
         static ChunkData actual;
         static int fila;
-        static float acumEscaneo, acumGuardado;
-        static float jugadorX, jugadorY;                 // última posición válida (tiles)
+        static float acumEscaneo, acumGuardado, muerto;
+        static float jugadorX, jugadorY;                 // última posición válida LOCAL (tiles)
 
         static int clave(int cx, int cy){
             return cy * nch + cx;
@@ -1041,14 +1250,19 @@ public class MundoInfinitoMod extends Mod{
             nch = m.chunksPorLado();
             generados.clear();
             solicitados.clear();
+            requeridos.clear();
             synchronized(cola){ cola.clear(); }
             listos.clear();
-            pendientes.clear();
+            colaRestaurar.clear();
+            configsPendientes.clear();
+            fogPend.clear();
+            restaurando = false;
+            datosPendientes = null;
             actual = null;
-            guardados = new int[0];
             fila = 0;
             acumEscaneo = 0f;
             acumGuardado = 0f;
+            muerto = 0f;
             iniciarTrabajador();
         }
 
@@ -1056,8 +1270,7 @@ public class MundoInfinitoMod extends Mod{
             if(trabajador != null && trabajador.isAlive()) return;
             trabajador = Threads.daemon("MundoInfinito-Chunks", () -> {
                 while(true){
-                    int key;
-                    int ep;
+                    int key, ep, vox, voy, n;
                     Meta m;
                     Paleta p;
                     Dimension d;
@@ -1070,11 +1283,13 @@ public class MundoInfinitoMod extends Mod{
                         m = meta;
                         p = paleta;
                         d = dim;
+                        vox = ox;
+                        voy = oy;
+                        n = nch;
                     }
                     try{
-                        if(m == null || p == null) continue;
-                        int n = m.chunksPorLado();
-                        ChunkData cd = ChunkData.generar(p, d == Dimension.EREKIR, m.semilla, m.tam, key % n, key / n, ep);
+                        if(m == null || p == null || n <= 0) continue;
+                        ChunkData cd = ChunkData.generar(p, d == Dimension.EREKIR, m.semilla, m.tam, key % n, key / n, ep, vox, voy);
                         listos.add(cd);
                     }catch(Throwable t){
                         Log.err("[MundoInfinito] Error generando chunk", t);
@@ -1084,7 +1299,7 @@ public class MundoInfinitoMod extends Mod{
             try{ trabajador.setPriority(Thread.MIN_PRIORITY + 1); }catch(Throwable ignored){}
         }
 
-        /** Aplica un chunk COMPLETO al mundo (modo carga: Vars.world.isGenerating() == true, sin eventos). */
+        /** Aplica un chunk COMPLETO (modo carga: Vars.world.isGenerating() == true, sin eventos por tile). */
         static void aplicarChunkCompleto(ChunkData d){
             for(int ly = 0; ly < TAM_CHUNK; ly++) aplicarFila(d, ly);
             terminarChunk(d);
@@ -1110,12 +1325,22 @@ public class MundoInfinitoMod extends Mod{
             int k = clave(d.cx, d.cy);
             generados.add(k);
             solicitados.remove(k);
-            Seq<Datos.Reg> regs = pendientes.remove(k);
-            if(regs != null) for(Datos.Reg r : regs) Mundos.restaurarEdificio(r);
         }
 
         static void tick(){
             if(!activo || !Vars.state.isPlaying()) return;
+
+            if(restaurando){
+                long finR = System.nanoTime() + PRESUPUESTO_RESTAURAR_NS;
+                while(System.nanoTime() < finR && !colaRestaurar.isEmpty()) Mundos.restaurarEdificio(colaRestaurar.pollFirst());
+                if(colaRestaurar.isEmpty()){
+                    restaurando = false;
+                    Mundos.finalizarRestauracion();
+                }else{
+                    Carga.texto("Restaurando edificios... " + (100 * (totalRestaurar - colaRestaurar.size()) / totalRestaurar) + "%");
+                    return;
+                }
+            }
 
             long fin = System.nanoTime() + PRESUPUESTO_NS;
             while(System.nanoTime() < fin){
@@ -1138,9 +1363,20 @@ public class MundoInfinitoMod extends Mod{
                 escanear();
             }
             acumGuardado += Time.delta;
-            if(acumGuardado >= 2700f){ // ~45 s
+            if(acumGuardado >= 5400f){ // ~90 s
                 acumGuardado = 0f;
                 Mundos.guardar(false);
+            }
+
+            // Sin núcleo real en la ventana el reaparecer normal no sirve: reaparecer donde murió.
+            if(Vars.player != null && Vars.player.dead()){
+                muerto += Time.delta;
+                if(muerto > 8f && Mundos.proxyPos != -1 && !Mundos.hayNucleoReal()){
+                    muerto = 0f;
+                    Mundos.spawnEnPosicion((int)jugadorX, (int)jugadorY, null);
+                }
+            }else{
+                muerto = 0f;
             }
         }
 
@@ -1153,22 +1389,31 @@ public class MundoInfinitoMod extends Mod{
             }
         }
 
-        /** Decide qué chunks necesita el mundo: alrededor del jugador, la cámara, las unidades y los edificios. */
+        /** Decide qué chunks necesita el mundo y, si el jugador se acerca al borde de la ventana, la reubica. */
         static void escanear(){
             IntSet deseados = new IntSet();
-            int pcx = -1, pcy = -1;
 
             if(Vars.player != null && Vars.player.unit() != null && !Vars.player.dead()){
                 Unit u = Vars.player.unit();
                 jugadorX = u.x / 8f;
                 jugadorY = u.y / 8f;
             }
-            pcx = Mathf.clamp((int)jugadorX / TAM_CHUNK, 0, nch - 1);
-            pcy = Mathf.clamp((int)jugadorY / TAM_CHUNK, 0, nch - 1);
+            int pcx = Mathf.clamp((int)jugadorX / TAM_CHUNK, 0, nch - 1);
+            int pcy = Mathf.clamp((int)jugadorY / TAM_CHUNK, 0, nch - 1);
+
+            // Mundo infinito: al acercarse al borde, la ventana se recentra sobre el jugador.
+            if(Vars.player != null && !Vars.player.dead()
+                && (pcx < MARGEN_REBASE || pcy < MARGEN_REBASE || pcx >= nch - MARGEN_REBASE || pcy >= nch - MARGEN_REBASE)){
+                Mundos.rebasar();
+                return;
+            }
+
             pedirRadio(deseados, pcx, pcy, R_JUGADOR);
 
-            int ccx = (int)(Core.camera.position.x / 8f) / TAM_CHUNK, ccy = (int)(Core.camera.position.y / 8f) / TAM_CHUNK;
-            if(enMapa(ccx, ccy)) pedirRadio(deseados, ccx, ccy, R_CAMARA);
+            if(Core.camera != null){
+                int ccx = (int)(Core.camera.position.x / 8f) / TAM_CHUNK, ccy = (int)(Core.camera.position.y / 8f) / TAM_CHUNK;
+                if(enMapa(ccx, ccy)) pedirRadio(deseados, ccx, ccy, R_CAMARA);
+            }
 
             IntSet vistos = new IntSet();
             int nUnidades = 0;
@@ -1180,18 +1425,18 @@ public class MundoInfinitoMod extends Mod{
                 if(++nUnidades >= 48) break;
             }
             IntSet vistosB = new IntSet();
-            for(Building b : Groups.build){
-                if(b.team != Team.sharded) continue;
+            for(Building b : Vars.state.teams.get(Team.sharded).buildings){
                 int cx = b.tile.x / TAM_CHUNK, cy = b.tile.y / TAM_CHUNK;
                 if(!enMapa(cx, cy) || !vistosB.add(clave(cx, cy))) continue;
                 pedirRadio(deseados, cx, cy, R_EDIFICIO);
             }
 
-            // pendientes de restaurar y chunks ya explorados antes: deben existir
-            for(Integer k : pendientes.keySet()) deseados.add(k);
-            for(int k : guardados) deseados.add(k);
+            // zona ya explorada / con edificios guardados: debe existir
+            IntSet.IntSetIterator rq = requeridos.iterator();
+            while(rq.hasNext) deseados.add(rq.next());
 
-            // faltantes ordenados por cercanía al jugador
+            Mundos.limitarUnidades();
+
             Seq<int[]> faltan = new Seq<>();
             IntSet.IntSetIterator it = deseados.iterator();
             while(it.hasNext){
@@ -1215,20 +1460,22 @@ public class MundoInfinitoMod extends Mod{
     }
 
     // ==================================================================
-    // MUNDOS: abrir / guardar / portales
+    // MUNDOS: abrir / guardar / rebase (mundo infinito) / portales
     // ==================================================================
     static final class Mundos{
         static Meta actual;
         static boolean viajando = false;
+        static float ultimoRebase = -100000f;
+        static int proxyPos = -1;   // posición del núcleo "proxy" (inventario compartido cuando el núcleo real está lejos)
 
         /** Bloque marcador del portal (procesador avanzado nativo, provisional). */
         static Block bloquePortal(){
             return Blocks.hyperProcessor;
         }
 
-        // ---------- creación ----------
+        // ---------- creación / continuar ----------
         static void crearNuevo(String nombre, Dimension dim, int tam){
-            Vars.ui.loadfrag.show("Obteniendo semilla...");
+            Carga.mostrar("Obteniendo semilla...");
             Semillas.obtener(semilla -> {
                 Meta m = new Meta();
                 m.id = "w" + System.currentTimeMillis();
@@ -1238,64 +1485,80 @@ public class MundoInfinitoMod extends Mod{
                 m.dim = dim;
                 m.creado = m.ultimo = System.currentTimeMillis();
                 Almacen.guardarMeta(m);
-                abrir(m, dim, null, m.tam / 2, m.tam / 2);
+                Regiones.iniciar(m, dim);
+                abrir(m, dim, null, 0.0, 0.0, false);
             });
         }
 
         static void continuar(Meta m){
-            Datos d = null;
             Fi f = Almacen.archivoDim(m, m.dim);
-            if(f.exists()) d = Datos.leer(f);
-            int px = m.tam / 2, py = m.tam / 2;
-            if(d != null){
-                px = (int)d.px;
-                py = (int)d.py;
-            }
-            abrir(m, m.dim, d, px, py);
+            Datos d = f.exists() ? Datos.leer(f) : null;
+            Regiones.iniciar(m, m.dim);
+            if(d != null) abrir(m, m.dim, d, d.vx, d.vy, false);
+            else abrir(m, m.dim, null, 0.0, 0.0, false);
         }
 
-        // ---------- apertura ----------
+        // ---------- apertura de la ventana ----------
         /**
-         * @param datos null = dimensión nueva (se coloca núcleo + portal); si no, se restaura lo guardado.
+         * Construye la ventana en RAM alrededor de una posición VIRTUAL.
+         * @param datos  null = dimensión nueva (núcleo + portal); si no, se restaura inventario/unidades
+         * @param rebase true = recentrar la ventana sobre (vx, vy) sin cambiar de mundo
          */
-        static void abrir(Meta m, Dimension dim, Datos datos, int px, int py){
-            Vars.ui.loadfrag.show("Preparando mundo...");
+        static void abrir(Meta m, Dimension dim, Datos datos, double vx, double vy, boolean rebase){
+            Carga.mostrar(rebase ? "Reubicando el mundo..." : "Preparando mundo...");
             actual = m;
             m.dim = dim;
             liberarMundo();
 
             final boolean ere = dim == Dimension.EREKIR;
-            final boolean nuevo = datos == null;
+            final boolean nueva = datos == null;
             configurarReglas(dim);
 
             final int tam = m.tam;
-            px = Mathf.clamp(px, 40, tam - 40);
-            py = Mathf.clamp(py, 40, tam - 40);
-            final int fpx = px, fpy = py;
+            final int n = tam / TAM_CHUNK;
+            vx = Math.max(-LIMITE_MUNDO, Math.min(LIMITE_MUNDO, vx));
+            vy = Math.max(-LIMITE_MUNDO, Math.min(LIMITE_MUNDO, vy));
+
+            int nox, noy;
+            boolean reusar = datos != null && !rebase
+                && vx - datos.ox > 60 && vx - datos.ox < tam - 60 && vy - datos.oy > 60 && vy - datos.oy < tam - 60;
+            if(reusar){
+                nox = datos.ox;
+                noy = datos.oy;
+            }else{
+                nox = Math.floorDiv((int)Math.floor(vx) - tam / 2, TAM_CHUNK) * TAM_CHUNK;
+                noy = Math.floorDiv((int)Math.floor(vy) - tam / 2, TAM_CHUNK) * TAM_CHUNK;
+            }
+            final int px = (int)Math.floor(vx) - nox, py = (int)Math.floor(vy) - noy; // posición LOCAL
 
             Paleta pal = Paleta.crear();
             Streamer.epoca++;
             Streamer.reiniciar(m, dim, pal);
+            Streamer.ox = nox;
+            Streamer.oy = noy;
             final int ep = Streamer.epoca;
+            proxyPos = -1;
 
-            // los edificios guardados se reparten por chunk; se crean cuando su chunk existe
-            if(!nuevo){
-                for(Datos.Reg r : datos.edificios){
-                    int k = Streamer.clave(r.x / TAM_CHUNK, r.y / TAM_CHUNK);
-                    Seq<Datos.Reg> l = Streamer.pendientes.get(k);
-                    if(l == null){ l = new Seq<>(); Streamer.pendientes.put(k, l); }
-                    l.add(r);
+            // Todo lo guardado dentro de la ventana (edificios + zona explorada) se restaura al abrir.
+            // Se ignora el anillo exterior de chunks: ahí un edificio grande podría quedar cortado por el borde.
+            int vcx0 = nox / TAM_CHUNK, vcy0 = noy / TAM_CHUNK;
+            for(int cy = 1; cy <= n - 2; cy++){
+                for(int cx = 1; cx <= n - 2; cx++){
+                    Regiones.ChunkGuardado c = Regiones.chunk(vcx0 + cx, vcy0 + cy, false);
+                    if(c == null) continue;
+                    int key = Streamer.clave(cx, cy);
+                    for(Reg r : c.edificios) Streamer.colaRestaurar.addLast(r);
+                    if(!c.edificios.isEmpty()) Streamer.requeridos.add(key);
+                    if(c.niebla != null){
+                        Streamer.fogPend.put(key, c.niebla);
+                        Streamer.requeridos.add(key);
+                    }
                 }
             }
+            Streamer.totalRestaurar = Math.max(1, Streamer.colaRestaurar.size());
 
-            // chunks iniciales: 7x7 alrededor del jugador + 3x3 alrededor de cada núcleo guardado
             final IntSet iniciales = new IntSet();
-            Streamer.pedirRadio(iniciales, fpx / TAM_CHUNK, fpy / TAM_CHUNK, 3);
-            if(!nuevo){
-                for(Datos.RegNucleo n : datos.nucleos) Streamer.pedirRadio(iniciales, n.x / TAM_CHUNK, n.y / TAM_CHUNK, 1);
-            }
-            final Datos fdatos = datos;
-            if(datos != null) Streamer.guardados = datos.chunks; // se cargan en segundo plano, nearest-first, vía escanear()
+            Streamer.pedirRadio(iniciales, px / TAM_CHUNK, py / TAM_CHUNK, 3);
 
             Vars.world.beginMapLoad();       // generating = true: sin eventos por tile mientras se construye el mundo
             Vars.world.resize(tam, tam);
@@ -1303,57 +1566,159 @@ public class MundoInfinitoMod extends Mod{
             Threads.daemon("MundoInfinito-Inicio", () -> {
                 try{
                     Vars.world.tiles.fill();  // crea los objetos Tile (pesado: por eso va fuera del hilo principal)
-                    Core.app.post(() -> Vars.ui.loadfrag.setText("Generando terreno..."));
+                    Core.app.post(() -> Carga.texto("Generando terreno..."));
 
                     Seq<ChunkData> datosChunk = new Seq<>();
                     IntSet.IntSetIterator it = iniciales.iterator();
                     while(it.hasNext){
                         int k = it.next();
-                        datosChunk.add(ChunkData.generar(pal, ere, m.semilla, tam, k % Streamer.nch, k / Streamer.nch, ep));
+                        datosChunk.add(ChunkData.generar(pal, ere, m.semilla, tam, k % n, k / n, ep, nox, noy));
                     }
-
-                    Core.app.post(() -> finalizarApertura(m, dim, fdatos, datosChunk, fpx, fpy, ep));
+                    Core.app.post(() -> finalizarApertura(m, dim, datos, nueva, datosChunk, px, py, ep));
                 }catch(Throwable t){
                     Log.err("[MundoInfinito] Error al abrir el mundo", t);
                     Core.app.post(() -> {
-                        Vars.ui.loadfrag.hide();
-                        Vars.ui.showException(t);
+                        Carga.ocultar();
+                        if(!Vars.headless && Vars.ui != null) Vars.ui.showException(t);
                         viajando = false;
                     });
                 }
             });
         }
 
-        static void finalizarApertura(Meta m, Dimension dim, Datos datos, Seq<ChunkData> chunks, int px, int py, int ep){
+        static void finalizarApertura(Meta m, Dimension dim, Datos datos, boolean nueva, Seq<ChunkData> chunks, int px, int py, int ep){
             if(ep != Streamer.epoca) return;
-            Vars.ui.loadfrag.setText("Construyendo mundo...");
+            Carga.texto("Construyendo mundo...");
             for(ChunkData d : chunks) Streamer.aplicarChunkCompleto(d);
-
-            boolean ponerBase = datos == null || datos.nucleos.isEmpty();
-            if(ponerBase) colocarNucleoYPortal(dim, px, py);
+            if(nueva) colocarNucleoYPortal(dim, px, py);
 
             Vars.world.endMapLoad();          // oscuridad de muros, proximidades, WorldLoadEvent (niebla, minimapa, indexador)
-            Vars.ui.loadfrag.hide();
-            Vars.logic.play();                // PlayEvent añade al jugador
-            Streamer.activo = true;
+            Vars.logic.play();                // PlayEvent añade al jugador y reparte el loadout inicial
+
             Streamer.jugadorX = px;
             Streamer.jugadorY = py;
-            viajando = false;
+            Streamer.datosPendientes = datos;
+            Streamer.restaurando = true;      // el primer tick restaura edificios y luego llama a finalizarRestauracion()
+            Streamer.activo = true;
 
             m.ultimo = System.currentTimeMillis();
             Almacen.guardarMeta(m);
-
-            // Todo lo que depende de que el juego ya esté en marcha:
-            Time.runTask(8f, () -> {
-                if(ep != Streamer.epoca) return;
-                CoreBlock.CoreBuild n = Vars.state.teams.closestCore(px * 8f, py * 8f, Team.sharded);
-                if(n != null) n.requestSpawn(Vars.player);
-                Core.camera.position.set(px * 8f, py * 8f);
-                if(datos != null) restaurarNucleos(datos);
-            });
-            if(datos != null && datos.niebla != null) restaurarNiebla(datos, ep, 0);
         }
 
+        /** Última fase de apertura: configs relativas, núcleo/proxy, inventario, jugador, unidades y niebla. */
+        static void finalizarRestauracion(){
+            final int ep = Streamer.epoca;
+            Datos d = Streamer.datosPendientes;
+            Streamer.datosPendientes = null;
+            Dimension dim = Streamer.dim;
+            int px = (int)Streamer.jugadorX, py = (int)Streamer.jugadorY;
+
+            // 1) Puentes, nodos de energía, mass drivers y procesadores guardan enlaces RELATIVOS:
+            //    se reaplican ahora que todos los edificios existen (así sobreviven a mover la ventana).
+            for(Reg r : Streamer.configsPendientes){
+                try{
+                    Tile t = Vars.world.tile(r.x - Streamer.ox, r.y - Streamer.oy);
+                    if(t != null && t.build != null) t.build.configured(null, r.configObjeto());
+                }catch(Throwable ignored){}
+            }
+            Streamer.configsPendientes.clear();
+
+            // 2) Si el núcleo real quedó fuera de la ventana, un núcleo "proxy" oculto (esquina, bajo la niebla)
+            //    mantiene el inventario compartido del equipo para poder seguir construyendo.
+            if(Vars.state.teams.cores(Team.sharded).isEmpty()){
+                int c = 8;
+                for(int dx = -4; dx <= 4; dx++){
+                    for(int dy = -4; dy <= 4; dy++){
+                        Tile t = Vars.world.tile(c + dx, c + dy);
+                        if(t != null && t.block() != Blocks.air) t.setAir();
+                    }
+                }
+                Tile t = Vars.world.tile(c, c);
+                if(t != null){
+                    t.setBlock(dim.nucleo(), Team.sharded);
+                    proxyPos = t.pos();
+                }
+            }
+
+            // 3) Inventario compartido
+            if(d != null && !d.itemsN.isEmpty()){
+                Seq<CoreBlock.CoreBuild> nucs = Vars.state.teams.cores(Team.sharded);
+                if(!nucs.isEmpty()){
+                    CoreBlock.CoreBuild c = nucs.first();
+                    c.items.clear();
+                    for(int i = 0; i < d.itemsN.size; i++){
+                        Item it = Vars.content.item(d.itemsN.get(i));
+                        if(it != null) c.items.set(it, d.itemsC.get(i));
+                    }
+                }
+            }
+
+            // 4) Jugador
+            Time.runTask(8f, () -> {
+                if(ep != Streamer.epoca) return;
+                CoreBlock.CoreBuild cerca = Vars.state.teams.closestCore(px * 8f, py * 8f, Team.sharded);
+                boolean real = cerca != null && cerca.tile.pos() != proxyPos && Mathf.dst(cerca.tile.x, cerca.tile.y, px, py) < 80f;
+                if(real) cerca.requestSpawn(Vars.player);
+                else spawnEnPosicion(px, py, d);
+                if(Core.camera != null) Core.camera.position.set(px * 8f, py * 8f);
+            });
+
+            // 5) Unidades propias
+            if(d != null){
+                for(Datos.RegUnidad ru : d.unidades){
+                    try{
+                        UnitType t = Vars.content.unit(ru.tipo);
+                        if(t == null) continue;
+                        double lx = ru.vx - Streamer.ox, ly = ru.vy - Streamer.oy;
+                        if(lx < 3 || ly < 3 || lx > Streamer.meta.tam - 3 || ly > Streamer.meta.tam - 3) continue;
+                        Unit u = t.spawn(Team.sharded, (float)(lx * 8.0), (float)(ly * 8.0));
+                        u.rotation = ru.rot;
+                        u.health = Math.max(1f, ru.vida);
+                    }catch(Throwable ignored){}
+                }
+            }
+
+            // 6) Niebla explorada
+            aplicarNiebla(ep, 0);
+
+            Carga.ocultar();
+            viajando = false;
+        }
+
+        static void spawnEnPosicion(int px, int py, Datos d){
+            try{
+                UnitType tipo = null;
+                if(d != null && d.tipoJugador != null && !d.tipoJugador.isEmpty()) tipo = Vars.content.unit(d.tipoJugador);
+                if(tipo == null) tipo = ((CoreBlock)Streamer.dim.nucleo()).unitType;
+                Unit u = tipo.spawn(Team.sharded, px * 8f, py * 8f);
+                Vars.player.unit(u);
+            }catch(Throwable t){
+                Log.err("[MundoInfinito] No se pudo reaparecer al jugador", t);
+            }
+        }
+
+        static boolean hayNucleoReal(){
+            for(CoreBlock.CoreBuild c : Vars.state.teams.cores(Team.sharded)){
+                if(c.tile.pos() != proxyPos) return true;
+            }
+            return false;
+        }
+
+        /** Borde del mundo virtual (±30 000 000): las unidades no pueden salir. */
+        static void limitarUnidades(){
+            float minX = (-LIMITE_MUNDO - (float)Streamer.ox) * 8f, maxX = (LIMITE_MUNDO - (float)Streamer.ox) * 8f;
+            float minY = (-LIMITE_MUNDO - (float)Streamer.oy) * 8f, maxY = (LIMITE_MUNDO - (float)Streamer.oy) * 8f;
+            if(minX > 0f && minY > 0f && maxX < Streamer.meta.tam * 8f && maxY < Streamer.meta.tam * 8f) return;
+            for(Unit u : Groups.unit){
+                if(u.team != Team.sharded) continue;
+                if(u.x < minX) u.x = minX;
+                if(u.x > maxX) u.x = maxX;
+                if(u.y < minY) u.y = minY;
+                if(u.y > maxY) u.y = maxY;
+            }
+        }
+
+        // ---------- reglas ----------
         static void configurarReglas(Dimension dim){
             Rules r = Vars.state.rules;
             r.waves = false;
@@ -1370,9 +1735,7 @@ public class MundoInfinitoMod extends Mod{
             // Menú de construcción con bloques de AMBOS planetas (planeta "sol" = sin filtro por planeta).
             r.planet = Planets.sun;
             r.env = ENTORNO_COMBINADO;
-            r.hiddenBuildItems.clear();
             r.bannedBlocks.clear();
-            // Recursos iniciales (solo se aplican en mundo nuevo; los guardados restauran el inventario real).
             r.loadout = dim == Dimension.SERPULO
                 ? ItemStack.list(Items.copper, 400, Items.lead, 250, Items.sand, 100)
                 : ItemStack.list(Items.beryllium, 300, Items.graphite, 150, Items.copper, 200);
@@ -1388,7 +1751,6 @@ public class MundoInfinitoMod extends Mod{
         }
 
         static void colocarNucleoYPortal(Dimension dim, int px, int py){
-            // despeja un disco de 13 tiles + el pasillo del portal
             for(int dx = -13; dx <= 13; dx++){
                 for(int dy = -13; dy <= 13; dy++){
                     if(dx * dx + dy * dy > 169) continue;
@@ -1402,106 +1764,188 @@ public class MundoInfinitoMod extends Mod{
             tp.setBlock(bloquePortal(), Team.sharded);
         }
 
-        // ---------- restauración ----------
-        static void restaurarEdificio(Datos.Reg r){
+        // ---------- restauración de edificios ----------
+        static void restaurarEdificio(Reg r){
             try{
                 Block b = Vars.content.block(r.bloque);
-                Tile t = Vars.world.tile(r.x, r.y);
+                Tile t = Vars.world.tile(r.x - Streamer.ox, r.y - Streamer.oy);
                 if(b == null || t == null) return;
                 t.setBlock(b, Team.get(r.equipo), r.rot);
-                if(t.build != null && r.datos != null && r.datos.length > 0){
+                if(t.build == null) return;
+                if(r.datos != null && r.datos.length > 0){
                     try{
                         t.build.readAll(Reads.get(new DataInputStream(new ByteArrayInputStream(r.datos))), (byte)r.ver);
                     }catch(Throwable e){
                         Log.warn("[MundoInfinito] Datos de @ no restaurados: @", r.bloque, e.getMessage());
                     }
                 }
+                if(r.cfgTipo != 0) Streamer.configsPendientes.add(r);
             }catch(Throwable t){
                 Log.warn("[MundoInfinito] No se pudo restaurar @", r.bloque);
             }
         }
 
-        static void restaurarNucleos(Datos datos){
-            for(Datos.RegNucleo n : datos.nucleos){
-                Tile t = Vars.world.tile(n.x, n.y);
-                if(t == null || !(t.build instanceof CoreBlock.CoreBuild)) continue;
-                CoreBlock.CoreBuild c = (CoreBlock.CoreBuild)t.build;
-                c.items.clear();
-                for(int i = 0; i < n.items.size; i++){
-                    Item it = Vars.content.item(n.items.get(i));
-                    if(it != null) c.items.set(it, n.cantidades.get(i));
-                }
-            }
-        }
-
         /** La niebla se crea un instante después de empezar a jugar; se reintenta unos frames. */
-        static void restaurarNiebla(Datos d, int ep, int intento){
+        static void aplicarNiebla(int ep, int intento){
             if(ep != Streamer.epoca) return;
             Bits bits = Vars.fogControl == null ? null : Vars.fogControl.getDiscovered(Team.sharded);
             if(bits == null){
-                if(intento < 40) Time.runTask(10f, () -> restaurarNiebla(d, ep, intento + 1));
+                if(intento < 60) Time.runTask(10f, () -> aplicarNiebla(ep, intento + 1));
                 return;
             }
-            if(d.nieblaW != Vars.world.width() || d.nieblaH != Vars.world.height()) return;
-            int len = d.nieblaW * d.nieblaH, pos = 0;
-            for(byte b : d.niebla){
-                int v = b & 0xff;
-                int consec = v & 0x7f;
-                if((v & 0x80) != 0) bits.set(pos, Math.min(len, pos + consec));
-                pos += consec;
-                if(pos >= len) break;
+            int w = Vars.world.width();
+            int n = Streamer.nch;
+            for(java.util.Map.Entry<Integer, int[]> e : Streamer.fogPend.entrySet()){
+                int cx = e.getKey() % n, cy = e.getKey() / n;
+                int[] filas = e.getValue();
+                for(int ly = 0; ly < TAM_CHUNK; ly++){
+                    int row = filas[ly];
+                    if(row == 0) continue;
+                    for(int lx = 0; lx < TAM_CHUNK; lx++){
+                        if((row & (1 << lx)) != 0) bits.set((cx * TAM_CHUNK + lx) + (cy * TAM_CHUNK + ly) * w);
+                    }
+                }
             }
+            Streamer.fogPend.clear();
             // fuerza al renderizador a volver a copiar la niebla desde la CPU
             try{
-                java.lang.reflect.Field f = Vars.renderer.fog.getClass().getDeclaredField("lastTeam");
-                f.setAccessible(true);
-                f.set(Vars.renderer.fog, null);
+                if(!Vars.headless){
+                    java.lang.reflect.Field f = Vars.renderer.fog.getClass().getDeclaredField("lastTeam");
+                    f.setAccessible(true);
+                    f.set(Vars.renderer.fog, null);
+                }
             }catch(Throwable t){
                 Log.warn("[MundoInfinito] No se pudo refrescar la niebla guardada");
             }
         }
 
         // ---------- guardado ----------
-        static void guardar(boolean sincrono){
-            if(actual == null || !Streamer.activo || Vars.world.width() < 10) return;
-            float px = Streamer.jugadorX, py = Streamer.jugadorY;
-            if(Vars.player != null && Vars.player.unit() != null && !Vars.player.dead()){
-                px = Vars.player.unit().x / 8f;
-                py = Vars.player.unit().y / 8f;
+        static double[] posicionVirtual(){
+            Unit u = Vars.player == null ? null : Vars.player.unit();
+            if(u != null && Vars.player != null && !Vars.player.dead()){
+                return new double[]{Streamer.ox + u.x / 8.0, Streamer.oy + u.y / 8.0};
             }
-            byte[] bytes = Datos.serializar(px, py);
-            if(bytes == null) return;
+            return new double[]{Streamer.ox + Streamer.jugadorX, Streamer.oy + Streamer.jugadorY};
+        }
+
+        /** Copia lo que hay en la ventana (edificios + niebla) al almacén de regiones, en coordenadas virtuales. */
+        static void capturarEnMemoria(){
+            int n = Streamer.nch, vcx0 = Streamer.ox / TAM_CHUNK, vcy0 = Streamer.oy / TAM_CHUNK;
+            Bits desc = Vars.fogControl == null ? null : Vars.fogControl.getDiscovered(Team.sharded);
+            int w = Vars.world.width();
+
+            // 1) vaciar los chunks propios (se reescriben desde el estado vivo)
+            java.util.HashMap<Integer, int[]> nieblaVieja = new java.util.HashMap<>();
+            for(int cy = 1; cy <= n - 2; cy++){
+                for(int cx = 1; cx <= n - 2; cx++){
+                    Regiones.Region r = Regiones.region(Math.floorDiv(vcx0 + cx, REGION_CHUNKS), Math.floorDiv(vcy0 + cy, REGION_CHUNKS));
+                    Regiones.ChunkGuardado viejo = r.chunks.remove(Regiones.indice(vcx0 + cx, vcy0 + cy));
+                    if(viejo != null){
+                        r.sucia = true;
+                        if(viejo.niebla != null) nieblaVieja.put(Streamer.clave(cx, cy), viejo.niebla);
+                    }
+                }
+            }
+            // 2) edificios
+            // OJO: Groups.build NO incluye bloques que no actualizan (muros, nodos de energía...); TeamData.buildings sí.
+            for(Building b : Vars.state.teams.get(Team.sharded).buildings){
+                if(!b.isValid() || b.tile == null || b.tile.build != b) continue;
+                if(b.tile.pos() == proxyPos) continue;
+                int cx = b.tile.x / TAM_CHUNK, cy = b.tile.y / TAM_CHUNK;
+                if(cx < 1 || cy < 1 || cx > n - 2 || cy > n - 2) continue;
+                Regiones.chunk(vcx0 + cx, vcy0 + cy, true).edificios.add(Reg.desde(b, Streamer.ox, Streamer.oy));
+            }
+            // 3) niebla explorada (si la niebla aún no existe, se conserva la anterior)
+            for(int cy = 1; cy <= n - 2; cy++){
+                for(int cx = 1; cx <= n - 2; cx++){
+                    int[] m = null;
+                    if(desc != null){
+                        int[] filas = new int[32];
+                        boolean alguno = false;
+                        for(int ly = 0; ly < TAM_CHUNK; ly++){
+                            int row = 0, base = cx * TAM_CHUNK + (cy * TAM_CHUNK + ly) * w;
+                            for(int lx = 0; lx < TAM_CHUNK; lx++){
+                                if(desc.get(base + lx)){ row |= 1 << lx; alguno = true; }
+                            }
+                            filas[ly] = row;
+                        }
+                        if(alguno) m = filas;
+                    }else{
+                        m = nieblaVieja.get(Streamer.clave(cx, cy));
+                    }
+                    if(m != null) Regiones.chunk(vcx0 + cx, vcy0 + cy, true).niebla = m;
+                }
+            }
+        }
+
+        static void escribirAsync(Datos d, boolean sincrono){
             final Meta m = actual;
             final Dimension dim = m.dim;
             m.ultimo = System.currentTimeMillis();
+            final byte[] estado = d.bytes();
+            final java.util.HashMap<Fi, byte[]> regs = Regiones.serializarSucias();
             Runnable escribir = () -> {
-                Datos.escribirArchivo(Almacen.archivoDim(m, dim), bytes);
+                for(java.util.Map.Entry<Fi, byte[]> e : regs.entrySet()){
+                    if(e.getValue() == null){ if(e.getKey().exists()) e.getKey().delete(); }
+                    else Datos.escribirArchivo(e.getKey(), e.getValue());
+                }
+                if(estado != null) Datos.escribirArchivo(Almacen.archivoDim(m, dim), estado);
                 Almacen.guardarMeta(m);
             };
             if(sincrono) escribir.run();
             else Threads.daemon("MundoInfinito-Guardado", escribir);
+            Regiones.evictar();
+        }
+
+        static void guardar(boolean sincrono){
+            if(actual == null || !Streamer.activo || Streamer.restaurando || Vars.world.width() < 10) return;
+            double[] pos = posicionVirtual();
+            Datos d = Datos.capturar(pos[0], pos[1]);
+            capturarEnMemoria();
+            escribirAsync(d, sincrono);
+        }
+
+        // ---------- MUNDO INFINITO: reubicar la ventana ----------
+        /**
+         * Cuando el jugador se acerca al borde de la ventana, se guarda todo en coordenadas virtuales y la
+         * ventana se vuelve a abrir centrada en él. El terreno es idéntico (función pura de x,y virtuales),
+         * los edificios vuelven a su sitio, y las unidades y el inventario viajan con el jugador.
+         */
+        static void rebasar(){
+            if(viajando || actual == null || !Streamer.activo || Streamer.restaurando) return;
+            if(Time.time - ultimoRebase < 600f) return;
+            if(Vars.player == null || Vars.player.dead()) return;
+            viajando = true;
+            ultimoRebase = Time.time;
+
+            double[] pos = posicionVirtual();
+            Datos d = Datos.capturar(pos[0], pos[1]);
+            capturarEnMemoria();
+            escribirAsync(d, false);
+            abrir(actual, actual.dim, d, pos[0], pos[1], true);
         }
 
         // ---------- portales ----------
         static void viajarPorPortal(int jugadorX, int jugadorY){
             if(viajando || actual == null) return;
             viajando = true;
-            Vars.ui.loadfrag.show("Cruzando el portal...");
+            Carga.mostrar("Cruzando el portal...");
 
-            // 1-2) guardar estado y posición exacta de la dimensión actual
-            Streamer.jugadorX = jugadorX;
-            Streamer.jugadorY = jugadorY;
-            guardar(true);
+            // 1-2) guardar estado y posición exacta de la dimensión actual (coordenadas virtuales)
+            double[] pos = posicionVirtual();
+            Datos actualD = Datos.capturar(pos[0], pos[1]);
+            capturarEnMemoria();
+            escribirAsync(actualD, true);
 
             Meta m = actual;
             Dimension destino = m.dim.otra();
+            Regiones.iniciar(m, destino);      // almacén propio de la otra dimensión
             Fi f = Almacen.archivoDim(m, destino);
             Datos d = f.exists() ? Datos.leer(f) : null;
-            int px = d != null ? (int)d.px : jugadorX;
-            int py = d != null ? (int)d.py : jugadorY;
 
-            // 3-6) limpiar, conmutar y regenerar con la MISMA semilla pero otro planeta
-            abrir(m, destino, d, px, py);
+            // 3-6) limpiar, conmutar y regenerar con la MISMA semilla pero otro planeta, en las mismas coordenadas virtuales
+            if(d != null) abrir(m, destino, d, d.vx, d.vy, false);
+            else abrir(m, destino, null, pos[0], pos[1], false);
         }
     }
 
@@ -1564,7 +2008,7 @@ public class MundoInfinitoMod extends Mod{
                 }
                 for(Meta m : metas){
                     Table fila = new Table();
-                    fila.add("[accent]" + m.nombre + "[]\n" + m.dim.nombre() + " · " + m.tam + "x" + m.tam + " · " + hace(m.ultimo))
+                    fila.add("[accent]" + m.nombre + "[]\n" + m.dim.nombre() + " · ventana " + m.tam + " · " + hace(m.ultimo))
                         .left().growX().pad(8f).minWidth(260f);
                     fila.button("Jugar", () -> { d.hide(); Mundos.continuar(m); }).size(110f, 52f).pad(4f);
                     fila.button("Borrar", () -> Vars.ui.showConfirm("Borrar mundo", "¿Borrar \"" + m.nombre + "\" para siempre?", () -> {

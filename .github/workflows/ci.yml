@@ -23,10 +23,29 @@ jobs:
           distribution: temurin
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
-      - name: Build mod artifact
+      - name: Clean
         run: |
           chmod +x gradlew
-          ./gradlew clean dex
+          ./gradlew clean
+      # EntityAnno descarga los componentes de Mindustry desde api.github.com SIN autenticar
+      # (límite: 60 peticiones/hora por IP, y los runners comparten IP). Aquí lo hacemos
+      # con el token del workflow y luego saltamos la tarea :fetchComps.
+      - name: Pre-fetch Mindustry components (authenticated)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG=$(gh release view --repo Anuken/Mindustry --json tagName -q .tagName)
+          echo "Mindustry release: $TAG"
+          mkdir -p build/fetched-raw
+          gh api "repos/Anuken/Mindustry/contents/core/src/mindustry/entities/comp?ref=$TAG" \
+            --jq '.[] | "\(.name) \(.download_url)"' |
+          while read -r name url; do
+            curl -fsSL --retry 3 "$url" -o "build/fetched-raw/$name"
+          done
+          echo "Components: $(ls build/fetched-raw | wc -l)"
+      - name: Build mod artifact
+        run: ./gradlew dex -x fetchComps --stacktrace
       - name: Upload built mod artifact as a GitHub Action artifact
         uses: actions/upload-artifact@v7
         if: github.event_name == 'push' || github.event_name == 'pull_request'

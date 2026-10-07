@@ -67,11 +67,6 @@ allprojects{
     apply(plugin = "java")
     sourceSets["main"].java.setSrcDirs(listOf(layout.projectDirectory.dir("src")))
 
-    java{
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-
     dependencies{
         registerTransform(TrimSources::class){
             from.attribute(ArtifactTypeDefinition.ARTIFACT_TYPE_ATTRIBUTE, ArtifactTypeDefinition.JAR_TYPE)
@@ -133,6 +128,9 @@ allprojects{
             isFork = false
             encoding = "UTF-8"
         }
+
+        sourceCompatibility = "17"
+        targetCompatibility = "17"
     }
 }
 

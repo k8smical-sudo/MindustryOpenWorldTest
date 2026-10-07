@@ -2208,13 +2208,11 @@ public class MundoInfinitoMod extends Mod{
             r.fog = true;
             r.staticFog = true;
             r.bannedBlocks.clear();
-            r.hiddenBuildItems.clear();
             if(actual != null && actual.dimensional()){
                 // Dimensión: la UI nativa de Mindustry se adapta sola al planeta (bloques por entorno, ítems ocultos del otro planeta).
                 Planet p = actual.dim == DIM_SERPULO ? Planets.serpulo : Planets.erekir;
                 r.planet = p;
                 r.env = p.defaultEnv;
-                r.hiddenBuildItems.addAll(p.hiddenItems);
                 r.loadout = actual.dim == DIM_SERPULO
                     ? ItemStack.list(Items.copper, 400, Items.lead, 250, Items.sand, 100, Items.graphite, 150)
                     : ItemStack.list(Items.beryllium, 200, Items.graphite, 150);

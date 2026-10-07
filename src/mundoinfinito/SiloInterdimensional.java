@@ -23,7 +23,7 @@ import mindustry.world.blocks.storage.StorageBlock;
  *  - VIAJE: botón en su menú de configuración. Requiere energía y combustible; gasta 60 de combustible.
  *
  * El coste de construcción usa solo ítems que existen en AMBOS planetas (silicio, grafito, torio): los demás
- * están ocultos en el otro planeta (Rules.hiddenBuildItems) y el silo no se podría construir allí.
+ * están ocultos en el otro planeta (Item.shownPlanets / Rules.planet) y el silo no se podría construir allí.
  */
 public class SiloInterdimensional extends StorageBlock{
     static Block silo;

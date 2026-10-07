@@ -1,0 +1,27 @@
+--- a/src/mundoinfinito/MundoInfinitoMod.java	2026-10-07 22:47:41.000000000 +0000
++++ b/src/mundoinfinito/MundoInfinitoMod.java	2026-10-07 22:56:31.964828634 +0000
+@@ -2208,13 +2208,11 @@
+             r.fog = true;
+             r.staticFog = true;
+             r.bannedBlocks.clear();
+-            r.hiddenBuildItems.clear();
+             if(actual != null && actual.dimensional()){
+                 // Dimensión: la UI nativa de Mindustry se adapta sola al planeta (bloques por entorno, ítems ocultos del otro planeta).
+                 Planet p = actual.dim == DIM_SERPULO ? Planets.serpulo : Planets.erekir;
+                 r.planet = p;
+                 r.env = p.defaultEnv;
+-                r.hiddenBuildItems.addAll(p.hiddenItems);
+                 r.loadout = actual.dim == DIM_SERPULO
+                     ? ItemStack.list(Items.copper, 400, Items.lead, 250, Items.sand, 100, Items.graphite, 150)
+                     : ItemStack.list(Items.beryllium, 200, Items.graphite, 150);
+--- a/src/mundoinfinito/SiloInterdimensional.java	2026-10-07 22:47:41.000000000 +0000
++++ b/src/mundoinfinito/SiloInterdimensional.java	2026-10-07 22:56:31.965244680 +0000
+@@ -23,7 +23,7 @@
+  *  - VIAJE: botón en su menú de configuración. Requiere energía y combustible; gasta 60 de combustible.
+  *
+  * El coste de construcción usa solo ítems que existen en AMBOS planetas (silicio, grafito, torio): los demás
+- * están ocultos en el otro planeta (Rules.hiddenBuildItems) y el silo no se podría construir allí.
++ * están ocultos en el otro planeta (Item.shownPlanets / Rules.planet) y el silo no se podría construir allí.
+  */
+ public class SiloInterdimensional extends StorageBlock{
+     static Block silo;

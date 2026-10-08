@@ -1,6 +1,5 @@
 package mundoinfinito;
 
-import arc.scene.ui.layout.Table;
 import arc.util.Time;
 import mindustry.content.Fx;
 import mindustry.content.Items;
@@ -20,7 +19,8 @@ import mindustry.world.blocks.storage.StorageBlock;
  *  - RECEPCIÓN: descarga poco a poco lo que los drones traen a esta dimensión, directamente a los bloques
  *    de alrededor (cintas, contenedores...). Lo recibido NO pasa por el inventario del silo, así que nunca
  *    se reenvía por error.
- *  - VIAJE: botón en su menú de configuración. Requiere energía y combustible; gasta 60 de combustible.
+ *  - PORTAL: al tocarlo abre un diálogo para ir a la base principal, a un checkpoint o a la otra dimensión (gratis).
+ *    Hay portales derelictos dentro de las bases enemigas y en las ruinas; este bloque también se puede construir.
  *
  * El coste de construcción usa solo ítems que existen en AMBOS planetas (silicio, grafito, torio): los demás
  * están ocultos en el otro planeta (Item.shownPlanets / Rules.planet) y el silo no se podría construir allí.
@@ -36,6 +36,8 @@ public class SiloInterdimensional extends StorageBlock{
         silo = new SiloInterdimensional("silo-interdimensional"){{
             requirements(Category.effect, ItemStack.with(Items.silicon, 400, Items.graphite, 300, Items.thorium, 200));
             alwaysUnlocked = true;   // no está en ningún árbol tecnológico
+            localizedName = "Portal interdimensional";
+            description = "Toca para viajar: base principal, checkpoints u otra dimensión. Envía y recibe recursos entre dimensiones.";
         }};
     }
 
@@ -49,7 +51,7 @@ public class SiloInterdimensional extends StorageBlock{
         hasPower = true;
         hasLiquids = true;
         liquidCapacity = 300f;
-        configurable = true;
+        configurable = false;               // al tocarlo se abre el diálogo de portal (tapped)
         coreMerge = false;                  // jamás se fusiona con un núcleo
         consumePower(6f);
         consumeLiquid(Liquids.oil, 0.15f);  // combustible
@@ -66,10 +68,6 @@ public class SiloInterdimensional extends StorageBlock{
 
         boolean dimensional(){
             return MundoInfinitoMod.Mundos.actual != null && MundoInfinitoMod.Mundos.actual.dimensional();
-        }
-
-        boolean listoParaViajar(){
-            return dimensional() && power.status > 0.95f && liquids.get(Liquids.oil) >= combustibleViaje;
         }
 
         @Override
@@ -135,20 +133,10 @@ public class SiloInterdimensional extends StorageBlock{
             return false;
         }
 
+        /** Tocar el portal abre el diálogo de viaje (base principal, checkpoints u otra dimensión). Sirve también el derelicto. */
         @Override
-        public void buildConfiguration(Table table){
-            final int destino = 1 - dim();
-            table.label(() -> {
-                if(!dimensional()) return "[scarlet]Solo en mundos nuevos[]";
-                return "Energía " + (int)(power.status * 100f) + "%   Combustible " + (int)liquids.get(Liquids.oil)
-                    + "\n" + "En camino hacia aquí: " + Orbita.pendientes(dim())
-                    + "   hacia allá: " + Orbita.pendientes(1 - dim());
-            }).pad(6f).row();
-            table.button("Viajar a " + (destino == MundoInfinitoMod.DIM_SERPULO ? "Serpulo" : "Erekir"), () -> {
-                if(!listoParaViajar()) return;
-                liquids.remove(Liquids.oil, combustibleViaje);
-                MundoInfinitoMod.Mundos.saltar(destino);
-            }).size(260f, 56f).disabled(b -> !listoParaViajar()).row();
+        public void tapped(){
+            Portal.abrir(this);
         }
     }
 }

@@ -132,6 +132,7 @@ public class MundoInfinitoMod extends Mod{
         int semilla, tam, nucleo, gen;   // nucleo: 0 = según la semilla, 1 = Shard (Serpulo), 2 = Bastion (Erekir)
         int dim;                         // dimensión actual (solo gen >= 3): 0 = Serpulo, 1 = Erekir
         long creado, ultimo;
+        double reloj;                    // ticks de juego transcurridos en TODO el mundo (las dos dimensiones): mide las ausencias
 
         Jval aJson(){
             Jval j = Jval.newObject();
@@ -144,6 +145,7 @@ public class MundoInfinitoMod extends Mod{
             j.put("dim", dim);
             j.put("creado", creado);
             j.put("ultimo", ultimo);
+            j.put("reloj", reloj);
             return j;
         }
 
@@ -159,6 +161,7 @@ public class MundoInfinitoMod extends Mod{
             m.dim = j.getInt("dim", 0);
             m.creado = j.getLong("creado", 0);
             m.ultimo = j.getLong("ultimo", 0);
+            m.reloj = j.getDouble("reloj", 0.0);
             return m;
         }
 
@@ -361,7 +364,7 @@ public class MundoInfinitoMod extends Mod{
         static final float LIM_S = 0.522f, LIM_E = 0.522f;       // umbral base de muros (más alto = menos muros)
         static final float ANCHO_PASO = 0.018f;                  // anchura base de los pasillos que cortan los macizos
         static final float K_VENA = 0.42f;                       // grosor general de las vetas globales
-        static final int STRIDE_DEP = 8, STRIDE_POZ = 6;
+        static final int STRIDE_DEP = 10, STRIDE_POZ = 6;
         // Dos orientaciones fijas para los macizos alargados (constantes: no se deforman lejos del origen)
         static final float CA = 0.9004f, SA = 0.4350f, CB = -0.5048f, SB = 0.8632f;
 
@@ -546,6 +549,119 @@ public class MundoInfinitoMod extends Mod{
             return dim == 1 ? pozoErekir : !pozoErekir;
         }
 
+        // ---- Morfologías de depósito: cada mena puede ser una veta corta, media o larga, un racimo, un parche, ----
+        // ---- una dispersión, una doble veta o un arco. Ninguna es un círculo perfecto.                      ----
+        static final int M_CORTA = 0, M_MEDIA = 1, M_LARGA = 2, M_RACIMO = 3, M_PARCHE = 4, M_DISPERSA = 5, M_DOBLE = 6, M_ARCO = 7;
+        static final float[] PESO_MORF = {0.26f, 0.16f, 0.05f, 0.17f, 0.18f, 0.12f, 0.03f, 0.03f};
+
+        static int elegirMorf(float r){
+            float acc = 0f;
+            for(int i = 0; i < PESO_MORF.length; i++){
+                acc += PESO_MORF[i];
+                if(r < acc) return i;
+            }
+            return M_CORTA;
+        }
+
+        static boolean ladrillo(int morf){   // formas con eje (aceptan patrones de grafito)
+            return morf == M_CORTA || morf == M_MEDIA || morf == M_LARGA || morf == M_DOBLE || morf == M_ARCO;
+        }
+
+        /** Parámetros {semilargo/dispersión, semiancho/escala, curva} de una morfología; r1..r3 en [0,1). */
+        static void paramsMorf(int morf, float r1, float r2, float r3, float mult, float[] out){
+            float hl, hw, cv = (r3 - 0.5f) * 1.2f;
+            switch(morf){
+                case M_CORTA: hl = 4f + r1 * 5f; hw = 1.0f + r2 * 1.2f; break;
+                case M_MEDIA: hl = 9f + r1 * 7f; hw = 1.2f + r2 * 1.4f; break;
+                case M_LARGA: hl = 16f + r1 * 8f; hw = 0.9f + r2 * 0.6f; break;
+                case M_RACIMO: hl = 5f + r1 * 4f; hw = 1.3f + r2 * 1.1f; break;
+                case M_PARCHE: hl = 3f + r1 * 3.5f; hw = 0.5f + r2 * 0.35f; break;      // hw = razón entre ejes
+                case M_DISPERSA: hl = 5f + r1 * 5f; hw = 0.22f + r2 * 0.28f; break;     // hw = densidad
+                case M_DOBLE: hl = 5f + r1 * 5f; hw = 0.9f + r2 * 0.7f; break;
+                default: hl = 6f + r1 * 5f; hw = 1.1f + r2 * 0.9f; cv = (r3 < 0.5f ? -1f : 1f) * (1.7f + r3 * 0.7f); break;   // arco
+            }
+            out[0] = hl * mult;
+            out[1] = (morf == M_PARCHE || morf == M_DISPERSA) ? hw : hw * Math.max(0.7f, mult);
+            out[2] = cv;
+        }
+
+        /** Radio (en tiles) dentro del cual puede haber algo de la forma: sirve para descartar rápido. */
+        static float alcance(int morf, float hl, float hw){
+            switch(morf){
+                case M_RACIMO: return hl + hw * 1.5f + 3f;
+                case M_PARCHE: case M_DISPERSA: return hl * 1.4f + 3f;
+                case M_DOBLE: return hl * 1.3f + hw * 5f + 4f;
+                default: return hl * 1.25f + hw * 1.6f + 4f + Math.abs(hl) * 0.1f;
+            }
+        }
+
+        /**
+         * Forma de un depósito en la casilla (dx, dy) respecto a su centro. @return distancia normalizada al eje
+         * (< 1 dentro de la mena; hasta 1 + margen/tamaño es el borde de roca de las menas de pared) o -1 si queda fuera.
+         * aux[0] = coordenada a lo largo (-1..1), aux[1] = coordenada a lo ancho (-1..1): las usan los patrones de grafito.
+         */
+        static float forma(int morf, float dx, float dy, float hl, float hw, float rot, float curva, int id, int x, int y, int s, float margen, float[] aux){
+            float c = (float)Math.cos(rot), sn = (float)Math.sin(rot);
+            float a = dx * c + dy * sn, b = -dx * sn + dy * c;
+            float dn, tam;
+            switch(morf){
+                case M_RACIMO: {
+                    int nb = 3 + (hash(id, 1, sem(s, 7600)) & 3);
+                    float mejor = 9e9f;
+                    tam = 1.8f;
+                    for(int k = 0; k < nb; k++){
+                        float ang = rnd(id, k, sem(s, 7601)) * 6.2831853f, rad = rnd(id, k + 9, sem(s, 7602)) * hl;
+                        float bx = (float)Math.cos(ang) * rad, by = (float)Math.sin(ang) * rad;
+                        float rb = hw * (0.7f + 0.6f * rnd(id, k + 19, sem(s, 7603)));
+                        float d = (float)Math.hypot(dx - bx, dy - by) / (rb * (0.8f + 0.45f * fbm(sem(s, 7604), 5f, 2, x, y)));
+                        mejor = Math.min(mejor, d);
+                        tam = rb;
+                    }
+                    dn = mejor;
+                    aux[0] = 0f; aux[1] = Mathf.clamp(dn, -1f, 1f);
+                    break;
+                }
+                case M_PARCHE: {
+                    float A = hl, B = Math.max(1.5f, hl * hw);
+                    dn = (float)Math.sqrt((a / A) * (a / A) + (b / B) * (b / B)) + (fbm(sem(s, 7605), 6f, 2, x, y) - 0.5f) * 0.55f;
+                    tam = B;
+                    aux[0] = Mathf.clamp(a / A, -1f, 1f); aux[1] = Mathf.clamp(b / B, -1f, 1f);
+                    break;
+                }
+                case M_DISPERSA: {
+                    dn = (float)Math.hypot(dx, dy) / hl + (fbm(sem(s, 7606), 7f, 2, x, y) - 0.5f) * 0.5f;
+                    tam = hl * 0.5f;
+                    if(dn < 1f && rnd(x, y, sem(s, 7607)) > hw * (1f - 0.6f * dn)) return -1f;   // solo algunas casillas: "pecas"
+                    aux[0] = 0f; aux[1] = Mathf.clamp(dn, -1f, 1f);
+                    break;
+                }
+                default: {   // veta (corta, media, larga, doble o arco)
+                    float u = a / hl;
+                    if(u < -1.05f || u > 1.05f) return -1f;
+                    float arco = curva * u * u * hl * 0.45f;
+                    float lente = (float)Math.sqrt(Math.max(0f, 1f - u * u));
+                    float hwl = Math.max(0.3f, hw * (0.25f + 0.75f * lente));
+                    float ruido = 0.78f + 0.50f * fbm(sem(s, 7608), 6f, 2, x, y);
+                    float across = b - arco;
+                    if(morf == M_DOBLE){
+                        float off = hw * 1.8f + 1.2f;
+                        float a1 = Math.abs(across - off), a2 = Math.abs(across + off);
+                        across = a1 < a2 ? across - off : across + off;
+                    }
+                    dn = Math.abs(across) / (hwl * ruido);
+                    tam = hwl * ruido;
+                    aux[0] = Mathf.clamp(u, -1f, 1f); aux[1] = Mathf.clamp(across / hwl, -1f, 1f);
+                    break;
+                }
+            }
+            return dn <= 1f + margen / Math.max(0.6f, tam) ? dn : -1f;
+        }
+
+        /** Mena (tipo) que admite variante de pared en Erekir. */
+        static boolean tieneMuro(int tipo){
+            return tipo == D_BERILIO || tipo == D_TUNGSTENO || tipo == D_TORIO_E;
+        }
+
         static Spawn crearSpawn(int s, int dim){
             Spawn sp = new Spawn();
             sp.semilla = s;
@@ -563,23 +679,24 @@ public class MundoInfinitoMod extends Mod{
             sp.rx = (int)(Math.cos(angE) * disE);
             sp.ry = (int)(Math.sin(angE) * disE);
 
-            // Cosas que se reparten alrededor del spawn:
-            // {clase (0 veta, 1 pozo), tipo, dMin, dMax, semilargo/radio mín, máx, semiancho mín, máx}
+            // Cosas que se reparten alrededor del spawn: {clase (0 veta, 1 pozo), tipo, dMin, dMax, pared (0/1)}
+            // TODO lo imprescindible queda a unos 20-60 tiles: la base nunca obliga a irse lejos ni a modificar el terreno.
             Seq<float[]> cosas = new Seq<>();
-            // imprescindibles: SIEMPRE hay con qué empezar, pero en sitios, largos, anchos y curvaturas distintos cada vez
-            cosas.add(new float[]{0, D_COBRE, 24, 62, 5f, 10f, 1.5f, 2.8f});
-            cosas.add(new float[]{0, D_PLOMO, 24, 66, 5f, 10f, 1.5f, 2.8f});
-            cosas.add(new float[]{0, D_BERILIO, 26, 72, 5f, 10f, 1.5f, 2.8f});
-            cosas.add(new float[]{0, D_GRAFITO, 40, 96, 9f, 18f, 2.6f, 5f});
-            cosas.add(new float[]{0, D_ARENA, 22, 64, 6f, 12f, 4.5f, 8f});
+            cosas.add(new float[]{0, D_COBRE, 18, 44, 0});
+            cosas.add(new float[]{0, D_PLOMO, 18, 46, 0});
+            cosas.add(new float[]{0, D_ARENA, 16, 44, 0});
+            cosas.add(new float[]{0, D_BERILIO, 18, 46, 0});          // Erekir: berilio de suelo...
+            cosas.add(new float[]{0, D_BERILIO, 24, 54, 1});          // ...y berilio EN PARED, a mano desde el inicio
+            cosas.add(new float[]{0, D_GRAFITO, 24, 56, 0});
+            cosas.add(new float[]{0, D_TUNGSTENO, 40, 74, rnd(5, 21, sem(s, 9010)) < 0.6f ? 1 : 0});
             // extras con probabilidad
-            if(rnd(5, 1, sem(s, 9010)) < 0.65f) cosas.add(new float[]{0, D_CHATARRA, 40, 92, 4f, 8f, 1.4f, 2.4f});
-            if(rnd(5, 2, sem(s, 9010)) < 0.45f) cosas.add(new float[]{0, D_CARBON, 60, 120, 5f, 9f, 1.8f, 3f});
-            if(rnd(5, 3, sem(s, 9010)) < 0.50f) cosas.add(new float[]{0, D_COBRE, 55, 120, 5f, 10f, 1.6f, 3f});
-            if(rnd(5, 4, sem(s, 9010)) < 0.40f) cosas.add(new float[]{0, D_PLOMO, 55, 120, 5f, 10f, 1.6f, 3f});
-            if(rnd(5, 5, sem(s, 9010)) < 0.50f) cosas.add(new float[]{0, D_BERILIO, 60, 125, 5f, 9f, 1.6f, 2.8f});
-            if(rnd(5, 6, sem(s, 9010)) < 0.12f) cosas.add(new float[]{0, D_TITANIO, 95, 150, 4f, 8f, 1.5f, 2.6f});
-            if(rnd(5, 7, sem(s, 9010)) < 0.12f) cosas.add(new float[]{0, D_TUNGSTENO, 100, 150, 4f, 8f, 1.5f, 2.6f});
+            if(rnd(5, 1, sem(s, 9010)) < 0.80f) cosas.add(new float[]{0, D_CHATARRA, 36, 74, 0});
+            if(rnd(5, 2, sem(s, 9010)) < 0.75f) cosas.add(new float[]{0, D_CARBON, 46, 86, 0});
+            if(rnd(5, 3, sem(s, 9010)) < 0.85f) cosas.add(new float[]{0, D_COBRE, 46, 90, 0});
+            if(rnd(5, 4, sem(s, 9010)) < 0.80f) cosas.add(new float[]{0, D_PLOMO, 46, 90, 0});
+            if(rnd(5, 5, sem(s, 9010)) < 0.60f) cosas.add(new float[]{0, D_BERILIO, 46, 92, rnd(5, 22, sem(s, 9010)) < 0.5f ? 1 : 0});
+            if(rnd(5, 6, sem(s, 9010)) < 0.12f) cosas.add(new float[]{0, D_TITANIO, 95, 150, 0});
+            if(rnd(5, 7, sem(s, 9010)) < 0.35f) cosas.add(new float[]{0, D_GRAFITO, 60, 104, 0});
             // pozos: 1 a 3, de tipos distintos entre 6 (agua, alquitrán, geotérmica, respiraderos, arkycita, escoria)
             int nPozos = Math.min(3, 1 + (int)(rnd(5, 8, sem(s, 9020)) * 3f));
             int[] tipos = {0, 1, 2, 3, 4, 5};
@@ -587,23 +704,26 @@ public class MundoInfinitoMod extends Mod{
                 int j = (int)(rnd(i, 3, sem(s, 9021)) * (i + 1));
                 int t = tipos[i]; tipos[i] = tipos[j]; tipos[j] = t;
             }
-            for(int k = 0; k < nPozos; k++) cosas.add(new float[]{1, tipos[k], 44, 98, 6.5f, 9.5f, 0, 0});
+            for(int k = 0; k < nPozos; k++) cosas.add(new float[]{1, tipos[k], 30, 58, 0});
 
             if(dim >= 0){
-                // Dimensión propia: se quita todo lo del otro planeta (el resto de la lógica no cambia)...
+                // Dimensión propia: se quita todo lo del otro planeta...
                 for(int i = cosas.size - 1; i >= 0; i--){
                     float[] c = cosas.get(i);
                     if(!permitido((int)c[0], (int)c[1], dim)) cosas.remove(i);
                 }
                 // ...y se garantiza lo imprescindible de ese planeta, que el filtro pudo quitar
+                boolean hayCarbon = false, hayAgua = false, hayRespiradero = false;
+                for(float[] c : cosas){
+                    if(c[0] == 0 && (int)c[1] == D_CARBON) hayCarbon = true;
+                    if(c[0] == 1 && (int)c[1] == 0) hayAgua = true;
+                    if(c[0] == 1 && (int)c[1] == 3) hayRespiradero = true;
+                }
                 if(dim == 0){
-                    cosas.add(new float[]{0, D_CARBON, 45, 100, 5f, 9f, 1.8f, 3f});
-                    cosas.add(new float[]{1, 0, 44, 98, 6.5f, 9.5f, 0, 0});     // agua
-                    if(rnd(5, 9, sem(s, 9010)) < 0.5f) cosas.add(new float[]{1, 1, 50, 100, 6.5f, 9.5f, 0, 0}); // alquitrán
-                }else{
-                    cosas.add(new float[]{0, D_TUNGSTENO, 60, 110, 4f, 8f, 1.5f, 2.6f});
-                    cosas.add(new float[]{1, 3, 44, 98, 6.5f, 9.5f, 0, 0});     // respiraderos
-                    if(rnd(5, 9, sem(s, 9010)) < 0.5f) cosas.add(new float[]{1, 4, 50, 100, 6.5f, 9.5f, 0, 0}); // arkycita
+                    if(!hayCarbon) cosas.add(new float[]{0, D_CARBON, 46, 86, 0});
+                    if(!hayAgua) cosas.add(new float[]{1, 0, 30, 58, 0});
+                }else if(!hayRespiradero){
+                    cosas.add(new float[]{1, 3, 30, 58, 0});
                 }
             }
 
@@ -614,26 +734,41 @@ public class MundoInfinitoMod extends Mod{
             }
             int n = cosas.size;
             float a0 = rnd(7, 7, sem(s, 9031)) * 6.2831853f;
-            // posiciones tentativas
-            float[] px = new float[n], py = new float[n], pr = new float[n], pw = new float[n];
+            float[] px = new float[n], py = new float[n], pr = new float[n], hl = new float[n], hw = new float[n], cv = new float[n];
+            int[] morfs = new int[n];
+            float[] par = new float[3];
             for(int k = 0; k < n; k++){
                 float[] c = cosas.get(k);
                 float ang = a0 + (k + (rnd(k, 8, sem(s, 9032)) - 0.5f) * 0.7f) * (6.2831853f / n);
                 float d = c[2] + rnd(k, 9, sem(s, 9033)) * (c[3] - c[2]);
-                pr[k] = c[4] + rnd(k, 10, sem(s, 9034)) * (c[5] - c[4]);
-                pw[k] = c[6] + rnd(k, 13, sem(s, 9037)) * (c[7] - c[6]);
+                int tipo = (int)c[1];
+                if(c[0] == 0){
+                    int morf;
+                    if(tipo == D_GRAFITO) morf = new int[]{M_CORTA, M_MEDIA, M_DOBLE, M_ARCO}[(int)(rnd(k, 23, sem(s, 9045)) * 4f) & 3];
+                    else if(tipo == D_ARENA) morf = M_PARCHE;
+                    else if(c[4] == 1f) morf = new int[]{M_CORTA, M_RACIMO, M_PARCHE, M_MEDIA}[(int)(rnd(k, 23, sem(s, 9045)) * 4f) & 3];
+                    else{
+                        morf = elegirMorf(rnd(k, 23, sem(s, 9045)));
+                        if(morf == M_LARGA || morf == M_DISPERSA) morf = M_CORTA;   // lo imprescindible nunca es una raya enorme ni polvo suelto
+                    }
+                    float mult = tipo == D_ARENA ? 2.2f : (tipo == D_GRAFITO ? 1.5f : (tipo == D_COBRE || tipo == D_PLOMO || tipo == D_BERILIO ? 1.3f : 1f));
+                    paramsMorf(morf, rnd(k, 10, sem(s, 9034)), rnd(k, 13, sem(s, 9037)), rnd(k, 14, sem(s, 9038)), mult, par);
+                    morfs[k] = morf;
+                    hl[k] = par[0]; hw[k] = par[1]; cv[k] = par[2];
+                    pr[k] = alcance(morf, hl[k], hw[k]) * 0.7f;
+                }else{
+                    pr[k] = 6.5f + rnd(k, 10, sem(s, 9034)) * 3f;
+                }
                 px[k] = (float)Math.cos(ang) * d;
                 py[k] = (float)Math.sin(ang) * d;
             }
-            // que no se pisen: si dos se solapan, el segundo se aleja del spawn (radio efectivo de cada forma)
+            // que no se pisen: si dos se solapan, el segundo se aleja del spawn
             for(int it = 0; it < 6; it++){
                 for(int i = 0; i < n; i++){
                     for(int j = i + 1; j < n; j++){
-                        float ri = cosas.get(i)[0] == 0 ? Math.max(pr[i] * 0.9f, pw[i] * 1.3f) : pr[i];
-                        float rj2 = cosas.get(j)[0] == 0 ? Math.max(pr[j] * 0.9f, pw[j] * 1.3f) : pr[j];
+                        float need = pr[i] * 1.15f + pr[j] * 1.15f + 3f;
                         float ddx = px[j] - px[i], ddy = py[j] - py[i];
                         float dd = (float)Math.sqrt(ddx * ddx + ddy * ddy);
-                        float need = ri * 1.3f + rj2 * 1.3f + 3f;
                         if(dd >= need) continue;
                         float rj = (float)Math.sqrt(px[j] * px[j] + py[j] * py[j]);
                         if(rj < 1f) continue;
@@ -651,10 +786,8 @@ public class MundoInfinitoMod extends Mod{
                     int tipo = (int)c[1];
                     int forma = tipo == D_GRAFITO ? formaGrafito(rnd(k, 11, sem(s, 9035))) : 0;
                     float rot = rnd(k, 12, sem(s, 9036)) * 6.2831853f;
-                    float curva = (rnd(k, 14, sem(s, 9038)) - 0.5f) * 1.6f;     // arco de la veta (-0.8 .. 0.8)
-                    deps.add(c[1]); deps.add(px[k]); deps.add(py[k]); deps.add(pr[k]); deps.add((float)forma); deps.add(rot);
-                    deps.add(pw[k]); deps.add(curva);
-                    // caminos despejados hacia lo esencial (la primera veta de cada tipo básico, el grafito y el arenal)
+                    deps.add(c[1]); deps.add(px[k]); deps.add(py[k]); deps.add(hl[k]); deps.add((float)forma); deps.add(rot);
+                    deps.add(hw[k]); deps.add(cv[k]); deps.add(c[4]); deps.add((float)morfs[k]);
                     boolean esencial = false;
                     if(tipo == D_COBRE && !vCobre){ vCobre = true; esencial = true; }
                     if(tipo == D_PLOMO && !vPlomo){ vPlomo = true; esencial = true; }
@@ -676,41 +809,59 @@ public class MundoInfinitoMod extends Mod{
             return sp;
         }
 
-        // ---- Vetas globales (todo el mundo salvo el spawn): bandas sinuosas de ruido "ridged", NO círculos ----
-        // {tipo, distMin, escala, ancho, umbral de región}
-        static final float[][] VENAS_S = {
-            {D_TORIO, 320, 105f, 0.014f, 0.64f}, {D_TITANIO, 150, 95f, 0.017f, 0.60f}, {D_CARBON, 75, 85f, 0.019f, 0.57f},
-            {D_CHATARRA, 45, 70f, 0.016f, 0.59f}, {D_PLOMO, 0, 90f, 0.021f, 0.55f}, {D_COBRE, 0, 80f, 0.022f, 0.55f}
+        // ---- Depósitos globales (todo el mundo salvo el spawn): una celda de 40x40 puede tener UN depósito, de ----
+        // ---- tipo, forma y tamaño propios, y hay zonas ricas y zonas pobres. Todo es función pura de la celda.  ----
+        static final int CELDA_MENA = 40;
+        static final float PROB_MENA = 0.85f;
+        // {tipo, distMin, peso}
+        static final float[][] TABLA_MENAS_S = {
+            {D_COBRE, 0, 30}, {D_PLOMO, 0, 28}, {D_CHATARRA, 40, 9}, {D_CARBON, 60, 13}, {D_TITANIO, 140, 11}, {D_TORIO, 320, 5}
         };
-        static final float[][] VENAS_E = {
-            {D_TORIO_E, 260, 105f, 0.014f, 0.64f}, {D_TUNGSTENO, 110, 95f, 0.017f, 0.60f},
-            {D_GRAFITO, 30, 85f, 0.023f, 0.56f}, {D_BERILIO, 0, 78f, 0.022f, 0.54f}
+        static final float[][] TABLA_MENAS_E = {
+            {D_BERILIO, 0, 34}, {D_GRAFITO, 25, 20}, {D_TUNGSTENO, 100, 13}, {D_TORIO_E, 260, 5}
         };
 
-        /**
-         * Veta de un tipo en (x, y): el filón es la franja donde un ruido suave cruza 0.5 (curvas largas y sinuosas),
-         * con grosor que varía a lo largo (hilos finos, tramos gordos, huecos) y solo en las regiones que tienen ese mineral.
-         * @return tipo*1000 + distancia al eje (0..99), o -1.  aux = {along, across, forma, 0, 0}
-         */
-        static int vena(int s, int x, int y, boolean ere, float dist, float[] aux){
-            if(dist < 36f) return -1;   // alrededor del spawn solo hay lo planeado
-            float[][] v = ere ? VENAS_E : VENAS_S;
-            for(int i = 0; i < v.length; i++){
-                float[] g = v[i];
-                if(dist < g[1]) continue;
-                int idx = (int)g[0];
-                if(fbm(sem(s, 7100 + idx), 240f, 2, x, y) < g[4]) continue;   // esta región no tiene este mineral
-                float f = fbm(sem(s, 7200 + idx), g[2], 3, x, y);
-                // grosor variable con HUECOS: tramos gordos, hilos finos y cortes (nunca una línea continua)
-                float w = g[3] * K_VENA * Math.max(0f, (fbm(sem(s, 7300 + idx), 20f, 2, x + 300.0, y - 300.0) - 0.36f) * 3.6f);
-                float dd = Math.abs(f - 0.5f);
-                if(dd < w){
-                    aux[0] = fbm(sem(s, 7500), 14f, 2, x, y) * 2f - 1f;
-                    aux[1] = (f >= 0.5f ? 1f : -1f) * dd / w;
-                    aux[2] = Mathf.clamp((int)(fbm(sem(s, 7400 + idx), 300f, 2, x, y) * 6f), 0, 5);
-                    aux[3] = 0f;
-                    aux[4] = 0f;
-                    return idx * 1000 + Math.min(999, (int)(dd / w * 100f));
+        /** @return tipo*1000 + distancia normalizada*100, o -1. aux = {along, across, forma, rot, flag} (flag: 0 suelo, 2 pared). */
+        static int enDepositoGlobal(int s, int x, int y, boolean ere, float dist, float[] aux){
+            if(dist < 30f) return -1;
+            int ci = Math.floorDiv(x, CELDA_MENA), cj = Math.floorDiv(y, CELDA_MENA);
+            float[][] tabla = ere ? TABLA_MENAS_E : TABLA_MENAS_S;
+            float[] par = new float[3];
+            for(int di = -1; di <= 1; di++){
+                for(int dj = -1; dj <= 1; dj++){
+                    int i = ci + di, j = cj + dj;
+                    float r0 = rnd(i, j, sem(s, 7000));
+                    if(r0 > PROB_MENA * 1.8f) continue;                     // descarte barato
+                    float cx0 = (i + 0.5f) * CELDA_MENA, cy0 = (j + 0.5f) * CELDA_MENA;
+                    if(r0 > PROB_MENA * (0.30f + 1.50f * fbm(sem(s, 7001), 380f, 2, cx0, cy0))) continue;   // zonas ricas / pobres
+                    float dsp = (float)Math.hypot(cx0, cy0);
+                    float tot = 0f;
+                    for(float[] g : tabla) if(dsp >= g[1]) tot += g[2];
+                    if(tot <= 0f) continue;
+                    float pick = rnd(i, j, sem(s, 7003)) * tot, acc = 0f;
+                    int tipo = (int)tabla[0][0];
+                    for(float[] g : tabla){
+                        if(dsp < g[1]) continue;
+                        acc += g[2];
+                        if(pick < acc){ tipo = (int)g[0]; break; }
+                    }
+                    int morf = elegirMorf(rnd(i, j, sem(s, 7004)));
+                    float mult = tipo == D_TORIO || tipo == D_TORIO_E ? 0.8f : (tipo == D_TITANIO ? 0.9f : 1f);
+                    paramsMorf(morf, rnd(i, j, sem(s, 7009)), rnd(i, j, sem(s, 7010)), rnd(i, j, sem(s, 7011)), mult, par);
+                    float mx = 8f;
+                    float px = i * CELDA_MENA + mx + rnd(i, j, sem(s, 7005)) * (CELDA_MENA - 2 * mx);
+                    float py = j * CELDA_MENA + mx + rnd(i, j, sem(s, 7012)) * (CELDA_MENA - 2 * mx);
+                    float dx = x - px, dy = y - py, R = alcance(morf, par[0], par[1]);
+                    if(dx * dx + dy * dy > R * R) continue;
+                    boolean pared = ere && tieneMuro(tipo) && morf != M_DISPERSA && rnd(i, j, sem(s, 7007)) < 0.40f;
+                    float rot = rnd(i, j, sem(s, 7006)) * 6.2831853f;
+                    int id = hash(i, j, sem(s, 7008));
+                    float dn = forma(morf, dx, dy, par[0], par[1], rot, par[2], id, x, y, s, pared ? 1.8f : 0f, aux);
+                    if(dn < 0f) continue;
+                    aux[2] = Mathf.clamp((int)(rnd(i, j, sem(s, 7013)) * 6f), 0, 5);
+                    aux[3] = rot;
+                    aux[4] = pared ? 2f : 0f;
+                    return tipo * 1000 + Math.min(999, (int)(dn * 100f));
                 }
             }
             return -1;
@@ -729,31 +880,23 @@ public class MundoInfinitoMod extends Mod{
             }
         }
 
-        /** @return tipo*1000 + distancia al eje (0..99), o -1. aux = {along, across, forma, rot, inicial}. */
+        /** @return tipo*1000 + distancia normalizada*100, o -1. aux = {along, across, forma, rot, flag}: flag 1 inicial, 3 inicial de pared. */
         static int enDeposito(int s, int x, int y, Spawn sp, float[] aux, boolean ere, float dist){
-            // vetas iniciales del spawn: lentejas curvadas (largas y finas), no discos
             float[] dep = sp.dep;
             for(int k = 0; k < dep.length; k += STRIDE_DEP){
                 float dx = (float)(x - (double)dep[k + 1]), dy = (float)(y - (double)dep[k + 2]);
-                float hl = dep[k + 3], hw = dep[k + 6];
-                float corte = hl * 1.25f + hw * 1.6f + 4f;
-                if(dx * dx + dy * dy > corte * corte) continue;
-                float rot = dep[k + 5];
-                float c = (float)Math.cos(rot), sn = (float)Math.sin(rot);
-                float a = dx * c + dy * sn, b = -dx * sn + dy * c;
-                float u = a / hl;
-                if(u < -1.05f || u > 1.05f) continue;
-                float across = b - dep[k + 7] * u * u * hl * 0.45f;       // arco de la veta
-                float lente = (float)Math.sqrt(Math.max(0f, 1f - u * u));
-                float hwl = Math.max(0.3f, hw * (0.25f + 0.75f * lente));  // se afina en las puntas
-                float lim = hwl * (0.78f + 0.50f * fbm(sem(s, 700 + k), 6f, 2, x, y));
-                float ab = Math.abs(across);
-                if(ab < lim){
-                    aux[0] = u; aux[1] = across / hwl; aux[2] = dep[k + 4]; aux[3] = rot; aux[4] = 1f;
-                    return (int)dep[k] * 1000 + Math.min(999, (int)(ab / lim * 100f));
-                }
+                int morf = (int)dep[k + 9];
+                boolean pared = dep[k + 8] == 1f;
+                float R = alcance(morf, dep[k + 3], dep[k + 6]) + (pared ? 2f : 0f);
+                if(dx * dx + dy * dy > R * R) continue;
+                float dn = forma(morf, dx, dy, dep[k + 3], dep[k + 6], dep[k + 5], dep[k + 7], k, x, y, s, pared ? 1.8f : 0f, aux);
+                if(dn < 0f) continue;
+                aux[2] = dep[k + 4];
+                aux[3] = dep[k + 5];
+                aux[4] = pared ? 3f : 1f;
+                return (int)dep[k] * 1000 + Math.min(999, (int)(dn * 100f));
             }
-            return vena(s, x, y, ere, dist, aux);
+            return enDepositoGlobal(s, x, y, ere, dist, aux);
         }
 
         // ---- Cráteres de impacto (Serpulo) ----
@@ -1106,7 +1249,7 @@ public class MundoInfinitoMod extends Mod{
 
             // --- vetas de menas ---
             int dep = (enPozo || pzLibre || hue > 0 || enCrater && mena != 0) ? -1 : enDeposito(s, x, y, sp, aux, ere, dist);
-            boolean inicial = dep >= 0 && aux[4] == 1f;
+            boolean inicial = dep >= 0 && (aux[4] == 1f || aux[4] == 3f);
             if(liq){
                 // las vetas INICIALES siempre quedan en seco; las demás no aparecen bajo el agua
                 if(inicial){ p = ere ? P_REGO : P_SAND; liq = false; }
@@ -1114,6 +1257,7 @@ public class MundoInfinitoMod extends Mod{
             }
             int tipoDep = dep < 0 ? -1 : dep / 1000;
             int radN = dep < 0 ? 0 : dep % 1000;
+            boolean depPared = dep >= 0 && aux[4] >= 2f;   // menas de pared (Erekir): la zona es roca con mena dentro
 
             // --- muros ---
             if(!liq && !spawn && !enCrater && hue == 0){
@@ -1123,8 +1267,10 @@ public class MundoInfinitoMod extends Mod{
                 }
             }
 
-            // las vetas iniciales de menas de suelo nunca quedan tapadas por muros
-            if(inicial && tipoDep != D_GRAFITO && tipoDep != D_BERILIO && tipoDep != D_TUNGSTENO && tipoDep != D_TORIO_E && radN < 100) muro = 0;
+            // los depósitos iniciales de suelo nunca quedan tapados por muros
+            if(inicial && !depPared && tipoDep != D_GRAFITO && radN < 100) muro = 0;
+            // depósito de pared: la zona entera (mena + borde) es roca
+            if(depPared && !liq && !spawn) muro = 1;
 
             // veta de grafito: forma variable (maciza, rota, doble, en tramos, dispersa o con costras)
             if(tipoDep == D_GRAFITO && !liq && !spawn){
@@ -1147,9 +1293,9 @@ public class MundoInfinitoMod extends Mod{
                     case D_CARBON: if(!enMuro) mena = O_CARBON; break;
                     case D_TITANIO: if(!enMuro) mena = O_TITANIO; break;
                     case D_TORIO: if(!enMuro) mena = O_TORIO; break;
-                    case D_BERILIO: mena = enMuro ? O_BERILIO_MURO : O_BERILIO; break;
-                    case D_TUNGSTENO: mena = enMuro ? O_TUNGSTENO_MURO : O_TUNGSTENO; break;
-                    case D_TORIO_E: mena = enMuro ? O_TORIO_MURO : O_TORIO_CRISTAL; break;
+                    case D_BERILIO: mena = depPared ? (radN < 100 ? O_BERILIO_MURO : 0) : (enMuro ? O_BERILIO_MURO : O_BERILIO); break;
+                    case D_TUNGSTENO: mena = depPared ? (radN < 100 ? O_TUNGSTENO_MURO : 0) : (enMuro ? O_TUNGSTENO_MURO : O_TUNGSTENO); break;
+                    case D_TORIO_E: mena = depPared ? (radN < 100 ? O_TORIO_MURO : 0) : (enMuro ? O_TORIO_MURO : O_TORIO_CRISTAL); break;
                     default: break;
                 }
             }
@@ -1361,6 +1507,7 @@ public class MundoInfinitoMod extends Mod{
         int cfgTipo;          // 0 nada, 1 Point2, 2 Point2[], 3 byte[]  (configs RELATIVAS: sobreviven a mover la ventana)
         int[] cfg;
         byte[] cfgBytes;
+        double dt;            // ticks que estuvo FUERA de la ventana (no se guarda: se calcula al cargar)
 
         static Reg desde(Building b, int ox, int oy){
             Reg r = new Reg();
@@ -1459,6 +1606,7 @@ public class MundoInfinitoMod extends Mod{
             final Seq<Reg> edificios = new Seq<>();
             final Seq<Estructuras.RegU> unidades = new Seq<>();   // unidades enemigas de guardia (bases y errantes)
             int[] niebla; // 32 enteros: una fila de 32 bits por fila del chunk (null = nada explorado)
+            double tick;  // reloj del mundo cuando se guardó: sirve para saber cuánto tiempo estuvo ausente
         }
 
         static final class Region{
@@ -1529,6 +1677,7 @@ public class MundoInfinitoMod extends Mod{
                         int nu = in.readInt();
                         for(int j = 0; j < nu; j++) c.unidades.add(Estructuras.RegU.leer(in));
                     }
+                    if(ver >= 5) c.tick = in.readDouble();
                     r.chunks.put(idx, c);
                 }
                 in.close();
@@ -1542,7 +1691,7 @@ public class MundoInfinitoMod extends Mod{
             try{
                 ByteArrayOutputStream bos = new ByteArrayOutputStream();
                 DataOutputStream out = new DataOutputStream(new GZIPOutputStream(bos));
-                out.writeInt(4);
+                out.writeInt(5);
                 out.writeInt(r.chunks.size());
                 for(java.util.Map.Entry<Integer, ChunkGuardado> e : r.chunks.entrySet()){
                     out.writeShort(e.getKey());
@@ -1553,6 +1702,7 @@ public class MundoInfinitoMod extends Mod{
                     if(c.niebla != null) for(int v : c.niebla) out.writeInt(v);
                     out.writeInt(c.unidades.size);
                     for(Estructuras.RegU u : c.unidades) u.escribir(out);
+                    out.writeDouble(c.tick);
                 }
                 out.close();
                 return bos.toByteArray();
@@ -1774,6 +1924,7 @@ public class MundoInfinitoMod extends Mod{
             configsPendientes.clear();
             unidadesPend.clear();
             Estructuras.reiniciarCola();
+            Ausencia.reiniciar();
             fogPend.clear();
             restaurando = false;
             rebaseEnSitio = false;
@@ -1835,7 +1986,8 @@ public class MundoInfinitoMod extends Mod{
                 Tile t = Vars.world.rawTile(x, y);
                 Block f = Vars.content.block(d.piso[i]);
                 if(f instanceof Floor) t.setFloor((Floor)f);
-                if(d.mena[i] != 0) t.setOverlay(Vars.content.block(d.mena[i]));
+                // SIEMPRE se escribe (aire si no hay mena): la casilla puede venir de otra zona del mundo y traer su mena vieja
+                t.setOverlay(d.mena[i] == 0 ? Blocks.air : Vars.content.block(d.mena[i]));
                 if(d.bloque[i] != 0 && t.build == null && t.block() == Blocks.air){
                     t.setBlock(Vars.content.block(d.bloque[i]));
                 }
@@ -1865,6 +2017,9 @@ public class MundoInfinitoMod extends Mod{
 
         static void tick(){
             if(!activo || !Vars.state.isPlaying()) return;
+            if(Mundos.actual != null) Mundos.actual.reloj += Time.delta;
+
+            if(Mundos.rebase != null){ Mundos.avanzarRebase(); return; }   // reubicando la ventana: el streaming espera
 
             if(restaurando){
                 long finR = System.nanoTime() + PRESUPUESTO_RESTAURAR_NS;
@@ -1879,6 +2034,7 @@ public class MundoInfinitoMod extends Mod{
             }
 
             Estructuras.procesar(System.nanoTime() + 1_500_000L);   // coloca bases y ruinas de a poco
+            Ausencia.tick(System.nanoTime() + 2_500_000L);          // las fábricas que estuvieron lejos se ponen al día
 
             long fin = System.nanoTime() + presupuesto();
             while(System.nanoTime() < fin){
@@ -2117,7 +2273,8 @@ public class MundoInfinitoMod extends Mod{
                     Regiones.ChunkGuardado c = Regiones.chunk(vcx0 + cx, vcy0 + cy, false);
                     if(c == null) continue;
                     int key = Streamer.clave(cx, cy);
-                    for(Reg r : c.edificios) Streamer.colaRestaurar.addLast(r);
+                    double ausente = c.tick > 0 ? Math.max(0.0, reloj() - c.tick) : 0.0;
+                    for(Reg r : c.edificios){ r.dt = ausente; Streamer.colaRestaurar.addLast(r); }
                     for(Estructuras.RegU u : c.unidades) Streamer.unidadesPend.add(u);
                     if(!c.edificios.isEmpty() || !c.unidades.isEmpty()) Streamer.requeridos.add(key);
                     if(c.niebla != null){
@@ -2421,6 +2578,8 @@ public class MundoInfinitoMod extends Mod{
                     : ItemStack.list(Items.beryllium, 200, Items.graphite, 150);
                 // Todo se puede construir: sin árbol tecnológico ni bloques baneados.
                 // Los equipos enemigos juegan "con trampa": sus torretas siempre tienen munición y sus bloques no piden energía.
+                // Sin límite de unidades: el tope sale de los núcleos CARGADOS y, al alejarse de la base, valía 0 (morían al crearse).
+                r.disableUnitCap = true;
                 for(Team et : new Team[]{Team.crux, Team.malis}){
                     Rules.TeamRule tr = r.teams.get(et);
                     tr.cheat = true;
@@ -2463,6 +2622,11 @@ public class MundoInfinitoMod extends Mod{
             if(t != null) t.setBlock(SiloInterdimensional.silo, Team.sharded);
         }
 
+        /** Reloj del mundo en ticks (solo avanza mientras se juega). */
+        static double reloj(){
+            return actual == null ? 0.0 : actual.reloj;
+        }
+
         // ---------- restauración de edificios ----------
         static void restaurarEdificio(Reg r){
             try{
@@ -2479,6 +2643,7 @@ public class MundoInfinitoMod extends Mod{
                     }
                 }
                 if(r.cfgTipo != 0) Streamer.configsPendientes.add(r);
+                if(r.dt > 0 && t.build != null && r.equipo == Team.sharded.id) Ausencia.agregar(t.build, r.dt);   // se pone al día
             }catch(Throwable t){
                 Log.warn("[MundoInfinito] No se pudo restaurar @", r.bloque);
             }
@@ -2554,7 +2719,9 @@ public class MundoInfinitoMod extends Mod{
                     if(b.tile.pos() == proxyPos) continue;
                     int cx = b.tile.x / TAM_CHUNK, cy = b.tile.y / TAM_CHUNK;
                     if(cx < 1 || cy < 1 || cx > n - 2 || cy > n - 2) continue;
-                    Regiones.chunk(vcx0 + cx, vcy0 + cy, true).edificios.add(Reg.desde(b, Streamer.ox, Streamer.oy));
+                    Regiones.ChunkGuardado cg = Regiones.chunk(vcx0 + cx, vcy0 + cy, true);
+                    cg.edificios.add(Reg.desde(b, Streamer.ox, Streamer.oy));
+                    cg.tick = reloj();
                 }
             }
             // unidades de guardia enemigas (se guardan junto al chunk donde están)
@@ -2562,7 +2729,9 @@ public class MundoInfinitoMod extends Mod{
                 if(!u.isValid() || !(u.controller() instanceof Estructuras.Guardia)) continue;
                 int cx = u.tileX() / TAM_CHUNK, cy = u.tileY() / TAM_CHUNK;
                 if(cx < 1 || cy < 1 || cx > n - 2 || cy > n - 2) continue;
-                Regiones.chunk(vcx0 + cx, vcy0 + cy, true).unidades.add(Estructuras.RegU.desde(u, Streamer.ox, Streamer.oy));
+                Regiones.ChunkGuardado cg = Regiones.chunk(vcx0 + cx, vcy0 + cy, true);
+                cg.unidades.add(Estructuras.RegU.desde(u, Streamer.ox, Streamer.oy));
+                cg.tick = reloj();
             }
             // 3) niebla explorada (si la niebla aún no existe, se conserva la anterior)
             for(int cy = 1; cy <= n - 2; cy++){
@@ -2613,7 +2782,7 @@ public class MundoInfinitoMod extends Mod{
         }
 
         static void guardar(boolean sincrono){
-            if(actual == null || !Streamer.activo || Streamer.restaurando || Vars.world.width() < 10) return;
+            if(actual == null || !Streamer.activo || Streamer.restaurando || rebase != null || Vars.world.width() < 10) return;
             double[] pos = posicionVirtual();
             Datos d = Datos.capturar(pos[0], pos[1]);
             capturarEnMemoria();
@@ -2626,14 +2795,149 @@ public class MundoInfinitoMod extends Mod{
          * ni segundo dron): se muestra una capa de carga, se guarda en coordenadas virtuales y, dos frames
          * después, rebaseEnSitio() desplaza terreno, entidades y edificios.
          */
+        // ---------- reubicación progresiva de la ventana (sin pantalla de carga) ----------
+        static final class RebaseJob{
+            int tam, n, dx, dy, dcx, dcy, vcx0, vcy0;
+            short[] sf, so, sb;           // fotografía del terreno antes de mover la ventana
+            boolean[] gen;                // qué chunks de ORIGEN estaban generados
+            int[] orden;                  // chunks de DESTINO, del más cercano al jugador al más lejano
+            int idx;
+            boolean[] hecho, restaurado;
+            final java.util.ArrayDeque<Reg> pend = new java.util.ArrayDeque<>();
+            boolean nieblaSucia;
+        }
+
+        static RebaseJob rebase;
+        static java.lang.reflect.Field campoNiebla;
+
+        /** Copia un chunk de destino desde la fotografía (solo lo que cambia: cada cambio real cuesta eventos de render). */
+        static void copiarChunk(RebaseJob j, int di){
+            final int n = j.n, tam = j.tam;
+            int cx0 = di % n, cy0 = di / n;
+            int scx = cx0 + j.dcx, scy = cy0 + j.dcy;
+            boolean ok = scx >= 0 && scy >= 0 && scx < n && scy < n && j.gen[scy * n + scx];
+            Bits bits = Vars.fogControl == null ? null : Vars.fogControl.getDiscovered(Team.sharded);
+            int w = Vars.world.width();
+            for(int ly = 0; ly < TAM_CHUNK; ly++){
+                int y = cy0 * TAM_CHUNK + ly;
+                for(int lx = 0; lx < TAM_CHUNK; lx++){
+                    int x = cx0 * TAM_CHUNK + lx;
+                    Tile t = Vars.world.rawTile(x, y);
+                    if(bits != null) bits.clear(x + y * w);   // la niebla vieja de esta casilla ya no corresponde
+                    if(ok){
+                        int si = (y + j.dy) * tam + (x + j.dx);
+                        Block f = Vars.content.block(j.sf[si]);
+                        if(f instanceof Floor && t.floor() != f) t.setFloor((Floor)f);
+                        Block o = j.so[si] == 0 ? Blocks.air : Vars.content.block(j.so[si]);
+                        if(t.overlay() != o) t.setOverlay(o);   // también BORRA la mena anterior
+                        Block b = j.sb[si] == 0 ? Blocks.air : Vars.content.block(j.sb[si]);
+                        if(t.block() != b){
+                            if(b == Blocks.air) t.setAir(); else t.setBlock(b);
+                        }
+                    }else{
+                        if(t.floor() != Blocks.air) t.setFloor((Floor)Blocks.air);
+                        if(t.overlay() != Blocks.air) t.setOverlay(Blocks.air);
+                        if(t.block() != Blocks.air) t.setAir();
+                    }
+                }
+            }
+            if(ok) Streamer.generados.add(Streamer.clave(cx0, cy0));
+            // niebla explorada de este chunk (desde el almacén de regiones)
+            Regiones.ChunkGuardado c = Regiones.chunk(j.vcx0 + cx0, j.vcy0 + cy0, false);
+            if(c != null && c.niebla != null && bits != null){
+                for(int ly = 0; ly < TAM_CHUNK; ly++){
+                    int row = c.niebla[ly];
+                    if(row == 0) continue;
+                    for(int lx = 0; lx < TAM_CHUNK; lx++){
+                        if((row & (1 << lx)) != 0) bits.set((cx0 * TAM_CHUNK + lx) + (cy0 * TAM_CHUNK + ly) * w);
+                    }
+                }
+            }
+            if(bits != null) j.nieblaSucia = true;
+            j.hecho[di] = true;
+        }
+
+        static boolean vecindarioListo(RebaseJob j, int cx, int cy){
+            for(int dy = -1; dy <= 1; dy++){
+                for(int dx = -1; dx <= 1; dx++){
+                    int x = cx + dx, y = cy + dy;
+                    if(x < 0 || y < 0 || x >= j.n || y >= j.n) continue;
+                    if(!j.hecho[y * j.n + x]) return false;
+                }
+            }
+            return true;
+        }
+
+        /** Los edificios de un chunk se restauran cuando él y sus 8 vecinos ya tienen su terreno (un edificio grande cruza bordes). */
+        static void encolarEntidades(RebaseJob j, int cx, int cy){
+            int n = j.n;
+            if(cx < 1 || cy < 1 || cx > n - 2 || cy > n - 2) return;   // el anillo exterior se ignora, como al abrir el mundo
+            int di = cy * n + cx;
+            if(j.restaurado[di] || !vecindarioListo(j, cx, cy)) return;
+            j.restaurado[di] = true;
+            Regiones.ChunkGuardado c = Regiones.chunk(j.vcx0 + cx, j.vcy0 + cy, false);
+            if(c == null) return;
+            double ausente = c.tick > 0 ? Math.max(0.0, reloj() - c.tick) : 0.0;
+            for(Reg r : c.edificios){ r.dt = ausente; j.pend.addLast(r); }
+            for(Estructuras.RegU u : c.unidades) Estructuras.restaurarUnidad(u);
+            if(!c.edificios.isEmpty() || !c.unidades.isEmpty()) Streamer.requeridos.add(Streamer.clave(cx, cy));
+        }
+
+        /** Un trozo de la reubicación por fotograma. Primero lo que ve el jugador; el resto, en segundo plano. */
+        static void avanzarRebase(){
+            RebaseJob j = rebase;
+            if(j == null) return;
+            try{
+                long fin = System.nanoTime() + (j.idx < 40 ? 12_000_000L : 4_000_000L);
+                while(System.nanoTime() < fin){
+                    if(!j.pend.isEmpty()){
+                        restaurarEdificio(j.pend.pollFirst());
+                    }else if(j.idx < j.orden.length){
+                        int di = j.orden[j.idx++];
+                        copiarChunk(j, di);
+                        int cx = di % j.n, cy = di / j.n;
+                        for(int dy = -1; dy <= 1; dy++){
+                            for(int dx = -1; dx <= 1; dx++) encolarEntidades(j, cx + dx, cy + dy);
+                        }
+                    }else{
+                        rebase = null;
+                        refrescarNiebla();
+                        finalizarRestauracion();    // enlaces, núcleo proxy, inventario; Carga.ocultar y viajando = false
+                        return;
+                    }
+                }
+                if(j.nieblaSucia){
+                    j.nieblaSucia = false;
+                    refrescarNiebla();
+                }
+            }catch(Throwable t){
+                Log.err("[MundoInfinito] Error en la reubicación progresiva", t);
+                rebase = null;
+                viajando = false;
+            }
+        }
+
+        static void refrescarNiebla(){
+            try{
+                if(Vars.headless || Vars.renderer == null) return;
+                if(campoNiebla == null){
+                    campoNiebla = Vars.renderer.fog.getClass().getDeclaredField("lastTeam");
+                    campoNiebla.setAccessible(true);
+                }
+                campoNiebla.set(Vars.renderer.fog, null);   // fuerza al renderizador a volver a copiar la niebla desde la CPU
+            }catch(Throwable t){
+                Log.warn("[MundoInfinito] No se pudo refrescar la niebla");
+            }
+        }
+
         static void rebasar(){
-            if(viajando || actual == null || !Streamer.activo || Streamer.restaurando) return;
+            if(viajando || rebase != null || actual == null || !Streamer.activo || Streamer.restaurando) return;
             if(Time.time - ultimoRebase < 600f) return;
             if(Vars.player == null || Vars.player.dead()) return;
             viajando = true;
             ultimoRebase = Time.time;
-            Carga.mostrar("Reubicando región...");
-            Core.app.post(() -> Core.app.post(Mundos::rebaseEnSitio)); // dos frames: deja dibujar la capa antes del trabajo pesado
+            // Sin pantalla de carga: el terreno se mueve en segundo plano, por chunks, empezando por los que rodean al jugador.
+            Core.app.post(Mundos::rebaseEnSitio);
         }
 
         /**
@@ -2699,6 +3003,7 @@ public class MundoInfinitoMod extends Mod{
                 Streamer.configsPendientes.clear();
                 Streamer.unidadesPend.clear();
                 Estructuras.reiniciarCola();
+                Ausencia.reiniciar();
                 Streamer.fogPend.clear();
                 Streamer.actual = null;
                 Streamer.paso = 0;
@@ -2706,45 +3011,31 @@ public class MundoInfinitoMod extends Mod{
                 Streamer.oy = noy;
                 proxyPos = -1;
 
-                Vars.world.beginMapLoad();   // sin eventos por tile durante la copia
-                for(int y = 0; y < tam; y++){
-                    for(int x = 0; x < tam; x++){
-                        Tile t = Vars.world.rawTile(x, y);
-                        int sx = x + dx, sy = y + dy;
-                        boolean ok = sx >= 0 && sy >= 0 && sx < tam && sy < tam && gen[(sy / TAM_CHUNK) * n + (sx / TAM_CHUNK)];
-                        if(ok){
-                            int si = sy * tam + sx;
-                            Block f = Vars.content.block(sf[si]);
-                            if(f instanceof Floor) t.setFloor((Floor)f);
-                            if(so[si] != 0) t.setOverlay(Vars.content.block(so[si]));
-                            Block b = sb[si] == 0 ? Blocks.air : Vars.content.block(sb[si]);
-                            if(t.block() != b){
-                                if(b == Blocks.air) t.setAir(); else t.setBlock(b);
-                            }
-                        }else{
-                            t.setFloor((Floor)Blocks.air);
-                            if(t.block() != Blocks.air) t.setAir();
-                        }
-                    }
-                }
-                for(int cy0 = 0; cy0 < n; cy0++){
-                    for(int cx0 = 0; cx0 < n; cx0++){
-                        if(!gen[cy0 * n + cx0]) continue;
-                        int ncx = cx0 - dcx, ncy = cy0 - dcy;
-                        if(Streamer.enMapa(ncx, ncy)) Streamer.generados.add(Streamer.clave(ncx, ncy));
-                    }
-                }
-                Vars.world.endMapLoad();     // oscuridad de muros, WorldLoadEvent (reinicia niebla/minimapa/indexador)
-
-                // 6) cámara y restauración de edificios + niebla desde el almacén
+                // La copia NO se hace aquí: se reparte en fotogramas (avanzarRebase), primero los chunks cercanos al jugador.
+                // Así no hay beginMapLoad/endMapLoad (lo que congelaba el juego) ni pantalla de carga.
+                RebaseJob job = new RebaseJob();
+                job.tam = tam; job.n = n; job.dx = dx; job.dy = dy; job.dcx = dcx; job.dcy = dcy;
+                job.vcx0 = nox / TAM_CHUNK; job.vcy0 = noy / TAM_CHUNK;
+                job.sf = sf; job.so = so; job.sb = sb; job.gen = gen;
+                job.hecho = new boolean[n * n];
+                job.restaurado = new boolean[n * n];
                 Streamer.jugadorX -= dx;
                 Streamer.jugadorY -= dy;
+                int pcx = Mathf.clamp((int)Streamer.jugadorX / TAM_CHUNK, 0, n - 1), pcy = Mathf.clamp((int)Streamer.jugadorY / TAM_CHUNK, 0, n - 1);
+                Integer[] orden = new Integer[n * n];
+                for(int k = 0; k < orden.length; k++) orden[k] = k;
+                java.util.Arrays.sort(orden, (a, b) -> {
+                    int da = (a % n - pcx) * (a % n - pcx) + (a / n - pcy) * (a / n - pcy);
+                    int db = (b % n - pcx) * (b % n - pcx) + (b / n - pcy) * (b / n - pcy);
+                    return Integer.compare(da, db);
+                });
+                job.orden = new int[orden.length];
+                for(int k = 0; k < orden.length; k++) job.orden[k] = orden[k];
                 Unit pu = Vars.player.unit();
                 if(Core.camera != null && !Vars.player.dead()) Core.camera.position.set(pu.x, pu.y);
-                cargarDesdeAlmacen();
                 Streamer.datosPendientes = d;
                 Streamer.rebaseEnSitio = true;
-                Streamer.restaurando = true;
+                rebase = job;
             }catch(Throwable t){
                 Log.err("[MundoInfinito] Error al reubicar la ventana", t);
                 Carga.ocultar();

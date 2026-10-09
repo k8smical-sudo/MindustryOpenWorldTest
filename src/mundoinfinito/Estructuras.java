@@ -12,6 +12,8 @@ import mindustry.gen.Unit;
 import mindustry.type.UnitType;
 import mindustry.world.Block;
 import mindustry.world.Tile;
+import mindustry.gen.Groups;
+import mindustry.world.blocks.units.UnitFactory;
 import mundoinfinito.MundoInfinitoMod.Almacen;
 import mundoinfinito.MundoInfinitoMod.Meta;
 import mundoinfinito.MundoInfinitoMod.Mundos;
@@ -201,6 +203,12 @@ final class Estructuras{
             this.fuga = fuga;
         }
 
+        /** Radio de vigilancia: la guardia nota intrusos bastante antes de tenerlos al alcance del arma. */
+        @Override
+        public mindustry.gen.Teamc findMainTarget(float x, float y, float range, boolean air, boolean ground){
+            return super.findMainTarget(x, y, Math.max(range, 22f * 8f), air, ground);
+        }
+
         @Override
         public void updateMovement(){
             casa.set((float)((hvx - Streamer.ox) * 8.0), (float)((hvy - Streamer.oy) * 8.0));
@@ -282,6 +290,8 @@ final class Estructuras{
     // ================================================================ trabajos de colocación
     static final class Pieza{
         String bloque;
+        String item;             // config de unloader (null = sin config)
+        int plan = -1;           // config de fábrica de unidades
         int x, y, rot, equipo;   // virtuales
     }
 
@@ -323,6 +333,7 @@ final class Estructuras{
     static void revisar(){
         Meta m = Streamer.meta;
         if(m == null || !m.dimensional() || !Streamer.activo || Streamer.restaurando || Mundos.viajando) return;
+        vigilar();
         if(cola.size() > 2) return;
         int dim = m.dim;
         int sd = Muestreo.semDim(m.semilla, dim);
@@ -376,6 +387,70 @@ final class Estructuras{
         }
     }
 
+    /** Tope de unidades vivas por base (las fábricas se apagan al llegar). */
+    static int topeBase(int tier){
+        return 4 + 2 * tier;
+    }
+
+    /**
+     * Mantiene a las unidades enemigas "en su sitio": las que salen de las fábricas de una base reciben la IA de guardia
+     * (si no, irían a atacar por todo el mapa) y las fábricas se apagan cuando la base ya tiene su tope de unidades.
+     */
+    static void vigilar(){
+        Meta m = Streamer.meta;
+        if(m == null || !m.dimensional()) return;
+        int dim = m.dim;
+        int sd = Muestreo.semDim(m.semilla, dim);
+        Spawn sp = Muestreo.spawn(sd, dim);
+        int c = sp.celdaE;
+        int[] cen = new int[3];
+        java.util.HashMap<Long, Integer> cuenta = new java.util.HashMap<>();
+        Seq<Unit> nuevas = new Seq<>();
+        for(Unit u : Groups.unit){
+            if(!u.isValid() || (u.team != Team.crux && u.team != Team.malis)) continue;
+            if(u.controller() instanceof Guardia g){
+                long k = Math.round(g.hvx) * 1000003L + Math.round(g.hvy);
+                cuenta.merge(k, 1, Integer::sum);
+            }else{
+                nuevas.add(u);
+            }
+        }
+        for(Unit u : nuevas){
+            double vx = Streamer.ox + u.x / 8.0, vy = Streamer.oy + u.y / 8.0;
+            double mejor = 60.0, hx = vx, hy = vy;
+            int ci = Math.floorDiv((int)vx, c), cj = Math.floorDiv((int)vy, c);
+            for(int i = ci - 1; i <= ci + 1; i++){
+                for(int j = cj - 1; j <= cj + 1; j++){
+                    if(tipo(sd, sp, i, j, cen) != T_BASE) continue;
+                    double d = Math.hypot(cen[0] - vx, cen[1] - vy);
+                    if(d < mejor){ mejor = d; hx = cen[0]; hy = cen[1]; }
+                }
+            }
+            u.controller(new Guardia(hx, hy, mejor < 60.0 ? 30f : 20f));
+            cuenta.merge(Math.round(hx) * 1000003L + Math.round(hy), 1, Integer::sum);
+        }
+        // fábricas de unidades: encendidas solo si su base tiene menos del tope
+        for(Team et : new Team[]{Team.crux, Team.malis}){
+            for(mindustry.gen.Building b : et.data().buildings){
+                if(!(b instanceof UnitFactory.UnitFactoryBuild)) continue;
+                double vx = Streamer.ox + b.x / 8.0, vy = Streamer.oy + b.y / 8.0;
+                double mejor = 40.0;
+                int tier = 0;
+                long key = Long.MIN_VALUE;
+                int ci = Math.floorDiv((int)vx, c), cj = Math.floorDiv((int)vy, c);
+                for(int i = ci - 1; i <= ci + 1; i++){
+                    for(int j = cj - 1; j <= cj + 1; j++){
+                        if(tipo(sd, sp, i, j, cen) != T_BASE) continue;
+                        double d = Math.hypot(cen[0] - vx, cen[1] - vy);
+                        if(d < mejor){ mejor = d; key = Math.round((double)cen[0]) * 1000003L + Math.round((double)cen[1]); tier = Mathf.clamp((int)(Math.hypot(cen[0], cen[1]) / 450.0), 0, 3); }
+                    }
+                }
+                if(key == Long.MIN_VALUE) continue;
+                b.enabled = cuenta.getOrDefault(key, 0) < topeBase(tier);
+            }
+        }
+    }
+
     /** Avanza los trabajos pendientes dentro del presupuesto de tiempo del frame. */
     static void procesar(long fin){
         while(!cola.isEmpty() && System.nanoTime() < fin){
@@ -398,6 +473,13 @@ final class Estructuras{
             if(b == null || t == null) return;
             if(t.build != null && t.build.team == Team.sharded) return;   // nunca se pisa lo del jugador
             t.setBlock(b, Team.get(p.equipo), p.rot);
+            if(t.build != null){
+                if(p.item != null){
+                    mindustry.type.Item it = Vars.content.item(p.item);
+                    if(it != null) t.build.configured(null, it);
+                }
+                if(p.plan >= 0) t.build.configured(null, p.plan);
+            }
         }catch(Throwable e){
             Log.warn("[MundoInfinito] No se pudo colocar @", p.bloque);
         }
@@ -460,57 +542,135 @@ final class Estructuras{
         return t;
     }
 
-    /** Base enemiga: núcleo en el centro, muro con huecos, torretas, portal derelicto dentro y guarnición. */
+    /** Pone un bloque cuya HUELLA es exactamente el rectángulo [x0..x1] x [y0..y1] (relativo al centro de la estructura). */
+    static boolean ponerRect(Trabajo t, String nombre, int x0, int y0, int x1, int y1, int rot, Team eq, String item, int plan){
+        Block b = Vars.content.block(nombre);
+        if(b == null) return false;
+        int low = (b.size - 1) / 2;
+        int nx = Math.min(x0, x1), ny = Math.min(y0, y1);
+        int cantidad = t.piezas.size;
+        if(!poner(t, nombre, nx + low, ny + low, rot, eq)) return false;
+        Pieza p = t.piezas.get(cantidad);
+        p.item = item;
+        p.plan = plan;
+        return true;
+    }
+
+    /** Coordenadas (relativas) del punto a lo largo de un radio: origen (ox, oy), dirección (dx, dy), lateral l. */
+    static int[] pt(int ox, int oy, int dx, int dy, int a, int l){
+        return new int[]{ox + dx * a + (-dy) * l, oy + dy * a + dx * l};
+    }
+
+    /** Rectángulo en el marco del radio: a en [a0..a1], l en [l0..l1] -> (xmin, ymin, xmax, ymax). */
+    static int[] rectRadio(int ox, int oy, int dx, int dy, int a0, int a1, int l0, int l1){
+        int[] p = pt(ox, oy, dx, dy, a0, l0), q = pt(ox, oy, dx, dy, a1, l1);
+        return new int[]{Math.min(p[0], q[0]), Math.min(p[1], q[1]), Math.max(p[0], q[0]), Math.max(p[1], q[1])};
+    }
+
+    static int tamBloque(String nombre){
+        Block b = Vars.content.block(nombre);
+        return b == null ? 1 : b.size;
+    }
+
+    /**
+     * Radio defensivo "de campaña": un unloader en el borde del núcleo saca la munición, una cinta la lleva hacia afuera,
+     * cada router reparte a dos torretas laterales y la cinta termina DENTRO de una torreta final.
+     */
+    static void radio(Trabajo t, java.util.Random r, int dir, int cl, int ch, String ammo, String[] torres, int routers, int hMuro, Team eq){
+        int[][] dirs = {{1, 0}, {0, 1}, {-1, 0}, {0, -1}};
+        int dx = dirs[dir][0], dy = dirs[dir][1];
+        // el unloader va en el borde del núcleo, en la fila central (0)
+        int ext = dx > 0 || dy > 0 ? ch + 1 : cl - 1;           // coordenada del borde (con signo)
+        int ox = dx != 0 ? ext : 0, oy = dy != 0 ? ext : 0;
+        int signo = (dx + dy) > 0 ? 1 : -1;
+        int[] u = pt(ox, oy, dx, dy, 0, 0);
+        ponerRect(t, "unloader", u[0], u[1], u[0], u[1], 0, eq, ammo, -1);
+        String fin = torres[r.nextInt(torres.length)];
+        int sf = tamBloque(fin);
+        int maxFin = hMuro - 2 - Math.abs(ext);                    // hasta dónde llega la huella de la torreta final (a lo largo)
+        int tFin = Math.max(3, maxFin - (sf - 1));
+        int usados = 0;
+        for(int a = 1; a < tFin; a++){
+            int[] c = pt(ox, oy, dx, dy, a, 0);
+            boolean router = a >= 3 && (a - 3) % 3 == 0 && usados < routers && a + 3 <= tFin;
+            if(router){
+                ponerRect(t, "router", c[0], c[1], c[0], c[1], 0, eq, null, -1);
+                usados++;
+                for(int lado = -1; lado <= 1; lado += 2){
+                    String tn = torres[r.nextInt(torres.length)];
+                    int sz = tamBloque(tn);
+                    int[] rc = lado > 0 ? rectRadio(ox, oy, dx, dy, a, a + sz - 1, 1, sz) : rectRadio(ox, oy, dx, dy, a, a + sz - 1, -sz, -1);
+                    ponerRect(t, tn, rc[0], rc[1], rc[2], rc[3], 0, eq, null, -1);
+                }
+            }else{
+                int rot = dir;   // 0 E, 1 N, 2 W, 3 S: la cinta mira hacia afuera
+                ponerRect(t, "conveyor", c[0], c[1], c[0], c[1], rot, eq, null, -1);
+            }
+        }
+        int lo = -((sf - 1) / 2), hi = sf - 1 + lo;
+        int[] fr = rectRadio(ox, oy, dx, dy, tFin, tFin + sf - 1, lo, hi);
+        ponerRect(t, fin, fr[0], fr[1], fr[2], fr[3], 0, eq, null, -1);
+    }
+
+    /** Base enemiga: núcleo, radios defensivos con logística real, planta solar, fábrica de unidades y portal derelicto. */
     static void base(Trabajo t, java.util.Random r, int dim, int tier){
         Team eq = dim == 1 ? Team.malis : Team.crux;
         String[] muros = (dim == 1 ? MUROS_E : MUROS_S)[tier];
+        int h = Math.max(11, (int)(t.radio * 0.58f));
+        String nucleo = dim == 1 ? (tier >= 2 ? "core-citadel" : "core-bastion") : "core-shard";
+        int tn = tamBloque(nucleo);
+        int cl = -((tn - 1) / 2), ch = cl + tn - 1;            // huella del núcleo en cada eje
+        ponerRect(t, nucleo, cl, cl, ch, ch, 0, eq, null, -1);
+
+        // --- radios defensivos (este y oeste siempre; el tercero con tier >= 2) ---
         String[] torres = (dim == 1 ? TORRES_E : TORRES_S)[tier];
-        int h = Math.max(9, (int)(t.radio * 0.58f));
-
-        poner(t, dim == 1 ? (tier >= 2 ? "core-citadel" : "core-bastion") : (tier >= 2 ? "core-foundation" : "core-shard"), 0, 0, 0, eq);
-        poner(t, "silo-interdimensional", 0, -(h - 4), 0, Team.derelict);   // el portal queda DENTRO de la base
-
-        // torretas en las esquinas, puntos medios y un anillo interior (orden al azar)
-        int o = h - 3;
-        int[][] slots = {{o, o}, {-o, o}, {o, -o}, {-o, -o}, {0, o}, {0, -o}, {o, 0}, {-o, 0}, {5, 5}, {-5, 5}, {5, -5}, {-5, -5}};
-        for(int k = slots.length - 1; k > 0; k--){
-            int q = r.nextInt(k + 1);
-            int[] tmp = slots[k]; slots[k] = slots[q]; slots[q] = tmp;
-        }
-        int nT = 4 + tier * 2;
-        for(int k = 0, hechas = 0; k < slots.length && hechas < nT; k++){
-            if(poner(t, torres[r.nextInt(torres.length)], slots[k][0], slots[k][1], 0, eq)) hechas++;
-        }
-        if(dim == 0){
-            poner(t, "mender", 4, -3, 0, eq);
-            poner(t, "mender", -4, 3, 0, eq);
+        int routers = 1 + tier;
+        if(dim == 1){
+            radio(t, r, 0, cl, ch, "beryllium", new String[]{"breach"}, routers, h, eq);
+            radio(t, r, 2, cl, ch, "graphite", new String[]{"diffuse"}, routers, h, eq);
+        }else{
+            String[] ls = tier >= 2 ? new String[]{"duo", "hail", "salvo", "ripple"} : new String[]{"duo", "hail"};
+            radio(t, r, 0, cl, ch, "graphite", ls, routers, h, eq);
+            radio(t, r, 2, cl, ch, "graphite", ls, routers, h, eq);
         }
 
-        // muro perimetral con 3 huecos de 3 tiles
+        // --- fábrica de unidades al sur, alimentada por un unloader sin filtro, con 2 paneles solares grandes ---
+        int fy1 = cl - 2, fy0 = cl - 4;                          // huella 3x3 de la fábrica (y)
+        ponerRect(t, "unloader", 0, cl - 1, 0, cl - 1, 0, eq, null, -1);
+        String fab = dim == 1 ? "tank-fabricator" : "ground-factory";
+        ponerRect(t, fab, -1, fy0, 1, fy1, 3, eq, null, 0);
+        ponerRect(t, "solar-panel-large", 2, fy0, 4, fy1, 0, eq, null, -1);
+        ponerRect(t, "solar-panel-large", -4, fy0, -2, fy1, 0, eq, null, -1);
+        ponerRect(t, "mender", 2, cl - 1, 2, cl - 1, 0, eq, null, -1);
+        ponerRect(t, "mender", -2, cl - 1, -2, cl - 1, 0, eq, null, -1);
+
+        // --- portal derelicto al norte (dentro de los muros) ---
+        ponerRect(t, "silo-interdimensional", -1, ch + 3, 2, ch + 6, 0, Team.derelict, null, -1);
+
+        // --- muro perimetral con 3 huecos de 3 tiles ---
         int[] hs = new int[3], ho = new int[3];
         for(int k = 0; k < 3; k++){ hs[k] = r.nextInt(4); ho[k] = r.nextInt(2 * h - 5) - (h - 3); }
         for(int k = -h; k <= h; k++){
             for(int lado = 0; lado < 4; lado++){
-                int x = lado == 0 ? k : (lado == 1 ? k : (lado == 2 ? -h : h));
+                int x = lado < 2 ? k : (lado == 2 ? -h : h);
                 int y = lado == 0 ? -h : (lado == 1 ? h : k);
                 boolean hueco = false;
                 for(int g = 0; g < 3; g++) if(hs[g] == lado && Math.abs(k - ho[g]) <= 1) hueco = true;
                 if(!hueco) poner(t, muros[0], x, y, 0, eq);
             }
         }
-
-        // guarnición cerca del núcleo
-        int n = 2 + tier + r.nextInt(3);
+        // la guarnición inicial sale de la fábrica; además hay unos pocos guardias fuera
+        int n = 1 + tier + r.nextInt(2);
         for(int k = 0; k < n; k++){
             Plan pl = new Plan();
             pl.tipo = nombreUnidad(dim, tier, r.nextInt(8));
             pl.equipo = eq;
-            double ang = r.nextDouble() * 6.2831853, d = 5 + r.nextInt(4);
+            double ang = r.nextDouble() * 6.2831853, d = h - 4;
             pl.vx = t.cx + Math.cos(ang) * d;
             pl.vy = t.cy + Math.sin(ang) * d;
             pl.hvx = t.cx;
             pl.hvy = t.cy;
-            pl.fuga = h + 12f;
+            pl.fuga = h + 14f;
             t.unidades.add(pl);
         }
     }

@@ -30,7 +30,7 @@ final class Portal{
             if(!Vars.headless && Vars.ui != null) Vars.ui.showInfoToast("El portal solo funciona en mundos nuevos", 3f);
             return;
         }
-        final double px = Streamer.ox + dev.x / 8.0, py = Streamer.oy + dev.y / 8.0;
+        final double px = Coord.virtualX(dev.x), py = Coord.virtualY(dev.y);
         if(Estructuras.registrarPunto(px, py)) Vars.ui.showInfoToast("Checkpoint guardado", 2.5f);
 
         final int destino = 1 - Mundos.dimActual();
@@ -67,7 +67,7 @@ final class Portal{
     static void irA(double vx, double vy){
         if(!Streamer.activo || Mundos.viajando || Streamer.restaurando || Vars.player == null || Vars.player.dead() || Mundos.actual == null) return;
         final int tam = Streamer.meta.tam;
-        final double lx = vx - Streamer.ox, ly = vy - Streamer.oy;
+        final double lx = vx - Coord.origenX(), ly = vy - Coord.origenY();
         final int margen = MundoInfinitoMod.MARGEN_REBASE * MundoInfinitoMod.TAM_CHUNK + 40;
         Unit pu = Vars.player.unit();
         if(lx > margen && ly > margen && lx < tam - margen && ly < tam - margen){

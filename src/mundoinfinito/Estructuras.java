@@ -211,7 +211,7 @@ final class Estructuras{
 
         @Override
         public void updateMovement(){
-            casa.set((float)((hvx - Streamer.ox) * 8.0), (float)((hvy - Streamer.oy) * 8.0));
+            casa.set(Coord.mundoX(hvx), Coord.mundoY(hvy));
             float d = unit.dst(casa);
             if(target != null && d <= fuga * 8f){
                 moveTo(target, unit.type.range * 0.7f);
@@ -229,6 +229,8 @@ final class Estructuras{
         int equipo;
         double vx, vy, hvx, hvy;
         float vida, fuga;
+        int clase;                 // 0 = guardia enemiga (con IA de guardia), 1 = unidad aliada dormida (se despierta cerca del jugador)
+        float rot, escudo, municion;
 
         static RegU desde(Unit u, int ox, int oy){
             RegU r = new RegU();
@@ -244,6 +246,22 @@ final class Estructuras{
             return r;
         }
 
+        /** Unidad aliada que se manda a dormir: conserva vida, escudo, munición y orientación. */
+        static RegU aliada(Unit u, int ox, int oy){
+            RegU r = new RegU();
+            r.clase = 1;
+            r.tipo = u.type.name;
+            r.equipo = u.team.id;
+            r.vx = ox + u.x / 8.0;
+            r.vy = oy + u.y / 8.0;
+            r.hvx = r.vx;
+            r.hvy = r.vy;
+            r.vida = u.health;
+            r.escudo = u.shield;
+            r.rot = u.rotation;
+            return r;
+        }
+
         void escribir(DataOutputStream out) throws java.io.IOException{
             out.writeUTF(tipo);
             out.writeByte(equipo);
@@ -253,9 +271,13 @@ final class Estructuras{
             out.writeDouble(hvy);
             out.writeFloat(vida);
             out.writeFloat(fuga);
+            out.writeByte(clase);
+            out.writeFloat(rot);
+            out.writeFloat(escudo);
+            out.writeFloat(municion);
         }
 
-        static RegU leer(DataInputStream in) throws java.io.IOException{
+        static RegU leer(DataInputStream in, int ver) throws java.io.IOException{
             RegU r = new RegU();
             r.tipo = in.readUTF();
             r.equipo = in.readUnsignedByte();
@@ -265,6 +287,12 @@ final class Estructuras{
             r.hvy = in.readDouble();
             r.vida = in.readFloat();
             r.fuga = in.readFloat();
+            if(ver >= 6){
+                r.clase = in.readUnsignedByte();
+                r.rot = in.readFloat();
+                r.escudo = in.readFloat();
+                r.municion = in.readFloat();
+            }
             return r;
         }
     }
@@ -273,7 +301,7 @@ final class Estructuras{
         try{
             UnitType t = Vars.content.unit(tipo);
             if(t == null) return;
-            double lx = vx - Streamer.ox, ly = vy - Streamer.oy;
+            double lx = vx - Coord.origenX(), ly = vy - Coord.origenY();
             if(lx < 2 || ly < 2 || lx > Streamer.meta.tam - 2 || ly > Streamer.meta.tam - 2) return;
             Unit u = t.spawn(equipo, (float)(lx * 8.0), (float)(ly * 8.0));
             u.controller(new Guardia(hvx, hvy, fuga));
@@ -416,7 +444,7 @@ final class Estructuras{
             }
         }
         for(Unit u : nuevas){
-            double vx = Streamer.ox + u.x / 8.0, vy = Streamer.oy + u.y / 8.0;
+            double vx = Coord.virtualX(u.x), vy = Coord.virtualY(u.y);
             double mejor = 60.0, hx = vx, hy = vy;
             int ci = Math.floorDiv((int)vx, c), cj = Math.floorDiv((int)vy, c);
             for(int i = ci - 1; i <= ci + 1; i++){
@@ -433,7 +461,7 @@ final class Estructuras{
         for(Team et : new Team[]{Team.crux, Team.malis}){
             for(mindustry.gen.Building b : et.data().buildings){
                 if(!(b instanceof UnitFactory.UnitFactoryBuild)) continue;
-                double vx = Streamer.ox + b.x / 8.0, vy = Streamer.oy + b.y / 8.0;
+                double vx = Coord.virtualX(b.x), vy = Coord.virtualY(b.y);
                 double mejor = 40.0;
                 int tier = 0;
                 long key = Long.MIN_VALUE;
@@ -469,7 +497,7 @@ final class Estructuras{
     static void colocarPieza(Pieza p){
         try{
             Block b = Vars.content.block(p.bloque);
-            Tile t = Vars.world.tile(p.x - Streamer.ox, p.y - Streamer.oy);
+            Tile t = Vars.world.tile(p.x - Coord.origenX(), p.y - Coord.origenY());
             if(b == null || t == null) return;
             if(t.build != null && t.build.team == Team.sharded) return;   // nunca se pisa lo del jugador
             t.setBlock(b, Team.get(p.equipo), p.rot);

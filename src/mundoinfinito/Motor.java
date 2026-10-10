@@ -10,14 +10,14 @@ import arc.struct.IntSet;
  *
  *   nivel 0  lo que el jugador pisa y lo que ve en pantalla                       (urgente)
  *   nivel 1  un cono hacia donde se mueve; cuanto más rápido, más lejos llega     (anticipación)
- *   nivel 2  un anillo corto alrededor, para cuando se detiene o gira             (reserva)
+ *   nivel 2  un DISCO alrededor del jugador, de radio = "distancia de carga" de Ajustes  (reserva)
  *   nivel 3  chunks con edificios guardados, que deben existir bajo ellos         (último)
  *
  * Las unidades aliadas y enemigas NO piden terreno: lejos del jugador duermen (ver Entidades).
  */
 final class Motor{
+    // Todas las zonas son CÍRCULOS (no cuadrados): a igual radio, un disco tiene ~21 % menos chunks que su cuadrado.
     static final int R_BASE = 2;                 // siempre cargado alrededor del jugador
-    static final int R_QUIETO = 4;               // anillo de reserva
     static final int AD_MIN = 3, AD_MAX = 9;     // alcance del cono hacia delante, en chunks
     static final float SEGUNDOS_ADELANTE = 4f;   // cuánto tiempo de viaje se intenta tener ya cargado
     static final float UMBRAL_MOVIMIENTO = 0.12f;// chunks/s por debajo de los cuales se considera quieto
@@ -28,7 +28,6 @@ final class Motor{
 
     final IntSeq claves = new IntSeq();          // salida: chunks deseados, del más urgente al menos
     final IntFloatMap mejor = new IntFloatMap();
-    private final IntSeq tmp = new IntSeq();
 
     /** Llamar con la posición del jugador cada vez que se escanea; dt = ticks transcurridos desde la última llamada. */
     void actualizar(float x, float y, float dt){
@@ -64,6 +63,17 @@ final class Motor{
         if(!mejor.containsKey(k) || mejor.get(k, Float.MAX_VALUE) > prio) mejor.put(k, prio);
     }
 
+    private void disco(int n, int cx0, int cy0, int r, float base, float peso){
+        for(int dy = -r; dy <= r; dy++){
+            for(int dx = -r; dx <= r; dx++){
+                if(!Ajustes.dentro(dx, dy, r)) continue;
+                poner(n, cx0 + dx, cy0 + dy, base + (float)Math.hypot(dx, dy) * peso);
+            }
+        }
+    }
+
+    private long[] orden = new long[512];
+
     /**
      * Calcula los chunks deseados. n = chunks por lado de la ventana; (pcx, pcy) chunk del jugador; (camX, camY) chunk de la
      * cámara y rVista su radio; requeridos = chunks con edificios guardados (claves locales).
@@ -71,34 +81,27 @@ final class Motor{
     void plan(int n, int pcx, int pcy, int camX, int camY, int rVista, IntSet requeridos){
         mejor.clear();
         claves.clear();
-        // nivel 0: bajo el jugador y lo que se ve
-        for(int dy = -R_BASE; dy <= R_BASE; dy++){
-            for(int dx = -R_BASE; dx <= R_BASE; dx++) poner(n, pcx + dx, pcy + dy, (float)Math.hypot(dx, dy));
-        }
-        for(int dy = -rVista; dy <= rVista; dy++){
-            for(int dx = -rVista; dx <= rVista; dx++){
-                int cx = camX + dx, cy = camY + dy;
-                poner(n, cx, cy, 0.5f + (float)Math.hypot(cx - pcx, cy - pcy) * 0.05f);
-            }
-        }
-        // nivel 1: cono hacia donde se mueve
+        final int carga = Ajustes.carga();
+        // nivel 0: bajo el jugador y lo que se ve (discos). Lo que se ve se carga aunque la distancia de carga sea menor.
+        disco(n, pcx, pcy, R_BASE, 0f, 1f);
+        disco(n, camX, camY, rVista, 0.5f, 0.05f);
+        // nivel 1: cono hacia donde se mueve, recortado por el disco de carga
         float vel = velocidad();
         if(vel > UMBRAL_MOVIMIENTO){
             float len = (float)Math.hypot(vx, vy), dirx = vx / len, diry = vy / len;
             float cxf = px / Coord.CHUNK, cyf = py / Coord.CHUNK;
-            int ad = alcance();
+            int ad = Math.min(alcance(), carga);
             for(int d = 1; d <= ad; d++){
                 int w = (int)Math.ceil(1 + d * 0.45f);
                 for(int l = -w; l <= w; l++){
-                    int cx = (int)Math.floor(cxf + dirx * d - diry * l + 0.5f - 0.5f), cy = (int)Math.floor(cyf + diry * d + dirx * l + 0.5f - 0.5f);
+                    int cx = (int)Math.floor(cxf + dirx * d - diry * l), cy = (int)Math.floor(cyf + diry * d + dirx * l);
+                    if(!Ajustes.dentro(cx - pcx, cy - pcy, carga)) continue;
                     poner(n, cx, cy, 1000f + d * 10f + Math.abs(l));
                 }
             }
         }
-        // nivel 2: reserva alrededor
-        for(int dy = -R_QUIETO; dy <= R_QUIETO; dy++){
-            for(int dx = -R_QUIETO; dx <= R_QUIETO; dx++) poner(n, pcx + dx, pcy + dy, 2000f + (float)Math.hypot(dx, dy));
-        }
+        // nivel 2: reserva = disco de "distancia de carga" alrededor del jugador
+        disco(n, pcx, pcy, carga, 2000f, 1f);
         // nivel 3: bajo los edificios guardados
         if(requeridos != null){
             IntSet.IntSetIterator it = requeridos.iterator();
@@ -108,14 +111,13 @@ final class Motor{
                 poner(n, cx, cy, 3000f + (float)Math.hypot(cx - pcx, cy - pcy));
             }
         }
-        // orden por prioridad (menor primero)
-        tmp.clear();
-        for(IntFloatMap.Entry e : mejor) tmp.add(e.key);
-        int sz = tmp.size;
-        Integer[] arr = new Integer[sz];
-        for(int i = 0; i < sz; i++) arr[i] = tmp.items[i];
-        java.util.Arrays.sort(arr, (a, b) -> Float.compare(mejor.get(a, 0f), mejor.get(b, 0f)));
-        for(Integer k : arr) claves.add(k);
+        // orden por prioridad (menor primero), sin objetos: prioridad (>= 0, sus bits conservan el orden) en la mitad alta del long
+        int sz = mejor.size;
+        if(orden.length < sz) orden = new long[Math.max(sz, orden.length * 2)];
+        int i = 0;
+        for(IntFloatMap.Entry e : mejor) orden[i++] = ((long)Float.floatToIntBits(e.value) << 32) | (e.key & 0xffffffffL);
+        java.util.Arrays.sort(orden, 0, sz);
+        for(int j = 0; j < sz; j++) claves.add((int)orden[j]);
     }
 
     float prioridad(int clave){

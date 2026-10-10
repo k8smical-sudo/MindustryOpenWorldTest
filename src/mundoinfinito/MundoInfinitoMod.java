@@ -102,7 +102,7 @@ public class MundoInfinitoMod extends Mod{
 
     public MundoInfinitoMod(){
         // Botón en el menú principal cuando el cliente terminó de cargar.
-        Events.on(ClientLoadEvent.class, e -> Time.runTask(10f, () -> { MenuUI.inyectarBoton(); Hud.crear(); MapaVista.crear(); }));
+        Events.on(ClientLoadEvent.class, e -> Time.runTask(10f, () -> { MenuUI.inyectarBoton(); Hud.crear(); MapaVista.crear(); Ajustes.registrar(); }));
 
         // Bucle de streaming: se ejecuta cada frame (presupuesto de tiempo propio).
         Events.run(Trigger.update, Streamer::tick);
@@ -1966,7 +1966,10 @@ public class MundoInfinitoMod extends Mod{
         static final long PRESUPUESTO_NS = 900_000L;             // 0.9 ms por frame (se reduce solo si el FPS baja)
         static final long PRESUPUESTO_RESTAURAR_NS = 9_000_000L; // con la pantalla de carga puesta se puede gastar más
         static final int R_JUGADOR = 3, R_UNIDAD = 2, R_EDIFICIO = 1;
-        static final int MAX_EN_COLA = 5;                        // chunks "en vuelo" a la vez (cola + calculando + esperando aplicar)
+        /** Chunks "en vuelo" a la vez (cola + calculando + esperando aplicar): crece con los hilos de generación. */
+        static int maxEnCola(){
+            return Math.max(8, Ajustes.hilos() * 6);
+        }
         static final int TRAMO = 8;                              // tiles aplicados por paso
 
         static volatile boolean activo = false;
@@ -1989,7 +1992,12 @@ public class MundoInfinitoMod extends Mod{
         static boolean rebaseEnSitio = false;
         static int totalRestaurar = 1;
         static Datos datosPendientes;
-        static Thread trabajador;
+        static final Thread[] trabajadores = new Thread[8];
+        static volatile int hilosObjetivo = 1;
+        /** Precarga de terreno FUERA de la ventana (solo a la caché, sin aplicar): cola de baja prioridad, protegida por 'cola'. */
+        static final ArrayDeque<Long> colaBaja = new ArrayDeque<>();
+        static final java.util.HashSet<Long> pendBaja = new java.util.HashSet<>();
+        static int cursorPlan;
 
         static ChunkData actual;
         static int paso;
@@ -2011,7 +2019,10 @@ public class MundoInfinitoMod extends Mod{
             generados.clear();
             solicitados.clear();
             requeridos.clear();
-            synchronized(cola){ cola.clear(); }
+            motor.claves.clear();
+            cursorPlan = 0;
+            synchronized(cola){ cola.clear(); colaBaja.clear(); pendBaja.clear(); }
+            CacheChunks.configurar(m.semilla, m.dimGen());
             vaciarListos();
             colaRestaurar.clear();
             configsPendientes.clear();
@@ -2027,41 +2038,78 @@ public class MundoInfinitoMod extends Mod{
             acumEscaneo = 0f;
             acumGuardado = 0f;
             muerto = 0f;
-            iniciarTrabajador();
+            ajustarHilos();
         }
 
-        static void iniciarTrabajador(){
-            if(trabajador != null && trabajador.isAlive()) return;
-            trabajador = Threads.daemon("MundoInfinito-Chunks", () -> {
-                while(true){
-                    int key, ep, vox, voy, n, dm;
-                    Meta m;
-                    Paleta p;
-                    synchronized(cola){
-                        while(cola.isEmpty()){
-                            try{ cola.wait(); }catch(InterruptedException e){ return; }
-                        }
+        /** Arranca (o deja dormir) hilos de generación hasta igualar el ajuste del jugador. Seguro de llamar a cada escaneo. */
+        static void ajustarHilos(){
+            int obj = Ajustes.hilos();
+            hilosObjetivo = obj;
+            for(int i = 0; i < obj; i++){
+                Thread t = trabajadores[i];
+                if(t != null && t.isAlive()) continue;
+                final int id = i;
+                t = Threads.daemon("MundoInfinito-Chunks-" + i, () -> bucleTrabajador(id));
+                try{ t.setPriority(Thread.MIN_PRIORITY + 1); }catch(Throwable ignored){}
+                trabajadores[i] = t;
+            }
+            synchronized(cola){ cola.notifyAll(); }   // los hilos que sobraban y ahora hacen falta despiertan
+        }
+
+        /**
+         * Un hilo de generación. Varios corren a la vez: ChunkData.generar es pura (solo lee la semilla y escribe en SU chunk).
+         * Primero atienden lo que pide el juego (cola); si no hay nada, precargan terreno a la caché (colaBaja).
+         */
+        static void bucleTrabajador(int id){
+            while(true){
+                int key = -1, ep, vox, voy, n, dm, mid;
+                Long baja = null;
+                Meta m;
+                Paleta p;
+                synchronized(cola){
+                    while(id >= hilosObjetivo || (cola.isEmpty() && colaBaja.isEmpty())){
+                        try{ cola.wait(); }catch(InterruptedException e){ return; }
+                    }
+                    if(!cola.isEmpty()){
                         key = cola.pollFirst();
-                        ep = epoca;
-                        m = meta;
-                        dm = m == null ? -1 : m.dimGen();   // se captura junto con la época: un chunk viejo nunca mezcla dimensiones
-                        p = paleta;
-                        vox = ox;
-                        voy = oy;
-                        n = nch;
+                    }else{
+                        baja = colaBaja.pollFirst();
+                        pendBaja.remove(baja);
                     }
-                    try{
-                        if(m == null || p == null || n <= 0) continue;
-                        ChunkData cd = ChunkData.generar(p, m.semilla, dm, m.tam, key % n, key / n, ep, vox, voy);
-                        listos.add(cd);
-                    }catch(Throwable t){
-                        Log.err("[MundoInfinito] Error generando chunk", t);
-                    }
-                    // pausa entre chunks: el trabajador nunca acapara un núcleo de la CPU
-                    try{ Thread.sleep(6); }catch(InterruptedException e){ return; }
+                    ep = epoca;
+                    m = meta;
+                    dm = m == null ? -1 : m.dimGen();   // se captura junto con la época: un chunk viejo nunca mezcla dimensiones
+                    p = paleta;
+                    vox = ox;
+                    voy = oy;
+                    n = nch;
+                    mid = CacheChunks.mundo();
                 }
-            });
-            try{ trabajador.setPriority(Thread.MIN_PRIORITY + 1); }catch(Throwable ignored){}
+                try{
+                    if(m == null || p == null || n <= 0) continue;
+                    if(baja != null){
+                        // precarga: chunk virtual suelto. Se genera con origen = su propia esquina, así que x, y locales = 0..31.
+                        long vk = baja;
+                        if(CacheChunks.tiene(mid, vk)) continue;
+                        ChunkData cd = ChunkData.generar(p, m.semilla, dm, m.tam, 0, 0, ep, Coord.vcxDeClave(vk) * TAM_CHUNK, Coord.vcyDeClave(vk) * TAM_CHUNK);
+                        CacheChunks.poner(mid, vk, cd);
+                        cd.liberar();
+                    }else{
+                        int cx = key % n, cy = key / n;
+                        long vk = Coord.claveVirtual(vox / TAM_CHUNK + cx, voy / TAM_CHUNK + cy);
+                        ChunkData cd = CacheChunks.copiar(mid, vk, cx, cy, ep);   // ¿ya se generó antes? entonces no se recalcula
+                        if(cd == null){
+                            cd = ChunkData.generar(p, m.semilla, dm, m.tam, cx, cy, ep, vox, voy);
+                            if((cx + 1) * TAM_CHUNK <= m.tam && (cy + 1) * TAM_CHUNK <= m.tam) CacheChunks.poner(mid, vk, cd);   // los de borde no: llevan relleno
+                        }
+                        listos.add(cd);
+                    }
+                }catch(Throwable t){
+                    Log.err("[MundoInfinito] Error generando chunk", t);
+                }
+                // pausa mínima entre chunks: ningún hilo acapara un núcleo de la CPU (con varios hilos basta 1 ms)
+                try{ Thread.sleep(1); }catch(InterruptedException e){ return; }
+            }
         }
 
         /** Aplica un chunk COMPLETO (modo carga: Vars.world.isGenerating() == true, sin eventos por tile). */
@@ -2077,12 +2125,18 @@ public class MundoInfinitoMod extends Mod{
                 int x = d.cx * TAM_CHUNK + lx, y = d.cy * TAM_CHUNK + ly;
                 if(x >= tam || y >= tam) continue;
                 Tile t = Vars.world.rawTile(x, y);
+                // Solo se escribe lo que CAMBIA: cada set* dispara eventos de render, y tras reubicar la ventana
+                // muchas casillas ya tienen el piso correcto (biomas grandes). Se compara siempre, porque la casilla
+                // puede venir de otra zona del mundo y traer su piso, mena o muro viejos.
                 Block f = Vars.content.block(d.piso[i]);
-                if(f instanceof Floor) t.setFloor((Floor)f);
-                // SIEMPRE se escribe (aire si no hay mena): la casilla puede venir de otra zona del mundo y traer su mena vieja
-                t.setOverlay(d.mena[i] == 0 ? Blocks.air : Vars.content.block(d.mena[i]));
-                if(d.bloque[i] != 0 && t.build == null && t.block() == Blocks.air){
-                    t.setBlock(Vars.content.block(d.bloque[i]));
+                if(f instanceof Floor && t.floor() != f) t.setFloor((Floor)f);
+                Block o = d.mena[i] == 0 ? Blocks.air : Vars.content.block(d.mena[i]);
+                if(t.overlay() != o) t.setOverlay(o);
+                if(t.build == null){   // sin edificio encima: lo que hay es terreno (aire, muro estático o roca) y se iguala al calculado
+                    Block b = d.bloque[i] == 0 ? Blocks.air : Vars.content.block(d.bloque[i]);
+                    if(t.block() != b){
+                        if(b == Blocks.air) t.setAir(); else t.setBlock(b);
+                    }
                 }
             }
         }
@@ -2103,9 +2157,10 @@ public class MundoInfinitoMod extends Mod{
         /** Presupuesto por frame: baja solo si el juego va justo de FPS (así moverse nunca causa tirones). */
         static long presupuesto(){
             float dt = Core.graphics == null ? 0.016f : Core.graphics.getDeltaTime();
-            if(dt > 0.05f) return 150_000L;
-            if(dt > 0.03f) return 400_000L;
-            return PRESUPUESTO_NS;
+            long base = Ajustes.presupuestoNs();
+            if(dt > 0.05f) return Math.min(base, 150_000L);
+            if(dt > 0.03f) return Math.min(base, 400_000L);
+            return base;
         }
 
         static void tick(){
@@ -2151,6 +2206,8 @@ public class MundoInfinitoMod extends Mod{
                     actual = null;
                 }
             }
+
+            pedirMas();   // mantiene la tubería llena sin esperar al siguiente escaneo (antes: 5 chunks cada 0,5 s)
 
             acumEscaneo += Time.delta;
             if(acumEscaneo >= 30f){
@@ -2231,23 +2288,61 @@ public class MundoInfinitoMod extends Mod{
             Mundos.limitarUnidades();
             Estructuras.revisar();
 
-            int libres = MAX_EN_COLA - solicitados.size;
+            ajustarHilos();
+            cursorPlan = 0;
+            precargarFuera(pcx, pcy);
             // lectura anticipada de las regiones del disco que el motor va a necesitar enseguida
             for(int i = 0, mirados = 0; i < motor.claves.size && mirados < 60; i++, mirados++){
                 int k = motor.claves.items[i];
                 Regiones.precargar(Math.floorDiv(Coord.vcx(k % nch), REGION_CHUNKS), Math.floorDiv(Coord.vcy(k / nch), REGION_CHUNKS));
             }
-            if(libres <= 0) return;
+            pedirMas();
+        }
+
+        /** Pide a los hilos los siguientes chunks del plan que aún no están ni cargados ni en camino, hasta llenar la tubería. */
+        static void pedirMas(){
+            int libres = maxEnCola() - solicitados.size;
+            if(libres <= 0 || cursorPlan >= motor.claves.size) return;
             synchronized(cola){
                 int pedidos = 0;
-                for(int i = 0; i < motor.claves.size && pedidos < libres; i++){
-                    int k = motor.claves.items[i];
+                while(cursorPlan < motor.claves.size && pedidos < libres){
+                    int k = motor.claves.items[cursorPlan++];
                     if(generados.contains(k) || solicitados.contains(k)) continue;
                     solicitados.add(k);
                     cola.addLast(k);
                     pedidos++;
                 }
                 if(pedidos > 0) cola.notifyAll();
+            }
+        }
+
+        /**
+         * Cerca del borde de la ventana, el terreno que quedará dentro tras reubicarla todavía es "virtual": se calcula ya, en
+         * segundo plano y solo a la caché, para que al reubicar se copie en vez de calcularse (y no se vea terreno sin cargar).
+         */
+        static void precargarFuera(int pcx, int pcy){
+            if(CacheChunks.maxChunks() <= 0) return;
+            int dBorde = Math.min(Math.min(pcx, pcy), Math.min(nch - 1 - pcx, nch - 1 - pcy));
+            if(dBorde > MARGEN_REBASE + 5) return;
+            final int r = Math.max(Ajustes.carga(), rVista) + 2, mid = CacheChunks.mundo();
+            final int vpx = Coord.vcx(pcx), vpy = Coord.vcy(pcy);
+            synchronized(cola){
+                if(colaBaja.size() > 96) return;
+                int nuevos = 0;
+                for(int ring = 0; ring <= r && nuevos < 64; ring++){        // de dentro hacia fuera
+                    for(int dy = -ring; dy <= ring && nuevos < 64; dy++){
+                        for(int dx = -ring; dx <= ring; dx++){
+                            if(Math.max(Math.abs(dx), Math.abs(dy)) != ring || !Ajustes.dentro(dx, dy, r)) continue;
+                            int lcx = pcx + dx, lcy = pcy + dy;
+                            if(enMapa(lcx, lcy)) continue;                  // dentro de la ventana ya lo trae el flujo normal
+                            long vk = Coord.claveVirtual(vpx + dx, vpy + dy);
+                            if(CacheChunks.tiene(mid, vk) || !pendBaja.add(vk)) continue;
+                            colaBaja.addLast(vk);
+                            nuevos++;
+                        }
+                    }
+                }
+                if(nuevos > 0) cola.notifyAll();
             }
         }
     }
@@ -2874,6 +2969,7 @@ public class MundoInfinitoMod extends Mod{
             int tam, n, dx, dy, dcx, dcy, vcx0, vcy0;
             short[] sf, so, sb;           // fotografía del terreno antes de mover la ventana
             boolean[] gen;                // qué chunks de ORIGEN estaban generados
+            boolean[] enDisco;            // chunks de DESTINO que se reubican ahora (círculo alrededor del jugador); el resto se rehace al cargarse
             int[] orden;                  // chunks de DESTINO, del más cercano al jugador al más lejano
             int idx;
             boolean[] hecho, restaurado;
@@ -2883,11 +2979,32 @@ public class MundoInfinitoMod extends Mod{
 
         static RebaseJob rebase;
         static java.lang.reflect.Field campoNiebla;
+        static short[] fotoF, fotoO, fotoB;   // fotografía del terreno: se reutiliza entre reubicaciones (antes: 5 MB nuevos cada vez)
 
         /** Copia un chunk de destino desde la fotografía (solo lo que cambia: cada cambio real cuesta eventos de render). */
         static void copiarChunk(RebaseJob j, int di){
             final int n = j.n, tam = j.tam;
             int cx0 = di % n, cy0 = di / n;
+            if(!j.enDisco[di]){
+                // fuera del círculo: no se toca ni una casilla de terreno. Conserva el de la posición anterior (no se ve: está lejos)
+                // y se sobrescribe por el flujo normal cuando el jugador se acerque (Streamer.aplicarTramo iguala piso, mena y muro).
+                // Solo se pone su niebla guardada (la del juego se vació al empezar) y cuenta como "hecho" para restaurar sus edificios.
+                Bits bitsF = Vars.fogControl == null ? null : Vars.fogControl.getDiscovered(Team.sharded);
+                Regiones.ChunkGuardado cg = Regiones.chunk(j.vcx0 + cx0, j.vcy0 + cy0, false);
+                if(cg != null && cg.niebla != null && bitsF != null){
+                    int wF = Vars.world.width();
+                    for(int ly = 0; ly < TAM_CHUNK; ly++){
+                        int row = cg.niebla[ly];
+                        if(row == 0) continue;
+                        for(int lx = 0; lx < TAM_CHUNK; lx++){
+                            if((row & (1 << lx)) != 0) bitsF.set((cx0 * TAM_CHUNK + lx) + (cy0 * TAM_CHUNK + ly) * wF);
+                        }
+                    }
+                    j.nieblaSucia = true;
+                }
+                j.hecho[di] = true;
+                return;
+            }
             int scx = cx0 + j.dcx, scy = cy0 + j.dcy;
             boolean ok = scx >= 0 && scy >= 0 && scx < n && scy < n && j.gen[scy * n + scx];
             Bits bits = Vars.fogControl == null ? null : Vars.fogControl.getDiscovered(Team.sharded);
@@ -3040,24 +3157,47 @@ public class MundoInfinitoMod extends Mod{
                 capturarEnMemoria();
                 escribirAsync(d, false);
 
-                // 2) fotografía del terreno (pisos, menas y bloques estáticos; los edificios se restauran aparte)
-                int total = tam * tam;
-                short[] sf = new short[total], so = new short[total], sb = new short[total];
-                for(int y = 0; y < tam; y++){
-                    for(int x = 0; x < tam; x++){
-                        Tile t = Vars.world.rawTile(x, y);
-                        int i = y * tam + x;
-                        sf[i] = (short)t.floor().id;
-                        so[i] = (short)t.overlay().id;
-                        sb[i] = t.build == null ? (short)t.block().id : 0;
-                    }
-                }
+                // 2) qué chunks se reubican ahora: un CÍRCULO alrededor del jugador (con su nueva posición local), no toda la ventana.
+                //    Tocar los ~900 chunks de la ventana era lo que producía el tirón cada ~300 tiles.
+                float njx = Streamer.jugadorX - dx, njy = Streamer.jugadorY - dy;
+                int npcx = Mathf.clamp((int)njx / TAM_CHUNK, 0, n - 1), npcy = Mathf.clamp((int)njy / TAM_CHUNK, 0, n - 1);
+                final boolean circ = Ajustes.rebaseCircular();
+                final int rd = Math.max(Ajustes.carga(), Streamer.rVista) + 2;
+                boolean[] enDisco = new boolean[n * n];
+                for(int k = 0; k < enDisco.length; k++) enDisco[k] = !circ || Ajustes.dentro(k % n - npcx, k / n - npcy, rd);
                 boolean[] gen = new boolean[n * n];
                 IntSet.IntSetIterator gi = Streamer.generados.iterator();
                 while(gi.hasNext) gen[gi.next()] = true;
 
-                // 3) quitar los edificios del jugador (se restauran desde el almacén en la nueva posición)
-                Seq<Building> edificios = new Seq<>(Vars.state.teams.get(Team.sharded).buildings);
+                // 3a) fotografía del terreno (pisos, menas y bloques estáticos) SOLO de los chunks de origen que van a copiarse
+                int total = tam * tam;
+                if(fotoF == null || fotoF.length < total){ fotoF = new short[total]; fotoO = new short[total]; fotoB = new short[total]; }
+                short[] sf = fotoF, so = fotoO, sb = fotoB;
+                boolean[] necesaria = new boolean[n * n];
+                for(int k = 0; k < enDisco.length; k++){
+                    if(!enDisco[k]) continue;
+                    int scx = k % n + dcx, scy = k / n + dcy;
+                    if(scx >= 0 && scy >= 0 && scx < n && scy < n && gen[scy * n + scx]) necesaria[scy * n + scx] = true;
+                }
+                for(int sc = 0; sc < necesaria.length; sc++){
+                    if(!necesaria[sc]) continue;
+                    int x0 = (sc % n) * TAM_CHUNK, y0 = (sc / n) * TAM_CHUNK;
+                    for(int y = y0; y < y0 + TAM_CHUNK; y++){
+                        for(int x = x0; x < x0 + TAM_CHUNK; x++){
+                            Tile t = Vars.world.rawTile(x, y);
+                            int i = y * tam + x;
+                            sf[i] = (short)t.floor().id;
+                            so[i] = (short)t.overlay().id;
+                            sb[i] = t.build == null ? (short)t.block().id : 0;
+                        }
+                    }
+                }
+
+                // 3) quitar los edificios de TODOS los equipos (se restauran desde el almacén en la nueva posición). Antes bastaba con los
+                //    del jugador porque la copia de toda la ventana borraba el resto; con la reubicación circular los chunks de fuera no
+                //    se tocan, y un edificio enemigo o abandonado que se quedara ahí aparecería en una coordenada virtual equivocada.
+                Seq<Building> edificios = new Seq<>();
+                for(var td : Vars.state.teams.getActive()) edificios.addAll(td.buildings);
                 for(Building b : edificios){
                     if(b.tile != null && b.tile.build == b) b.tile.setAir();
                 }
@@ -3078,12 +3218,16 @@ public class MundoInfinitoMod extends Mod{
                 Streamer.solicitados.clear();
                 Streamer.generados.clear();
                 Streamer.requeridos.clear();
+                Streamer.motor.claves.clear();   // el plan viejo está en coordenadas de la ventana anterior
+                Streamer.cursorPlan = 0;
                 Streamer.colaRestaurar.clear();
                 Streamer.configsPendientes.clear();
                 Streamer.unidadesPend.clear();
                 Estructuras.reiniciarCola();
                 Ausencia.reiniciar();
                 Streamer.fogPend.clear();
+                Bits nieblaTodo = Vars.fogControl == null ? null : Vars.fogControl.getDiscovered(Team.sharded);
+                if(nieblaTodo != null) nieblaTodo.clear();   // ya se guardó en el paso 1; cada chunk recupera la suya al reubicarse
                 Streamer.actual = null;
                 Streamer.paso = 0;
                 Streamer.ox = nox;
@@ -3095,7 +3239,7 @@ public class MundoInfinitoMod extends Mod{
                 RebaseJob job = new RebaseJob();
                 job.tam = tam; job.n = n; job.dx = dx; job.dy = dy; job.dcx = dcx; job.dcy = dcy;
                 job.vcx0 = nox / TAM_CHUNK; job.vcy0 = noy / TAM_CHUNK;
-                job.sf = sf; job.so = so; job.sb = sb; job.gen = gen;
+                job.sf = sf; job.so = so; job.sb = sb; job.gen = gen; job.enDisco = enDisco;
                 job.hecho = new boolean[n * n];
                 job.restaurado = new boolean[n * n];
                 Streamer.jugadorX -= dx;

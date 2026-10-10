@@ -17,10 +17,9 @@ import mundoinfinito.MundoInfinitoMod.Streamer;
  * el jugador. Así nunca mueren por salir del mundo cargado, por caer sobre terreno viejo ni por el límite de unidades.
  */
 final class Entidades{
-    static final int R_ACTIVA = 7;   // chunks de distancia al jugador dentro de los que viven las unidades aliadas
-
+    /** Radio (en chunks, REDONDO) dentro del cual viven las unidades aliadas: "distancia de simulación" de Ajustes. Lo que se ve en pantalla nunca duerme. */
     static int radioActivo(){
-        return Math.max(R_ACTIVA, Streamer.rVista + 2);
+        return Math.max(Ajustes.sim(), Streamer.rVista + 1);
     }
 
     static boolean dormible(Unit u){
@@ -93,7 +92,7 @@ final class Entidades{
         int lcx = Coord.cxLocal(vcx), lcy = Coord.cyLocal(vcy);
         if(!Streamer.enMapa(lcx, lcy) || !Streamer.generados.contains(Streamer.clave(lcx, lcy))) return;
         int pcx = (int)Streamer.jugadorX / MundoInfinitoMod.TAM_CHUNK, pcy = (int)Streamer.jugadorY / MundoInfinitoMod.TAM_CHUNK;
-        if(Math.max(Math.abs(lcx - pcx), Math.abs(lcy - pcy)) > radioActivo()) return;
+        if(!Ajustes.dentro(lcx - pcx, lcy - pcy, radioActivo())) return;
         boolean cambio = false;
         for(int i = c.unidades.size - 1; i >= 0; i--){
             Estructuras.RegU r = c.unidades.get(i);
@@ -112,14 +111,14 @@ final class Entidades{
             if(!dormible(u)) continue;
             int cx = Math.floorDiv(u.tileX(), MundoInfinitoMod.TAM_CHUNK), cy = Math.floorDiv(u.tileY(), MundoInfinitoMod.TAM_CHUNK);
             boolean fuera = !Streamer.enMapa(cx, cy) || !Streamer.generados.contains(Streamer.clave(cx, cy));
-            if(fuera || Math.max(Math.abs(cx - pcx), Math.abs(cy - pcy)) > radio + 1) dormir.add(u);   // +1: histéresis, no parpadea en el borde
+            if(fuera || !Ajustes.dentro(cx - pcx, cy - pcy, radio + 1)) dormir.add(u);   // +1: histéresis, no parpadea en el borde
         }
         for(Unit u : dormir) hibernar(u);
         int vcx0 = Coord.vcx(0), vcy0 = Coord.vcy(0);
         for(int dy = -radio; dy <= radio; dy++){
             for(int dx = -radio; dx <= radio; dx++){
                 int cx = pcx + dx, cy = pcy + dy;
-                if(!Streamer.enMapa(cx, cy)) continue;
+                if(!Ajustes.dentro(dx, dy, radio) || !Streamer.enMapa(cx, cy)) continue;
                 despertarEnChunk(vcx0 + cx, vcy0 + cy);
             }
         }

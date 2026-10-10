@@ -38,6 +38,27 @@ final class Estructuras{
     static final int DIST_MIN = 120;   // nada de estructuras encima del spawn
 
     // ---------------------------------------------------------------- geometría (pura, sin objetos)
+    /**
+     * ¿Es legítimo un edificio de un equipo no jugador en esta posición virtual? Lo es si cae dentro de una estructura que la
+     * semilla genera ahí. Los mundos sin estructuras (mundos antiguos) y los edificios del jugador siempre lo son.
+     */
+    static boolean legitimo(int x, int y, int equipo){
+        Meta m = Streamer.meta;
+        if(m == null || !m.dimensional() || equipo == Team.sharded.id) return true;
+        int sd = Muestreo.semDim(m.semilla, m.dim);
+        Spawn sp = Muestreo.spawn(sd, m.dim);
+        int c = sp.celdaE;
+        int[] cen = new int[3];
+        int ci = Math.floorDiv(x, c), cj = Math.floorDiv(y, c);
+        for(int i = ci - 1; i <= ci + 1; i++){
+            for(int j = cj - 1; j <= cj + 1; j++){
+                if(tipo(sd, sp, i, j, cen) == T_NADA) continue;
+                if(Math.hypot(x - cen[0], y - cen[1]) <= cen[2] * 1.05 + 4) return true;
+            }
+        }
+        return false;
+    }
+
     /** Tipo de estructura de la celda (i, j) o T_NADA. Rellena cen[0..2] = x, y, radio de despeje. */
     static int tipo(int s, Spawn sp, int i, int j, int[] cen){
         int c = sp.celdaE;
@@ -375,6 +396,7 @@ final class Estructuras{
                 if(t == T_NADA) continue;
                 long id = clave(i, j, 0);
                 if(colocadas.contains(id) || enCola.contains(id)) continue;
+                if(!Bases.cerca(cen[0], cen[1], 1)) continue;   // lo lejano ni se construye: aparece al acercarse (y duerme al alejarse)
                 if(!listo(cen[0], cen[1], cen[2] + 4)) continue;
                 Trabajo tr = disenar(sd, sp, t, i, j, cen, dim);
                 tr.id = id;
@@ -500,6 +522,8 @@ final class Estructuras{
             Tile t = Vars.world.tile(p.x - Coord.origenX(), p.y - Coord.origenY());
             if(b == null || t == null) return;
             if(t.build != null && t.build.team == Team.sharded) return;   // nunca se pisa lo del jugador
+            // nunca sobre líquido (el terreno despeja la huella, pero el borde irregular puede dejar una casilla de agua)
+            if((t.floor().isLiquid || t.floor().isDeep()) && !b.floating && !b.requiresWater) return;
             t.setBlock(b, Team.get(p.equipo), p.rot);
             if(t.build != null){
                 if(p.item != null){

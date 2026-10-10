@@ -47,7 +47,7 @@ final class Ajustes{
     }
 
     static int cacheMB(){
-        return Mathf.clamp(Core.settings.getInt(K_CACHE, 24), 0, 256);
+        return Mathf.clamp(Core.settings.getInt(K_CACHE, 24), 8, 256);   // mínimo 8: la reubicación de la ventana lee de la caché
     }
 
     /** En décimas de milisegundo (9 = 0,9 ms, el valor original del mod). */
@@ -82,7 +82,7 @@ final class Ajustes{
                 t.add("[accent]Carga de chunks[]").left().padTop(6f).row();
                 t.sliderPref(K_CARGA, Math.min(8, maxCarga()), 3, maxCarga(), v -> v + " chunks (" + (v * MundoInfinitoMod.TAM_CHUNK) + " tiles, redondo)");
                 t.sliderPref(K_HILOS, Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() - 1)), 1, maxHilos(), v -> v + (v == 1 ? " hilo" : " hilos"));
-                t.sliderPref(K_CACHE, 24, 0, 256, v -> v == 0 ? "desactivada" : v + " MB");
+                t.sliderPref(K_CACHE, 24, 8, 256, v -> v + " MB (40 % caliente, 60 % comprimida)");
                 t.sliderPref(K_PRESUP, 9, 2, 60, v -> (v / 10f) + " ms");
                 t.checkPref(K_CIRCULAR, true);
                 t.add("[accent]Simulación[]").left().padTop(10f).row();

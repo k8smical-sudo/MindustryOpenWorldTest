@@ -4,8 +4,11 @@ import arc.struct.Seq;
 import arc.util.Log;
 import mindustry.Vars;
 import mindustry.game.Team;
+import mindustry.gen.Building;
 import mindustry.io.MapIO;
 import mindustry.world.Tile;
+import mindustry.world.blocks.storage.CoreBlock;
+import arc.util.Time;
 import mundoinfinito.MundoInfinitoMod.Streamer;
 
 import java.io.ByteArrayOutputStream;
@@ -28,7 +31,6 @@ final class Mapa{
     static final int LADO = 16;                          // píxeles por lado de una miniatura
     static final int REG = MundoInfinitoMod.REGION_CHUNKS;
     static final int VISTO = 0xff101018;                 // color de lo no explorado
-    static final int R_MUESTREO = 4;                     // chunks alrededor del jugador que se van fotografiando
 
     // región (clave) -> miniaturas por índice dentro de la región (null = sin explorar)
     static final HashMap<Long, short[][]> regiones = new HashMap<>();
@@ -38,6 +40,15 @@ final class Mapa{
     static volatile int epoca;
     static File carpeta;
     private static int cursor;
+
+    // ---- núcleos propios REALES, en coordenadas virtuales (clave virtual -> {vx, vy}). Persisten en nucleos.dat.
+    // El minimapa del juego solo conoce los de la ventana; el núcleo "proxy" oculto que el mod pone en una esquina
+    // cuando el real queda fuera NO es un núcleo y nunca entra aquí.
+    static final HashMap<Long, int[]> nucleos = new HashMap<>();
+    static final ConcurrentLinkedQueue<int[]> nucleosLlegados = new ConcurrentLinkedQueue<>();
+    private static boolean nucleosSucios;
+    private static float tNucleos;
+    private static final HashSet<Long> vivos = new HashSet<>();
 
     private Mapa(){}
 
@@ -49,6 +60,124 @@ final class Mapa{
         llegadas.clear();
         epoca++;
         cursor = 0;
+        anillo.clear();
+        anilloR = -1;
+        nucleos.clear();
+        nucleosLlegados.clear();
+        nucleosSucios = false;
+        tNucleos = 0f;
+        cargarNucleos();
+    }
+
+    // ---------------- núcleos ----------------
+    static File archivoNucleos(){
+        return new File(carpeta, "nucleos.dat");
+    }
+
+    private static void cargarNucleos(){
+        if(carpeta == null) return;
+        File f = archivoNucleos();
+        if(!f.exists()){
+            escanearAntiguas();   // partida anterior a este registro: se buscan los núcleos en las regiones ya guardadas
+            return;
+        }
+        try(DataInputStream in = new DataInputStream(new FileInputStream(f))){
+            in.readInt();
+            int n = in.readInt();
+            for(int i = 0; i < n; i++){
+                int vx = in.readInt(), vy = in.readInt();
+                nucleos.put(Coord.claveVirtual(vx, vy), new int[]{vx, vy});
+            }
+        }catch(Throwable t){
+            Log.err("[MundoInfinito] Registro de núcleos ilegible", t);
+        }
+    }
+
+    /** Una sola vez, para mundos guardados antes de existir nucleos.dat: lee las regiones en el hilo de E/S, una tarea por archivo. */
+    private static void escanearAntiguas(){
+        nucleosSucios = true;   // aunque no se encuentre nada, se escribe el archivo para no repetir la búsqueda
+        File[] fs = new File(carpeta, "regiones").listFiles();
+        if(fs == null) return;
+        final int ep = epoca;
+        for(final File f : fs){
+            String nom = f.getName();
+            if(!nom.startsWith("r.") || !nom.endsWith(".dat")) continue;
+            Disco.leer(() -> {
+                try{
+                    MundoInfinitoMod.Regiones.Region r = new MundoInfinitoMod.Regiones.Region(0, 0);
+                    MundoInfinitoMod.Regiones.leer(r, new arc.files.Fi(f));
+                    for(MundoInfinitoMod.Regiones.ChunkGuardado c : r.chunks.values()){
+                        for(MundoInfinitoMod.Reg b : c.edificios){
+                            if(b.bloque != null && b.bloque.startsWith("core-") && b.equipo == Team.sharded.id && ep == epoca){
+                                nucleosLlegados.add(new int[]{b.x, b.y});
+                            }
+                        }
+                    }
+                }catch(Throwable t){
+                    Log.warn("[MundoInfinito] No se pudo buscar núcleos en @", f.getName());
+                }
+            });
+        }
+    }
+
+    static byte[] bytesNucleos(){
+        try{
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            DataOutputStream out = new DataOutputStream(bos);
+            out.writeInt(1);
+            out.writeInt(nucleos.size());
+            for(int[] v : nucleos.values()){
+                out.writeInt(v[0]);
+                out.writeInt(v[1]);
+            }
+            out.flush();
+            return bos.toByteArray();
+        }catch(Throwable t){
+            return null;
+        }
+    }
+
+    /**
+     * Mantiene el registro: añade los núcleos reales de la ventana y quita los que ya no existen (solo si su chunk está
+     * cargado y ya restaurado). Barato: una vez por segundo.
+     */
+    static void actualizarNucleos(){
+        if(Time.time - tNucleos < 60f) return;
+        tNucleos = Time.time;
+        int[] a;
+        while((a = nucleosLlegados.poll()) != null){
+            if(nucleos.putIfAbsent(Coord.claveVirtual(a[0], a[1]), a) == null) nucleosSucios = true;
+        }
+        vivos.clear();
+        for(Building n : Vars.state.teams.get(Team.sharded).cores){
+            if(n.tile == null || n.tile.pos() == MundoInfinitoMod.Mundos.proxyPos) continue;   // el proxy no es un núcleo
+            int vx = n.tile.x + Streamer.ox, vy = n.tile.y + Streamer.oy;
+            long k = Coord.claveVirtual(vx, vy);
+            vivos.add(k);
+            if(!nucleos.containsKey(k)){
+                nucleos.put(k, new int[]{vx, vy});
+                nucleosSucios = true;
+            }
+        }
+        boolean estable = !Streamer.restaurando && MundoInfinitoMod.Mundos.rebase == null && !MundoInfinitoMod.Mundos.viajando
+            && Streamer.colaRestaurar.isEmpty();
+        if(!estable) return;
+        final int tam = Streamer.meta == null ? 0 : Streamer.meta.tam;
+        java.util.Iterator<java.util.Map.Entry<Long, int[]>> it = nucleos.entrySet().iterator();
+        while(it.hasNext()){
+            java.util.Map.Entry<Long, int[]> e = it.next();
+            if(vivos.contains(e.getKey())) continue;
+            int[] v = e.getValue();
+            int lx = v[0] - Streamer.ox, ly = v[1] - Streamer.oy;
+            if(lx < 0 || ly < 0 || lx >= tam || ly >= tam) continue;       // fuera de la ventana: se conserva
+            int cx = lx / Coord.CHUNK, cy = ly / Coord.CHUNK;
+            if(cx < 1 || cy < 1 || cx > Streamer.nch - 2 || cy > Streamer.nch - 2) continue;   // anillo exterior: sus edificios no se restauran
+            if(!Streamer.generados.contains(Streamer.clave(cx, cy))) continue;
+            Tile t = Vars.world.tile(lx, ly);
+            if(t != null && t.build instanceof CoreBlock.CoreBuild) continue;
+            it.remove();                                                    // el núcleo ya no está: destruido
+            nucleosSucios = true;
+        }
     }
 
     static long kReg(int rx, int ry){
@@ -157,6 +286,11 @@ final class Mapa{
     /** Pone en cola de E/S las regiones modificadas (sin comprimir: lo hace el hilo de E/S). */
     static void guardar(){
         if(carpeta == null) return;
+        if(nucleosSucios){
+            byte[] nb = bytesNucleos();
+            if(nb != null) Disco.escribir(archivoNucleos(), nb, false);
+            nucleosSucios = false;
+        }
         for(long k : new HashSet<>(sucias)){
             int rx = Coord.vcxDeClave(k), ry = Coord.vcyDeClave(k);
             short[][] r = regiones.get(k);
@@ -205,11 +339,19 @@ final class Mapa{
     }
 
     private static final Seq<int[]> anillo = new Seq<>();
+    private static int anilloR = -1;
 
+    /** El minimapa fotografía el DISCO de "distancia de carga" (Ajustes), no un cuadrado fijo: sigue a la configuración. */
     static void prepararAnillo(){
-        if(anillo.size > 0) return;
-        for(int dy = -R_MUESTREO; dy <= R_MUESTREO; dy++){
-            for(int dx = -R_MUESTREO; dx <= R_MUESTREO; dx++) anillo.add(new int[]{dx, dy});
+        int r = Ajustes.rMapa();
+        if(anilloR == r && anillo.size > 0) return;
+        anilloR = r;
+        anillo.clear();
+        cursor = 0;
+        for(int dy = -r; dy <= r; dy++){
+            for(int dx = -r; dx <= r; dx++){
+                if(Ajustes.dentro(dx, dy, r)) anillo.add(new int[]{dx, dy});
+            }
         }
         anillo.sort((a, b) -> Integer.compare(a[0] * a[0] + a[1] * a[1], b[0] * b[0] + b[1] * b[1]));
     }
@@ -222,6 +364,7 @@ final class Mapa{
         if(carpeta == null || !Streamer.activo) return;
         prepararAnillo();
         sincronizar();
+        actualizarNucleos();
         int hechos = 0;
         // 1) los que faltan
         for(int i = 0; i < anillo.size && hechos < 2; i++){

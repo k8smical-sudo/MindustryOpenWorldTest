@@ -13,22 +13,16 @@ import arc.scene.ui.layout.Scl;
 import arc.scene.ui.layout.Table;
 import arc.util.Time;
 import mindustry.Vars;
-import mindustry.game.Team;
-import mindustry.gen.Building;
 import mundoinfinito.MundoInfinitoMod.Mundos;
 import mundoinfinito.MundoInfinitoMod.Streamer;
 
 /**
- * Minimapa del HUD. Toca para cambiar el zoom (1, 2, 4 u 8 tiles por pÃ­xel). Se compone con las miniaturas del mod y se
- * sube a la GPU UNA vez cada pocos fotogramas (el del juego hacÃ­a una llamada por cada tile que cambiaba).
+ * Minimapa del HUD. Toca para cambiar el zoom (1, 2, 4 u 8 tiles por píxel). Se compone con las miniaturas del mod y se
+ * sube a la GPU UNA vez cada pocos fotogramas (el del juego hacía una llamada por cada tile que cambiaba).
  */
 final class MapaVista extends Element{
     static final int LADO = 144;
     static boolean creado;
-
-    // Ãºltima posiciÃ³n VIRTUAL conocida del nÃºcleo REAL del jugador (sobrevive a mover la ventana)
-    static double nucleoVx, nucleoVy;
-    static boolean nucleoVacia = true;
 
     private final int[] buf = new int[LADO * LADO];
     private final Pixmap pixmap = new Pixmap(LADO, LADO);
@@ -57,6 +51,20 @@ final class MapaVista extends Element{
         }));
     }
 
+    /** Circunferencia recortada al cuadrado del minimapa (solo se pintan los tramos que caen dentro). */
+    private void arco(float cx, float cy, float r, float lim){
+        final int seg = 72;
+        float ox = 0f, oy = 0f;
+        boolean antes = false;
+        for(int i = 0; i <= seg; i++){
+            float a = i * 6.2831855f / seg;
+            float qx = (float)Math.cos(a) * r, qy = (float)Math.sin(a) * r;
+            boolean dentro = Math.abs(qx) <= lim && Math.abs(qy) <= lim;
+            if(i > 0 && dentro && antes) Lines.line(cx + ox, cy + oy, cx + qx, cy + qy);
+            ox = qx; oy = qy; antes = dentro;
+        }
+    }
+
     @Override
     public void draw(){
         double[] p = Mundos.posicionVirtual();
@@ -74,24 +82,32 @@ final class MapaVista extends Element{
         Draw.color(Color.white);
         Draw.alpha(parentAlpha);
         Draw.rect(region, x + width / 2f, y + height / 2f, width, height);
-        float cx = x + width / 2f, cy = y + height / 2f, pxEscala = width / LADO;
-        // nÃºcleos propios. El nÃºcleo PROXY (esquina de la ventana, cuando el real estÃ¡ lejos) NO se dibuja:
-        // antes aparecÃ­a como marcador dorado "cerca del jugador" en un sitio incorrecto hasta volver a acercarse
-        // a la base. Se recuerda la Ãºltima posiciÃ³n VIRTUAL del nÃºcleo real y esa es la que se marca siempre.
-        Draw.color(Color.gold);
-        boolean hayReal = false;
-        for(Building n : Vars.state.teams.get(Team.sharded).cores){
-            if(Mundos.proxyPos == n.pos()) continue;      // proxy: solo mantiene el inventario, no es la base
-            double vx = Coord.virtualX(n.x), vy = Coord.virtualY(n.y);
-            nucleoVx = vx; nucleoVy = vy; nucleoVacia = false;   // recordar dÃ³nde estÃ¡ la base de verdad
-            hayReal = true;
-            float dx = (float)((vx - p[0]) / tpp) * pxEscala, dy = (float)((vy - p[1]) / tpp) * pxEscala;
-            if(Math.abs(dx) < width / 2f - 3 && Math.abs(dy) < height / 2f - 3) Fill.square(cx + dx, cy + dy, 3f);
-        }
-        if(!hayReal && !nucleoVacia){
-            // el nÃºcleo real estÃ¡ fuera de la ventana cargada: marcar su posiciÃ³n virtual recordada
-            float dx = (float)((nucleoVx - p[0]) / tpp) * pxEscala, dy = (float)((nucleoVy - p[1]) / tpp) * pxEscala;
-            if(Math.abs(dx) < width / 2f - 3 && Math.abs(dy) < height / 2f - 3) Fill.square(cx + dx, cy + dy, 3f);
+        float cx = x + width / 2f, cy = y + height / 2f, pxEscala = width / LADO, lim = width / 2f - 3f;
+        // zonas activas: carga (blanco) y simulación (cian), según Ajustes. Solo se dibuja lo que cae dentro del minimapa.
+        Lines.stroke(1f);
+        Draw.color(Color.white);
+        Draw.alpha(0.55f * parentAlpha);
+        arco(cx, cy, Ajustes.carga() * Coord.CHUNK / (float)tpp * pxEscala, lim);
+        Draw.color(Color.cyan);
+        Draw.alpha(0.55f * parentAlpha);
+        arco(cx, cy, Ajustes.sim() * Coord.CHUNK / (float)tpp * pxEscala, lim);
+        Draw.alpha(parentAlpha);
+        // núcleos propios REALES (registro persistente en virtuales; el núcleo proxy oculto nunca está aquí)
+        for(int[] n : Mapa.nucleos.values()){
+            float dx = (float)((n[0] + 0.5 - p[0]) / tpp) * pxEscala, dy = (float)((n[1] + 0.5 - p[1]) / tpp) * pxEscala;
+            if(Math.abs(dx) < lim && Math.abs(dy) < lim){
+                Draw.color(Color.black);
+                Fill.square(cx + dx, cy + dy, 4f);
+                Draw.color(Color.gold);
+                Fill.square(cx + dx, cy + dy, 3f);
+            }else{
+                // fuera del minimapa: flecha en el borde apuntando hacia el núcleo
+                float k = lim / Math.max(Math.abs(dx), Math.abs(dy));
+                float ax = cx + dx * k, ay = cy + dy * k, ang = (float)Math.atan2(dy, dx);
+                float c = (float)Math.cos(ang), s = (float)Math.sin(ang);
+                Draw.color(Color.gold);
+                Fill.tri(ax + c * 3f, ay + s * 3f, ax - c * 3f - s * 3f, ay - s * 3f + c * 3f, ax - c * 3f + s * 3f, ay - s * 3f - c * 3f);
+            }
         }
         // jugador
         Draw.color(Color.white);

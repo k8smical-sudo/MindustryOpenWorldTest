@@ -16,10 +16,12 @@ import mindustry.gen.Icon;
  *   caché de chunks          MB de RAM para no recalcular terreno que ya se generó
  *   presupuesto por frame    tiempo del hilo principal que se puede gastar aplicando terreno al juego
  *   reubicación circular     al mover la ventana, solo se reubica un círculo alrededor del jugador (no toda la ventana)
+ *   modo estricto            las distancias de carga y simulación son LÍMITES de verdad (lo que se ve en pantalla no las salta)
+ *   reubicación anticipada   la ventana se prepara antes de llegar al borde, en trocitos, para que no haya tirones
  */
 final class Ajustes{
     static final String K_CARGA = "ow-carga", K_SIM = "ow-sim", K_HILOS = "ow-hilos", K_CACHE = "ow-cache",
-        K_PRESUP = "ow-presup", K_CIRCULAR = "ow-rebase-circular";
+        K_PRESUP = "ow-presup", K_CIRCULAR = "ow-rebase-circular", K_ESTRICTO = "ow-estricto", K_ANTICIPAR = "ow-anticipar";
 
     private Ajustes(){}
 
@@ -50,15 +52,28 @@ final class Ajustes{
         return Mathf.clamp(Core.settings.getInt(K_CACHE, 24), 8, 256);   // mínimo 8: la reubicación de la ventana lee de la caché
     }
 
-    /** En décimas de milisegundo (30 = 3 ms). Antes el valor por defecto era 0,9 ms: apenas ~1 chunk por
-     *  fotograma y la distancia de carga tardaba ~20 s en materializarse; con FPS justo se auto-limita (ver
-     *  Streamer.presupuesto), así que un valor alto nunca congela el juego. */
+    /** En décimas de milisegundo (9 = 0,9 ms, el valor original del mod). */
     static long presupuestoNs(){
-        return Mathf.clamp(Core.settings.getInt(K_PRESUP, 30), 2, 60) * 100_000L;
+        return Mathf.clamp(Core.settings.getInt(K_PRESUP, 9), 2, 60) * 100_000L;
     }
 
     static boolean rebaseCircular(){
         return Core.settings.getBool(K_CIRCULAR, true);
+    }
+
+    /** true = la distancia de carga y la de simulación se respetan siempre (también con zoom alejado). */
+    static boolean estricto(){
+        return Core.settings.getBool(K_ESTRICTO, true);
+    }
+
+    /** true = la ventana se prepara antes de llegar al borde (sin congelamientos). false = comportamiento antiguo. */
+    static boolean anticipar(){
+        return Core.settings.getBool(K_ANTICIPAR, true);
+    }
+
+    /** Radio (en chunks) que el minimapa va fotografiando alrededor del jugador: sigue a la distancia de carga. */
+    static int rMapa(){
+        return Mathf.clamp(carga(), 3, 12);
     }
 
     /** ¿(dx, dy) está dentro del círculo de radio r? (un poco redondeado hacia fuera para que el borde no tenga muescas) */
@@ -80,15 +95,21 @@ final class Ajustes{
             p.put("setting." + K_CACHE + ".name", "Caché de chunks (MB)");
             p.put("setting." + K_PRESUP + ".name", "Tiempo por frame para aplicar terreno");
             p.put("setting." + K_CIRCULAR + ".name", "Reubicación circular de la ventana");
+            p.put("setting." + K_ESTRICTO + ".name", "Respetar distancias estrictamente (si no, lo que se ve siempre se carga)");
+            p.put("setting." + K_ANTICIPAR + ".name", "Reubicación anticipada (sin tirones al cruzar el borde)");
             Vars.ui.settings.addCategory("OpenWorld", Icon.map, t -> {
                 t.add("[accent]Carga de chunks[]").left().padTop(6f).row();
-                t.sliderPref(K_CARGA, Math.min(8, maxCarga()), 3, maxCarga(), v -> v + " chunks");
+                t.sliderPref(K_CARGA, Math.min(8, maxCarga()), 3, maxCarga(), v -> v + " chunks (" + (v * MundoInfinitoMod.TAM_CHUNK) + " tiles, redondo)");
                 t.sliderPref(K_HILOS, Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() - 1)), 1, maxHilos(), v -> v + (v == 1 ? " hilo" : " hilos"));
                 t.sliderPref(K_CACHE, 24, 8, 256, v -> v + " MB (40 % caliente, 60 % comprimida)");
-                t.sliderPref(K_PRESUP, 30, 2, 60, v -> (v / 10f) + " ms");
+                t.sliderPref(K_PRESUP, 9, 2, 60, v -> (v / 10f) + " ms");
                 t.checkPref(K_CIRCULAR, true);
+                t.checkPref(K_ANTICIPAR, true);
+                t.checkPref(K_ESTRICTO, true);
                 t.add("[accent]Simulación[]").left().padTop(10f).row();
                 t.sliderPref(K_SIM, 6, 2, maxCarga(), v -> v + " chunks (redondo)");
+                t.add("[accent]Reparación[]").left().padTop(10f).row();
+                t.button("Reparar texturas del suelo", Suelo::sanear).left().padTop(6f).row();
             });
         }catch(Throwable e){
             Log.err("[MundoInfinito] No se pudo crear la sección OpenWorld en Ajustes", e);

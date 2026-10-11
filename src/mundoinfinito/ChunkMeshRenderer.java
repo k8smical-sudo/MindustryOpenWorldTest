@@ -9,6 +9,7 @@ import arc.graphics.Mesh;
 import arc.graphics.Texture;
 import arc.graphics.VertexAttribute;
 import arc.graphics.g2d.Draw;
+import arc.graphics.g2d.Fill;
 import arc.graphics.gl.Shader;
 import arc.struct.LongMap;
 import arc.struct.Seq;
@@ -79,6 +80,7 @@ final class ChunkMeshRenderer{
     /** Estado de un chunk virtual visible (o recién visible). Se reciclan; sin asignaciones por fotograma. */
     private static final class Ranura{
         long clave;
+        int vcx, vcy;
         int estado, ultimoVisto, proximo, faltantes;
         boolean oscuro, recocinando;
         Mesh malla;
@@ -103,7 +105,8 @@ final class ChunkMeshRenderer{
     private static final LongMap<Ranura> mapa = new LongMap<>();
     private static final Ranura[] visibles = new Ranura[MAX_VISIBLES];
     private static final Ranura[] dibujo = new Ranura[MAX_VISIBLES];
-    private static int nVisibles, nDibujo, cuadro, mundoVisto = Integer.MIN_VALUE;
+    private static final Ranura[] cubiertos = new Ranura[MAX_VISIBLES];
+    private static int nVisibles, nDibujo, nCubiertos, cuadro, mundoVisto = Integer.MIN_VALUE;
     private static int cocciones, terreno;
     private static final int[] lcx = new int[MAX_VISIBLES], lcy = new int[MAX_VISIBLES];
     private static final float[] ldist = new float[MAX_VISIBLES];
@@ -226,6 +229,7 @@ final class ChunkMeshRenderer{
         if(!vanillaApagado) return;
         vanillaApagado = false;
         vaciarTodo();
+        nCubiertos = 0;
         try{
             if(Vars.world != null && Vars.world.tiles != null) suelo.reload();
         }catch(Throwable t){
@@ -244,6 +248,17 @@ final class ChunkMeshRenderer{
             if(!vanillaApagado || fCache.get(suelo) != null) apagarVanilla();
             if(!habilitado) return;
             actualizar();
+            if(nCubiertos > 0){
+                final float z0 = Draw.z();
+                Draw.z(Layer.blockOver + 0.5f);         // sobre suelo, muros y rocas; bajo edificios, unidades y balas
+                Draw.color(0f, 0f, 0f, 1f);
+                for(int i = 0; i < nCubiertos; i++){
+                    final Ranura r = cubiertos[i];
+                    Fill.crect(r.offX - 4.5f, r.offY - 4.5f, CH + 1f, CH + 1f);   // 0,5 de solape: sin costuras
+                }
+                Draw.color();
+                Draw.z(z0);
+            }
             Draw.draw(Layer.floor, DIBUJAR_SUELO);                  // misma capa y orden que Renderer.draw()
             Draw.draw(Layer.block - 0.09f, DIBUJAR_MUROS);
         }catch(Throwable t){
@@ -313,6 +328,8 @@ final class ChunkMeshRenderer{
                 mapa.put(k, r);
             }
             r.ultimoVisto = cuadro;
+            r.vcx = vcx;
+            r.vcy = vcy;
             r.offX = lcx[i] * CH;
             r.offY = lcy[i] * CH;
             visibles[nVisibles++] = r;
@@ -329,12 +346,20 @@ final class ChunkMeshRenderer{
         subirListos(mid);
 
         // ---- frustum culling estricto: solo se dibuja el chunk cuyo rectángulo corta el viewport ----
+        // Regla "como Minecraft": un chunk solo se muestra cuando está COMPLETO. Dentro de la ventana de tiles eso significa que su
+        // malla esté lista y que sus casillas reales ya estén aplicadas (Streamer.generados); si no, se tapa con negro, así no se
+        // ven rocas, sombras ni edificios sueltos de casillas viejas o de la reubicación. Fuera de la ventana basta con la malla.
         nDibujo = 0;
+        nCubiertos = 0;
         for(int i = 0; i < nVisibles; i++){
-            Ranura r = visibles[i];
-            if(r.estado != LISTA || r.malla == null) continue;
+            final Ranura r = visibles[i];
             if(r.offX + CH - 4f < camL || r.offX - 4f > camR || r.offY + CH - 4f < camB || r.offY - 4f > camT) continue;
-            dibujo[nDibujo++] = r;
+            final boolean listo = r.estado == LISTA && r.malla != null && r.faltantes == 0;
+            final int lx = Coord.cxLocal(r.vcx), ly = Coord.cyLocal(r.vcy);
+            final boolean enVentana = Streamer.enMapa(lx, ly);
+            final boolean aplicado = !enVentana || Streamer.generados.contains(Streamer.clave(lx, ly));
+            if(listo && aplicado) dibujo[nDibujo++] = r;
+            else if(enVentana) cubiertos[nCubiertos++] = r;
         }
 
         if((cuadro % 30) == 0) reciclar();
@@ -350,17 +375,33 @@ final class ChunkMeshRenderer{
         return !Streamer.generados.contains(Streamer.clave(lx, ly));
     }
 
+    /**
+     * Un chunk se cocina UNA sola vez y solo cuando él y sus 8 vecinos están en la caché: así sus bordes y su autotiling nacen
+     * definitivos y no cambian de patrón cuando llega un vecino (el "cambio de textura al terminar de cargar"). Lo que falte se
+     * pide a los hilos de terreno y mientras tanto el chunk no se muestra.
+     */
     private static void intentarCocinar(Ranura r, int mid, int vcx, int vcy){
         if(cuadro < r.proximo) return;
-        if(CacheChunks.tiene(mid, r.clave)){
+        boolean completo = true;
+        if(!CacheChunks.tiene(mid, r.clave)){
+            completo = false;
+            if(terreno < MAX_TERRENO_FRAME && pedirTerreno(r.clave)) terreno++;
+        }
+        for(int i = 0; i < 8; i++){
+            final long k = Coord.claveVirtual(vcx + NDX[i], vcy + NDY[i]);
+            if(!CacheChunks.tiene(mid, k)){
+                completo = false;
+                if(terreno < MAX_TERRENO_FRAME && pedirTerreno(k)) terreno++;
+            }
+        }
+        if(completo){
             if(cocciones < MAX_COCCIONES_FRAME && ChunkGeometryCooker.solicitar(r.clave, mid, oscuroDeseado(vcx, vcy))){
                 r.estado = COCINANDO;
                 cocciones++;
             }
         }else{
-            if(terreno < MAX_TERRENO_FRAME && pedirTerreno(r.clave)) terreno++;
             r.estado = SIN_DATOS;
-            r.proximo = cuadro + 20;                    // reintento en ~0,3 s
+            r.proximo = cuadro + 10;                    // reintento en ~0,15 s
         }
     }
 

@@ -5,31 +5,31 @@ import arc.struct.IntSeq;
 import arc.struct.IntSet;
 
 /**
- * MOTOR DE CHUNKS (política de carga), separado del juego. Solo sabe de chunks, no de Tiles ni de unidades:
- * decide QUÉ chunks hacen falta y en qué ORDEN según el jugador y hacia dónde se dirige, como Minecraft.
+ * MOTOR DE CHUNKS (polÃ­tica de carga), separado del juego. Solo sabe de chunks, no de Tiles ni de unidades:
+ * decide QUÃ chunks hacen falta y en quÃ© ORDEN segÃºn el jugador y hacia dÃ³nde se dirige, como Minecraft.
  *
  *   nivel 0  lo que el jugador pisa y lo que ve en pantalla                       (urgente)
- *   nivel 1  un cono hacia donde se mueve; cuanto más rápido, más lejos llega     (anticipación)
+ *   nivel 1  un cono hacia donde se mueve; cuanto mÃ¡s rÃ¡pido, mÃ¡s lejos llega     (anticipaciÃ³n)
  *   nivel 2  un DISCO alrededor del jugador, de radio = "distancia de carga" de Ajustes  (reserva)
- *   nivel 3  chunks con edificios guardados, que deben existir bajo ellos         (último)
+ *   nivel 3  chunks con edificios guardados, que deben existir bajo ellos         (Ãºltimo)
  *
  * Las unidades aliadas y enemigas NO piden terreno: lejos del jugador duermen (ver Entidades).
  */
 final class Motor{
-    // Todas las zonas son CÍRCULOS (no cuadrados): a igual radio, un disco tiene ~21 % menos chunks que su cuadrado.
+    // Todas las zonas son CÃRCULOS (no cuadrados): a igual radio, un disco tiene ~21 % menos chunks que su cuadrado.
     static final int R_BASE = 2;                 // siempre cargado alrededor del jugador
     static final int AD_MIN = 3, AD_MAX = 9;     // alcance del cono hacia delante, en chunks
-    static final float SEGUNDOS_ADELANTE = 4f;   // cuánto tiempo de viaje se intenta tener ya cargado
+    static final float SEGUNDOS_ADELANTE = 4f;   // cuÃ¡nto tiempo de viaje se intenta tener ya cargado
     static final float UMBRAL_MOVIMIENTO = 0.12f;// chunks/s por debajo de los cuales se considera quieto
 
-    private float px, py;                        // última posición (tiles)
+    private float px, py;                        // Ãºltima posiciÃ³n (tiles)
     private boolean tienePos;
     float vx, vy;                                // velocidad suavizada (tiles/tick)
 
-    final IntSeq claves = new IntSeq();          // salida: chunks deseados, del más urgente al menos
+    final IntSeq claves = new IntSeq();          // salida: chunks deseados, del mÃ¡s urgente al menos
     final IntFloatMap mejor = new IntFloatMap();
 
-    /** Llamar con la posición del jugador cada vez que se escanea; dt = ticks transcurridos desde la última llamada. */
+    /** Llamar con la posiciÃ³n del jugador cada vez que se escanea; dt = ticks transcurridos desde la Ãºltima llamada. */
     void actualizar(float x, float y, float dt){
         if(!tienePos || dt <= 0f){
             px = x; py = y; tienePos = true;
@@ -76,15 +76,16 @@ final class Motor{
 
     /**
      * Calcula los chunks deseados. n = chunks por lado de la ventana; (pcx, pcy) chunk del jugador; (camX, camY) chunk de la
-     * cámara y rVista su radio; requeridos = chunks con edificios guardados (claves locales).
+     * cÃ¡mara y rVista su radio; requeridos = chunks con edificios guardados (claves locales).
      */
     void plan(int n, int pcx, int pcy, int camX, int camY, int rVista, IntSet requeridos){
         mejor.clear();
         claves.clear();
         final int carga = Ajustes.carga();
-        // nivel 0: bajo el jugador y lo que se ve (discos). Lo que se ve se carga aunque la distancia de carga sea menor.
+        // nivel 0: bajo el jugador y lo que se ve (discos). El radio de visiÃ³n se recorta por la distancia de
+        // carga del jugador: el ajuste SIEMPRE se respeta (antes se cargaba la pantalla entera sin importar el ajuste).
         disco(n, pcx, pcy, R_BASE, 0f, 1f);
-        disco(n, camX, camY, rVista, 0.5f, 0.05f);
+        disco(n, camX, camY, Math.min(rVista, carga), 0.5f, 0.05f);
         // nivel 1: cono hacia donde se mueve, recortado por el disco de carga
         float vel = velocidad();
         if(vel > UMBRAL_MOVIMIENTO){

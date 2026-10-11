@@ -68,32 +68,32 @@ import java.util.zip.GZIPOutputStream;
 /**
  * MUNDO INFINITO v2 (Java puro, sin JNI)
  *
- * Qué hace, en una frase: mantiene un mundo de tamaño fijo (500/800/1000 tiles) vacío y lo va
- * "rellenando" por chunks de 32x32 SOLO donde hay jugador, unidades, cámara o edificios, igual
+ * QuÃ© hace, en una frase: mantiene un mundo de tamaÃ±o fijo (500/800/1000 tiles) vacÃ­o y lo va
+ * "rellenando" por chunks de 32x32 SOLO donde hay jugador, unidades, cÃ¡mara o edificios, igual
  * que Minecraft carga chunks alrededor de los jugadores.
  *
  * Reglas de oro que evitan los problemas de la v1:
  *  1. Los hilos secundarios NUNCA tocan el mundo. Solo calculan arreglos de ids (ChunkData).
  *     El hilo principal los aplica con un presupuesto de tiempo por frame. (Tile.setFloor/setBlock
  *     disparan eventos de render/minimapa/indexador que no son thread-safe: eso congelaba el juego.)
- *  2. La generación es una función pura de (semilla, x, y): cualquier chunk sale idéntico sin
- *     importar el orden en que se genere, así no hay costuras ni "barreras".
- *  3. Niebla estática de campaña (rules.fog): lo no explorado no se dibuja ni en pantalla ni en
- *     el minimapa; se descubre al explorar. El progreso de exploración se guarda con el mundo.
- *  4. Los mundos se guardan en disco (solo lo que el jugador cambió; el terreno se regenera de la semilla).
+ *  2. La generaciÃ³n es una funciÃ³n pura de (semilla, x, y): cualquier chunk sale idÃ©ntico sin
+ *     importar el orden en que se genere, asÃ­ no hay costuras ni "barreras".
+ *  3. Niebla estÃ¡tica de campaÃ±a (rules.fog): lo no explorado no se dibuja ni en pantalla ni en
+ *     el minimapa; se descubre al explorar. El progreso de exploraciÃ³n se guarda con el mundo.
+ *  4. Los mundos se guardan en disco (solo lo que el jugador cambiÃ³; el terreno se regenera de la semilla).
  *
- * Archivo único con clases estáticas internas; cada una puede moverse a su propio .java.
+ * Archivo Ãºnico con clases estÃ¡ticas internas; cada una puede moverse a su propio .java.
  */
 public class MundoInfinitoMod extends Mod{
 
     public static final int TAM_CHUNK = 32;
-    /** Ventana cargada en RAM (fija, sin opciones para el jugador). El mundo virtual es de ±30 000 000 tiles, como Minecraft. */
+    /** Ventana cargada en RAM (fija, sin opciones para el jugador). El mundo virtual es de Â±30 000 000 tiles, como Minecraft. */
     public static int ventana(){
         return Runtime.getRuntime().maxMemory() >= (900L << 20) ? 960 : 800;
     }
     public static final int LIMITE_MUNDO = 30_000_000;      // borde del mundo virtual, igual que Minecraft Java
-    public static final int REGION_CHUNKS = 16;             // 16x16 chunks por archivo de región (512x512 tiles)
-    public static final int MARGEN_REBASE = 5;              // chunks al borde de la ventana que disparan la reubicación
+    public static final int REGION_CHUNKS = 16;             // 16x16 chunks por archivo de regiÃ³n (512x512 tiles)
+    public static final int MARGEN_REBASE = 5;              // chunks al borde de la ventana que disparan la reubicaciÃ³n
     public static final String URL_SEMILLAS = "https://raw.githubusercontent.com/TU_USUARIO/mundo-infinito-semillas/main/semillas/actual.json"; // TODO: URL real
     public static final int TIMEOUT_HTTP_MS = 4000;
     public static final int GEN_ACTUAL = 3;                 // 3 = dos dimensiones (Serpulo/Erekir). Los mundos gen 2 (terreno mezclado) siguen jugables tal cual.
@@ -101,15 +101,15 @@ public class MundoInfinitoMod extends Mod{
     public static final int DIM_SERPULO = 0, DIM_EREKIR = 1;
 
     public MundoInfinitoMod(){
-        // Botón en el menú principal cuando el cliente terminó de cargar.
+        // BotÃ³n en el menÃº principal cuando el cliente terminÃ³ de cargar.
         Events.on(ClientLoadEvent.class, e -> Time.runTask(10f, () -> { MenuUI.inyectarBoton(); Hud.crear(); MapaVista.crear(); Ajustes.registrar(); }));
 
         // Bucle de streaming: se ejecuta cada frame (presupuesto de tiempo propio).
         Events.run(Trigger.update, Streamer::tick);
-        // Drones de carga orbital: puro dato, avanza aunque el jugador esté en la otra dimensión.
+        // Drones de carga orbital: puro dato, avanza aunque el jugador estÃ© en la otra dimensiÃ³n.
         Events.run(Trigger.update, Orbita::tick);
 
-        // Guardar al abrir el menú de pausa (así se guarda antes de salir al menú).
+        // Guardar al abrir el menÃº de pausa (asÃ­ se guarda antes de salir al menÃº).
         Events.on(StateChangeEvent.class, e -> {
             if(e.to == State.paused && Streamer.activo) Mundos.guardar(false);
         });
@@ -122,7 +122,7 @@ public class MundoInfinitoMod extends Mod{
         SiloInterdimensional.cargar();
     }
 
-    /** Entorno combinado: así el menú de construcción ofrece bloques de AMBOS planetas. */
+    /** Entorno combinado: asÃ­ el menÃº de construcciÃ³n ofrece bloques de AMBOS planetas. */
     static final int ENTORNO_COMBINADO = Env.terrestrial | Env.spores | Env.groundOil | Env.groundWater | Env.oxygen | Env.scorching;
 
     // ==================================================================
@@ -130,8 +130,8 @@ public class MundoInfinitoMod extends Mod{
     // ==================================================================
     static class Meta{
         String id, nombre, semillaTxt = "";
-        int semilla, tam, nucleo, gen;   // nucleo: 0 = según la semilla, 1 = Shard (Serpulo), 2 = Bastion (Erekir)
-        int dim;                         // dimensión actual (solo gen >= 3): 0 = Serpulo, 1 = Erekir
+        int semilla, tam, nucleo, gen;   // nucleo: 0 = segÃºn la semilla, 1 = Shard (Serpulo), 2 = Bastion (Erekir)
+        int dim;                         // dimensiÃ³n actual (solo gen >= 3): 0 = Serpulo, 1 = Erekir
         long creado, ultimo;
         double reloj;                    // ticks de juego transcurridos en TODO el mundo (las dos dimensiones): mide las ausencias
 
@@ -175,12 +175,12 @@ public class MundoInfinitoMod extends Mod{
             return gen >= GEN_ACTUAL;
         }
 
-        /** Dimensión que recibe el generador: -1 = terreno mezclado (mundos antiguos). */
+        /** DimensiÃ³n que recibe el generador: -1 = terreno mezclado (mundos antiguos). */
         int dimGen(){
             return dimensional() ? dim : -1;
         }
 
-        /** Dimensión en la que empieza un mundo nuevo (misma regla que el antiguo "núcleo inicial"). */
+        /** DimensiÃ³n en la que empieza un mundo nuevo (misma regla que el antiguo "nÃºcleo inicial"). */
         int dimInicial(){
             int t = nucleo;
             if(t == 0) t = 1 + (Muestreo.sem(semilla, 77) & 1);
@@ -254,7 +254,7 @@ public class MundoInfinitoMod extends Mod{
             f.delete();
         }
 
-        /** Mundos dimensionales: una subcarpeta por dimensión (regiones + estado). Mundos antiguos: la raíz, como siempre. */
+        /** Mundos dimensionales: una subcarpeta por dimensiÃ³n (regiones + estado). Mundos antiguos: la raÃ­z, como siempre. */
         static Fi carpetaDatos(Meta m){
             return m.dimensional() ? carpeta(m.id).child("d" + m.dim) : carpeta(m.id);
         }
@@ -263,12 +263,12 @@ public class MundoInfinitoMod extends Mod{
             return carpetaDatos(m).child("estado.dat");
         }
 
-        /** Estado COMPARTIDO por las dos dimensiones (viven en la raíz del mundo). */
+        /** Estado COMPARTIDO por las dos dimensiones (viven en la raÃ­z del mundo). */
         static Fi archivoOrbita(Meta m){
             return carpeta(m.id).child("orbita.dat");
         }
 
-        /** Estructuras ya colocadas y checkpoints: POR dimensión (cada una tiene su propio espacio). */
+        /** Estructuras ya colocadas y checkpoints: POR dimensiÃ³n (cada una tiene su propio espacio). */
         static Fi archivoEstructuras(Meta m){
             return carpetaDatos(m).child("estructuras.dat");
         }
@@ -305,7 +305,7 @@ public class MundoInfinitoMod extends Mod{
         }
 
         /**
-         * Como Minecraft: un número o cualquier texto sirven de semilla. Se mezcla con un hash de 64 bits
+         * Como Minecraft: un nÃºmero o cualquier texto sirven de semilla. Se mezcla con un hash de 64 bits
          * (FNV-1a + avalancha) para que semillas parecidas ("1", "2", "3") den mundos totalmente distintos.
          */
         static int deTexto(String t){
@@ -339,7 +339,7 @@ public class MundoInfinitoMod extends Mod{
     // GENERADOR PURO (sin clases de Mindustry => se puede probar fuera del juego)
     // ==================================================================
     static final class Muestreo{
-        // ---- Códigos de piso (Serpulo 0..31, Erekir 32..63) ----
+        // ---- CÃ³digos de piso (Serpulo 0..31, Erekir 32..63) ----
         static final int P_DEEP = 0, P_WATER = 1, P_SANDW = 2, P_DSW = 3, P_DTW = 4, P_TW = 5, P_DEEPT = 6,
             P_SAND = 7, P_DARKSAND = 8, P_SALT = 9, P_STONE = 10, P_BASALT = 11, P_MOSS = 12, P_SPORE = 13,
             P_SNOW = 14, P_ICESNOW = 15, P_ICE = 16, P_HOT = 17, P_MAGMA = 18, P_TAR = 19, P_CRATERS = 20,
@@ -350,26 +350,26 @@ public class MundoInfinitoMod extends Mod{
             P_VRED = 51, P_VCARBON = 52;
         static final int N_PISOS = 64;
 
-        // ---- Códigos de mena (overlay) ----
+        // ---- CÃ³digos de mena (overlay) ----
         static final int O_COBRE = 1, O_PLOMO = 2, O_CHATARRA = 3, O_CARBON = 4, O_TITANIO = 5, O_TORIO = 6,
             O_BERILIO = 7, O_TUNGSTENO = 8, O_TORIO_CRISTAL = 9, O_TORIO_MURO = 10, O_BERILIO_MURO = 11,
             O_TUNGSTENO_MURO = 12;
         static final int N_MENAS = 16;
 
-        // ---- Tipos de depósito ----
+        // ---- Tipos de depÃ³sito ----
         static final int D_COBRE = 0, D_PLOMO = 1, D_CHATARRA = 2, D_CARBON = 3, D_TITANIO = 4, D_TORIO = 5,
             D_BERILIO = 10, D_TUNGSTENO = 11, D_TORIO_E = 12, D_GRAFITO = 13, D_ARENA = 14;
 
-        // ---- Afinación (todo en un sitio para calibrar) ----
+        // ---- AfinaciÃ³n (todo en un sitio para calibrar) ----
         static final float K_ALTURA = 2.3f, K_TEMP = 2.3f;       // estiramiento del ruido a [0,1]
-        static final float LIM_S = 0.522f, LIM_E = 0.522f;       // umbral base de muros (más alto = menos muros)
+        static final float LIM_S = 0.522f, LIM_E = 0.522f;       // umbral base de muros (mÃ¡s alto = menos muros)
         static final float ANCHO_PASO = 0.018f;                  // anchura base de los pasillos que cortan los macizos
         static final float K_VENA = 0.42f;                       // grosor general de las vetas globales
         static final int STRIDE_DEP = 10, STRIDE_POZ = 6;
         // Dos orientaciones fijas para los macizos alargados (constantes: no se deforman lejos del origen)
         static final float CA = 0.9004f, SA = 0.4350f, CB = -0.5048f, SB = 0.8632f;
 
-        // ---- Tabla de biomas Serpulo (copiada de la generación de campaña: filas = temperatura, columnas = altura) ----
+        // ---- Tabla de biomas Serpulo (copiada de la generaciÃ³n de campaÃ±a: filas = temperatura, columnas = altura) ----
         static final int[][] TABLA_S = {
             {P_WATER, P_DSW, P_DARKSAND, P_DARKSAND, P_DARKSAND, P_DARKSAND, P_SAND, P_SAND, P_SAND, P_SAND, P_DTW, P_STONE, P_STONE},
             {P_WATER, P_DSW, P_DARKSAND, P_DARKSAND, P_SAND, P_SAND, P_SAND, P_SAND, P_SAND, P_DTW, P_STONE, P_STONE, P_STONE},
@@ -385,7 +385,7 @@ public class MundoInfinitoMod extends Mod{
             {P_TW, P_DTW, P_DARKSAND, P_SPORE, P_MOSS, P_SPORE, P_ICESNOW, P_SNOW, P_ICE, P_ICE, P_ICE, P_ICE, P_ICE},
             {P_DSW, P_DARKSAND, P_SNOW, P_ICE, P_ICESNOW, P_SNOW, P_SNOW, P_SNOW, P_ICE, P_ICE, P_ICE, P_ICE, P_ICE}
         };
-        // Terreno base de Erekir (campaña): regolito domina, luego yellowStone, riolita y carbón.
+        // Terreno base de Erekir (campaÃ±a): regolito domina, luego yellowStone, riolita y carbÃ³n.
         static final int[] TERRENO_E = {P_REGO, P_REGO, P_REGO, P_REGO, P_YELLOW, P_RHYO, P_RHYO, P_CARBON};
 
         // ---- Ruido de gradiente 2D (determinista, rango conocido) ----
@@ -422,7 +422,7 @@ public class MundoInfinitoMod extends Mod{
             return l1 + (l2 - l1) * v;
         }
 
-        /** fBm normalizado a [0,1]. escala = tamaño de la mancha principal en tiles. Cada octava se rota para evitar rejillas. */
+        /** fBm normalizado a [0,1]. escala = tamaÃ±o de la mancha principal en tiles. Cada octava se rota para evitar rejillas. */
         static float fbm(int s, float escala, int oct, double x, double y){
             double f = 1.0 / escala, cx = x, cy = y;
             float amp = 1f, sum = 0f, tot = 0f;
@@ -440,9 +440,9 @@ public class MundoInfinitoMod extends Mod{
         }
 
         /**
-         * fBm ANISOTRÓPICO: las manchas salen alargadas a lo largo de una dirección fija (c, sn = coseno y seno del ángulo).
-         * Con 'estira' > 1 el ruido varía más rápido de lado a lado y las formaciones quedan como crestas, no como círculos.
-         * El ángulo es una constante: nunca se interpola con la posición (lejos del origen eso destrozaría el ruido).
+         * fBm ANISOTRÃPICO: las manchas salen alargadas a lo largo de una direcciÃ³n fija (c, sn = coseno y seno del Ã¡ngulo).
+         * Con 'estira' > 1 el ruido varÃ­a mÃ¡s rÃ¡pido de lado a lado y las formaciones quedan como crestas, no como cÃ­rculos.
+         * El Ã¡ngulo es una constante: nunca se interpola con la posiciÃ³n (lejos del origen eso destrozarÃ­a el ruido).
          */
         static float fbmA(int s, float escala, float estira, float c, float sn, int oct, double x, double y){
             double u = x * c + y * sn, v = -x * sn + y * c;
@@ -477,20 +477,20 @@ public class MundoInfinitoMod extends Mod{
             return !liquido(p);
         }
 
-        // ---- Dominio: qué zonas del mundo son "tipo Serpulo" y cuáles "tipo Erekir" (frontera irregular = mezcla) ----
-        /** Semilla efectiva por dimensión: Serpulo y Erekir NO comparten ruido (mismo mundo, dos planetas distintos). -1 = igual que antes. */
+        // ---- Dominio: quÃ© zonas del mundo son "tipo Serpulo" y cuÃ¡les "tipo Erekir" (frontera irregular = mezcla) ----
+        /** Semilla efectiva por dimensiÃ³n: Serpulo y Erekir NO comparten ruido (mismo mundo, dos planetas distintos). -1 = igual que antes. */
         static int semDim(int s, int dim){
             return dim < 0 ? s : mix(s ^ ((dim + 1) * 0x632BE5AB));
         }
 
         static boolean esE(int s, double x, double y, Spawn sp){
-            if(sp.dim >= 0) return sp.dim == 1;   // dimensión forzada: sin mezcla posible
+            if(sp.dim >= 0) return sp.dim == 1;   // dimensiÃ³n forzada: sin mezcla posible
             float v = fbm(sem(s, 9100), 380f, 3, x + sp.domX, y + sp.domY);
             float j = (fbm(sem(s, 9101), 55f, 3, x, y) - 0.5f) * 0.30f;
             return v + j > 0.5f;
         }
 
-        // ---- Seed -> semillas independientes por capa (sin correlación entre capas ni entre semillas vecinas) ----
+        // ---- Seed -> semillas independientes por capa (sin correlaciÃ³n entre capas ni entre semillas vecinas) ----
         static int mix(int h){
             h ^= h >>> 16;
             h *= 0x7feb352d;
@@ -508,11 +508,11 @@ public class MundoInfinitoMod extends Mod{
         static final class Spawn{
             int semilla;
             int dim = -1;            // -1 mezclado (mundos antiguos), 0 Serpulo, 1 Erekir
-            float radioLibre;        // radio medio sin muros ni líquidos (10..18); el borde es irregular
+            float radioLibre;        // radio medio sin muros ni lÃ­quidos (10..18); el borde es irregular
             float paredes;           // desplazamiento del umbral de muros cerca del spawn (+ abierto, - rocoso)
-            double domX, domY;       // desplazamiento del campo de dominio (qué bioma toca en el origen)
+            double domX, domY;       // desplazamiento del campo de dominio (quÃ© bioma toca en el origen)
             float[] dep = new float[0];  // [tipo, x, y, semilargo, forma, rot, semiancho, curva] * n   (vetas iniciales)
-            float[] poz = new float[0];  // [tipo, x, y, radio, rot, razon] * n                          (pozos de líquidos y energía)
+            float[] poz = new float[0];  // [tipo, x, y, radio, rot, razon] * n                          (pozos de lÃ­quidos y energÃ­a)
             float[] cam = new float[0];  // [x, y] * n   extremos de los caminos despejados hacia las vetas esenciales
             int celdaE;              // lado de la celda de estructuras (160..256): cada mundo tiene su propio ritmo
             float probE;             // probabilidad base de que una celda tenga una estructura
@@ -539,7 +539,7 @@ public class MundoInfinitoMod extends Mod{
             return 5;
         }
 
-        /** Qué puede aparecer en cada dimensión (dim < 0 = todo, como antes). */
+        /** QuÃ© puede aparecer en cada dimensiÃ³n (dim < 0 = todo, como antes). */
         static boolean permitido(int clase, int tipo, int dim){
             if(dim < 0) return true;
             if(clase == 0){
@@ -550,8 +550,8 @@ public class MundoInfinitoMod extends Mod{
             return dim == 1 ? pozoErekir : !pozoErekir;
         }
 
-        // ---- Morfologías de depósito: cada mena puede ser una veta corta, media o larga, un racimo, un parche, ----
-        // ---- una dispersión, una doble veta o un arco. Ninguna es un círculo perfecto.                      ----
+        // ---- MorfologÃ­as de depÃ³sito: cada mena puede ser una veta corta, media o larga, un racimo, un parche, ----
+        // ---- una dispersiÃ³n, una doble veta o un arco. Ninguna es un cÃ­rculo perfecto.                      ----
         static final int M_CORTA = 0, M_MEDIA = 1, M_LARGA = 2, M_RACIMO = 3, M_PARCHE = 4, M_DISPERSA = 5, M_DOBLE = 6, M_ARCO = 7;
         static final float[] PESO_MORF = {0.26f, 0.16f, 0.05f, 0.17f, 0.18f, 0.12f, 0.03f, 0.03f};
 
@@ -568,7 +568,7 @@ public class MundoInfinitoMod extends Mod{
             return morf == M_CORTA || morf == M_MEDIA || morf == M_LARGA || morf == M_DOBLE || morf == M_ARCO;
         }
 
-        /** Parámetros {semilargo/dispersión, semiancho/escala, curva} de una morfología; r1..r3 en [0,1). */
+        /** ParÃ¡metros {semilargo/dispersiÃ³n, semiancho/escala, curva} de una morfologÃ­a; r1..r3 en [0,1). */
         static void paramsMorf(int morf, float r1, float r2, float r3, float mult, float[] out){
             float hl, hw, cv = (r3 - 0.5f) * 1.2f;
             switch(morf){
@@ -576,7 +576,7 @@ public class MundoInfinitoMod extends Mod{
                 case M_MEDIA: hl = 9f + r1 * 7f; hw = 1.2f + r2 * 1.4f; break;
                 case M_LARGA: hl = 16f + r1 * 8f; hw = 0.9f + r2 * 0.6f; break;
                 case M_RACIMO: hl = 5f + r1 * 4f; hw = 1.3f + r2 * 1.1f; break;
-                case M_PARCHE: hl = 3f + r1 * 3.5f; hw = 0.5f + r2 * 0.35f; break;      // hw = razón entre ejes
+                case M_PARCHE: hl = 3f + r1 * 3.5f; hw = 0.5f + r2 * 0.35f; break;      // hw = razÃ³n entre ejes
                 case M_DISPERSA: hl = 5f + r1 * 5f; hw = 0.22f + r2 * 0.28f; break;     // hw = densidad
                 case M_DOBLE: hl = 5f + r1 * 5f; hw = 0.9f + r2 * 0.7f; break;
                 default: hl = 6f + r1 * 5f; hw = 1.1f + r2 * 0.9f; cv = (r3 < 0.5f ? -1f : 1f) * (1.7f + r3 * 0.7f); break;   // arco
@@ -586,7 +586,7 @@ public class MundoInfinitoMod extends Mod{
             out[2] = cv;
         }
 
-        /** Radio (en tiles) dentro del cual puede haber algo de la forma: sirve para descartar rápido. */
+        /** Radio (en tiles) dentro del cual puede haber algo de la forma: sirve para descartar rÃ¡pido. */
         static float alcance(int morf, float hl, float hw){
             switch(morf){
                 case M_RACIMO: return hl + hw * 1.5f + 3f;
@@ -597,8 +597,8 @@ public class MundoInfinitoMod extends Mod{
         }
 
         /**
-         * Forma de un depósito en la casilla (dx, dy) respecto a su centro. @return distancia normalizada al eje
-         * (< 1 dentro de la mena; hasta 1 + margen/tamaño es el borde de roca de las menas de pared) o -1 si queda fuera.
+         * Forma de un depÃ³sito en la casilla (dx, dy) respecto a su centro. @return distancia normalizada al eje
+         * (< 1 dentro de la mena; hasta 1 + margen/tamaÃ±o es el borde de roca de las menas de pared) o -1 si queda fuera.
          * aux[0] = coordenada a lo largo (-1..1), aux[1] = coordenada a lo ancho (-1..1): las usan los patrones de grafito.
          */
         static float forma(int morf, float dx, float dy, float hl, float hw, float rot, float curva, int id, int x, int y, int s, float margen, float[] aux){
@@ -673,7 +673,7 @@ public class MundoInfinitoMod extends Mod{
             sp.domX = (rnd(3, 3, sem(s, 9003)) - 0.5) * 6000.0;
             sp.domY = (rnd(4, 4, sem(s, 9004)) - 0.5) * 6000.0;
 
-            // Ritmo de estructuras de ESTE mundo: cada cuántos tiles aparece algo y con qué frecuencia
+            // Ritmo de estructuras de ESTE mundo: cada cuÃ¡ntos tiles aparece algo y con quÃ© frecuencia
             sp.celdaE = 160 + 16 * (int)(rnd(11, 11, sem(s, 9040)) * 7f);
             sp.probE = 0.16f + 0.26f * rnd(12, 12, sem(s, 9041));
             float angE = rnd(13, 13, sem(s, 9042)) * 6.2831853f, disE = 150f + rnd(14, 14, sem(s, 9043)) * 70f;
@@ -699,7 +699,7 @@ public class MundoInfinitoMod extends Mod{
             if(rnd(5, 5, sem(s, 9010)) < 0.60f) cosas.add(new float[]{0, D_BERILIO, 46, 92, rnd(5, 22, sem(s, 9010)) < 0.5f ? 1 : 0});
             if(rnd(5, 6, sem(s, 9010)) < 0.12f) cosas.add(new float[]{0, D_TITANIO, 95, 150, 0});
             if(rnd(5, 7, sem(s, 9010)) < 0.35f) cosas.add(new float[]{0, D_GRAFITO, 60, 104, 0});
-            // pozos: 1 a 3, de tipos distintos entre 6 (agua, alquitrán, geotérmica, respiraderos, arkycita, escoria)
+            // pozos: 1 a 3, de tipos distintos entre 6 (agua, alquitrÃ¡n, geotÃ©rmica, respiraderos, arkycita, escoria)
             int nPozos = Math.min(3, 1 + (int)(rnd(5, 8, sem(s, 9020)) * 3f));
             int[] tipos = {0, 1, 2, 3, 4, 5};
             for(int i = 5; i > 0; i--){
@@ -709,7 +709,7 @@ public class MundoInfinitoMod extends Mod{
             for(int k = 0; k < nPozos; k++) cosas.add(new float[]{1, tipos[k], 30, 58, 0});
 
             if(dim >= 0){
-                // Dimensión propia: se quita todo lo del otro planeta...
+                // DimensiÃ³n propia: se quita todo lo del otro planeta...
                 for(int i = cosas.size - 1; i >= 0; i--){
                     float[] c = cosas.get(i);
                     if(!permitido((int)c[0], (int)c[1], dim)) cosas.remove(i);
@@ -811,8 +811,8 @@ public class MundoInfinitoMod extends Mod{
             return sp;
         }
 
-        // ---- Depósitos globales (todo el mundo salvo el spawn): una celda de 40x40 puede tener UN depósito, de ----
-        // ---- tipo, forma y tamaño propios, y hay zonas ricas y zonas pobres. Todo es función pura de la celda.  ----
+        // ---- DepÃ³sitos globales (todo el mundo salvo el spawn): una celda de 40x40 puede tener UN depÃ³sito, de ----
+        // ---- tipo, forma y tamaÃ±o propios, y hay zonas ricas y zonas pobres. Todo es funciÃ³n pura de la celda.  ----
         static final int CELDA_MENA = 40;
         static final float PROB_MENA = 1.15f;
         // {tipo, distMin, peso}
@@ -869,7 +869,7 @@ public class MundoInfinitoMod extends Mod{
             return -1;
         }
 
-        /** Paredes de grafito según la forma, en coordenadas de la veta: u a lo largo (-1..1), v a lo ancho (-1..1). */
+        /** Paredes de grafito segÃºn la forma, en coordenadas de la veta: u a lo largo (-1..1), v a lo ancho (-1..1). */
         static boolean muroGrafito(int forma, float u, float v, int s, int x, int y){
             float av = Math.abs(v);
             switch(forma){
@@ -878,7 +878,7 @@ public class MundoInfinitoMod extends Mod{
                 case 2: return Math.abs(av - 0.60f) < 0.32f;                            // dos vetas paralelas con pasillo
                 case 3: return av < 0.85f && Math.abs(u) > 0.22f;                       // dos tramos con hueco al medio
                 case 4: return av < 1f && fbm(sem(s, 9431), 5f, 2, x, y) > 0.50f;       // dispersa
-                default: return av < 0.50f || (av < 1f && fbm(sem(s, 9432), 6f, 2, x, y) > 0.56f); // núcleo con costras
+                default: return av < 0.50f || (av < 1f && fbm(sem(s, 9432), 6f, 2, x, y) > 0.56f); // nÃºcleo con costras
             }
         }
 
@@ -901,7 +901,7 @@ public class MundoInfinitoMod extends Mod{
             return enDepositoGlobal(s, x, y, ere, dist, aux);
         }
 
-        // ---- Cráteres de impacto (Serpulo) ----
+        // ---- CrÃ¡teres de impacto (Serpulo) ----
         /** @return 0 nada, 1 interior, 2 borde; en interior suma 10*porcentaje radio. */
         static int crater(int s, int x, int y, float dist){
             if(dist < 36f) return 0;
@@ -921,7 +921,7 @@ public class MundoInfinitoMod extends Mod{
             return 0;
         }
 
-        /** Cráter con respiradero (Erekir): @return 0 nada, 1 interior, 2 centro (respiradero 3x3). */
+        /** CrÃ¡ter con respiradero (Erekir): @return 0 nada, 1 interior, 2 centro (respiradero 3x3). */
         static int craterVent(int s, int x, int y, float dist){
             if(dist < 40f) return 0;
             int ci = Math.floorDiv(x, 72), cj = Math.floorDiv(y, 72);
@@ -940,7 +940,7 @@ public class MundoInfinitoMod extends Mod{
             return 0;
         }
 
-        // ---- Variación local de suelos: parches y vetas de otro suelo dentro de cada bioma ----
+        // ---- VariaciÃ³n local de suelos: parches y vetas de otro suelo dentro de cada bioma ----
         static int variante(int s, int x, int y, int p, boolean ere){
             float a = fbm(sem(s, 90), 38f, 2, x, y);
             float b = fbm(sem(s, 91), 24f, 2, x + 800.0, y + 800.0);
@@ -1010,13 +1010,13 @@ public class MundoInfinitoMod extends Mod{
 
         // ---- Pisos base ----
         static int pisoSerpulo(int s, int x, int y, float dist, double wx, double wy){
-            // dos escalas de relieve (regiones grandes y pequeñas) mezcladas por un campo lento: biomas de tamaño dinámico
+            // dos escalas de relieve (regiones grandes y pequeÃ±as) mezcladas por un campo lento: biomas de tamaÃ±o dinÃ¡mico
             float hA = fbm(sem(s, 1), 170f, 5, wx, wy);
             float hB = fbm(sem(s, 2), 85f, 4, wx, wy);
             float wh = suave((fbm(sem(s, 14), 700f, 2, x, y) - 0.35f) * 3.3f);
             float h = est(lerp(hA, hB, wh * 0.65f), K_ALTURA);
             float t = est(fbm(sem(s, 11), 420f, 4, wx, wy), K_TEMP);
-            // dispersión fina: la frontera entre biomas deja de ser una curva de nivel limpia (blending)
+            // dispersiÃ³n fina: la frontera entre biomas deja de ser una curva de nivel limpia (blending)
             h += (fbm(sem(s, 15), 12f, 2, x, y) - 0.5f) * 0.12f;
             t += (fbm(sem(s, 16), 16f, 2, x + 700.0, y - 400.0) - 0.5f) * 0.14f;
             h = Mathf.clamp(h, 0f, 0.9999f);
@@ -1086,7 +1086,7 @@ public class MundoInfinitoMod extends Mod{
             return p;
         }
 
-        // ---- Tipo de piso a partir del piso local para cráteres de Erekir ----
+        // ---- Tipo de piso a partir del piso local para crÃ¡teres de Erekir ----
         static int cratereDe(int p){
             if(p == P_RHYO || p == P_ROUGH) return P_RCRATER;
             if(p == P_BERYL || p == P_ARKYIC) return P_ARKYIC;
@@ -1127,9 +1127,9 @@ public class MundoInfinitoMod extends Mod{
             // regiones abiertas y regiones rocosas
             float reg = fbm(sem(s, 9500), 650f, 3, x, y);
             float lim = (ere ? LIM_E : LIM_S) + (0.5f - reg) * 0.40f;
-            if(dist < 70f) lim += suave(1f - dist / 70f) * sp.paredes;   // carácter del spawn (más o menos paredes)
+            if(dist < 70f) lim += suave(1f - dist / 70f) * sp.paredes;   // carÃ¡cter del spawn (mÃ¡s o menos paredes)
 
-            // segunda deformación del terreno: formas orgánicas, no manchas redondas
+            // segunda deformaciÃ³n del terreno: formas orgÃ¡nicas, no manchas redondas
             double qx = wx + (fbm(sem(s, 52), 45f, 3, x, y) - 0.5) * 46.0;
             double qy = wy + (fbm(sem(s, 53), 45f, 3, x + 321.0, y - 123.0) - 0.5) * 46.0;
             float fa = fbmA(sem(s, 3), 70f, 2.0f, CA, SA, 4, qx, qy);
@@ -1152,12 +1152,12 @@ public class MundoInfinitoMod extends Mod{
         }
 
         // ---- Accesibilidad de las menas de pared ----
-        // El taladro de haz (plasma bore) recorre la línea que tiene delante y se DETIENE en la primera casilla sólida: solo
+        // El taladro de haz (plasma bore) recorre la lÃ­nea que tiene delante y se DETIENE en la primera casilla sÃ³lida: solo
         // extrae si esa casilla es la mena. Una mena rodeada de roca por todos lados es imposible de sacar. Por eso una mena
         // de pared solo existe si tiene una cara expuesta con hueco libre de 2x2 para colocar el taladro frente a ella.
         static final int[] DX4 = {1, 0, -1, 0}, DY4 = {0, 1, 0, -1};
 
-        /** ¿Es sólida esta casilla? (aproximación barata del terreno final: sirve para decidir si una mena es alcanzable). */
+        /** Â¿Es sÃ³lida esta casilla? (aproximaciÃ³n barata del terreno final: sirve para decidir si una mena es alcanzable). */
         static boolean solidaAprox(int s, int x, int y, Spawn sp){
             float dist = (float)Math.sqrt((double)x * x + (double)y * y);
             if(dist < sp.radioLibre * 0.8f) return false;
@@ -1165,12 +1165,12 @@ public class MundoInfinitoMod extends Mod{
             double wy = y + (fbm(sem(s, 51), 90f, 3, x + 500.0, y + 500.0) - 0.5) * 70.0;
             boolean ere = esE(s, x, y, sp);
             if(hayMuro(s, x, y, wx, wy, dist, ere, sp)) return true;
-            // zonas de pared forzadas por depósitos de pared
+            // zonas de pared forzadas por depÃ³sitos de pared
             float[] tmp = new float[14];
             int dep = enDeposito(s, x, y, sp, tmp, ere, dist);
             if(dep < 0) return false;
             if(tmp[4] >= 2f) return true;
-            // paredes de grafito de un depósito de grafito
+            // paredes de grafito de un depÃ³sito de grafito
             return dep / 1000 == D_GRAFITO && muroGrafito((int)tmp[2], tmp[0], tmp[1], s, x, y);
         }
 
@@ -1178,7 +1178,7 @@ public class MundoInfinitoMod extends Mod{
             for(int d = 0; d < 4; d++){
                 int dx = DX4[d], dy = DY4[d], lx = -dy, ly = dx;
                 if(solidaAprox(s, x + dx, y + dy, sp) || solidaAprox(s, x + 2 * dx, y + 2 * dy, sp)) continue;
-                // el taladro mide 2x2: también debe estar libre una de las dos casillas laterales de esa pareja
+                // el taladro mide 2x2: tambiÃ©n debe estar libre una de las dos casillas laterales de esa pareja
                 boolean a = !solidaAprox(s, x + dx + lx, y + dy + ly, sp) && !solidaAprox(s, x + 2 * dx + lx, y + 2 * dy + ly, sp);
                 boolean b = !solidaAprox(s, x + dx - lx, y + dy - ly, sp) && !solidaAprox(s, x + 2 * dx - lx, y + 2 * dy - ly, sp);
                 if(a || b) return true;
@@ -1187,10 +1187,10 @@ public class MundoInfinitoMod extends Mod{
         }
 
         /**
-         * Muestrea UNA celda del mundo (el spawn está en el origen virtual (0,0)).
+         * Muestrea UNA celda del mundo (el spawn estÃ¡ en el origen virtual (0,0)).
          * out[0]=piso, out[1]=mena (overlay), out[2]=muro (0 nada, 1 muro del piso, 2 muro de grafito),
-         * out[3]=prop (0 nada, 1 decoración del piso, 2 cristal, 3 cristal vibrante).
-         * aux = buffer de 12 floats: [0..4] datos de la veta, [5..11] caché de la estructura de la celda actual
+         * out[3]=prop (0 nada, 1 decoraciÃ³n del piso, 2 cristal, 3 cristal vibrante).
+         * aux = buffer de 12 floats: [0..4] datos de la veta, [5..11] cachÃ© de la estructura de la celda actual
          * (aux[11] = 0 debe ponerse al empezar cada chunk).
          */
         static void muestrear(int s, int x, int y, Spawn sp, float[] aux, int[] out){
@@ -1215,7 +1215,7 @@ public class MundoInfinitoMod extends Mod{
                 if(hue == 2) p = P_COREZONE;
             }
 
-            // --- pozos garantizados cerca del spawn (elípticos, orientados al azar) ---
+            // --- pozos garantizados cerca del spawn (elÃ­pticos, orientados al azar) ---
             int pzPiso = -1;
             boolean pzLibre = false;
             float[] poz = sp.poz;
@@ -1252,7 +1252,7 @@ public class MundoInfinitoMod extends Mod{
 
             int mena = 0, muro = 0, prop = 0;
 
-            // --- cráteres ---
+            // --- crÃ¡teres ---
             boolean enCrater = false;
             if(enPozo || pzLibre){
                 enCrater = true;
@@ -1268,7 +1268,7 @@ public class MundoInfinitoMod extends Mod{
                     if(!profundo(p)) p = P_CRATERS;
                     enCrater = true;
                     int pct = ((c - 1) % 5000) / 10;
-                    if(c >= 5000 && pct < 28 && dist > 150f) mena = O_TITANIO; // cráteres grandes: núcleo de titanio
+                    if(c >= 5000 && pct < 28 && dist > 150f) mena = O_TITANIO; // crÃ¡teres grandes: nÃºcleo de titanio
                     else if(pct > 55 && rnd(x, y, sem(s, 5102)) < 0.10f) mena = O_CHATARRA;
                 }
             }else{
@@ -1288,7 +1288,7 @@ public class MundoInfinitoMod extends Mod{
             int dep = (enPozo || pzLibre || hue > 0 || enCrater && mena != 0) ? -1 : enDeposito(s, x, y, sp, aux, ere, dist);
             boolean inicial = dep >= 0 && (aux[4] == 1f || aux[4] == 3f);
             if(liq){
-                // las vetas INICIALES siempre quedan en seco; las demás no aparecen bajo el agua
+                // las vetas INICIALES siempre quedan en seco; las demÃ¡s no aparecen bajo el agua
                 if(inicial){ p = ere ? P_REGO : P_SAND; liq = false; }
                 else dep = -1;
             }
@@ -1304,9 +1304,9 @@ public class MundoInfinitoMod extends Mod{
                 }
             }
 
-            // los depósitos iniciales de suelo nunca quedan tapados por muros
+            // los depÃ³sitos iniciales de suelo nunca quedan tapados por muros
             if(inicial && !depPared && tipoDep != D_GRAFITO && radN < 100) muro = 0;
-            // depósito de pared: la zona entera (mena + borde) es roca
+            // depÃ³sito de pared: la zona entera (mena + borde) es roca
             if(depPared && !liq && !spawn) muro = 1;
 
             // veta de grafito: forma variable (maciza, rota, doble, en tramos, dispersa o con costras)
@@ -1345,7 +1345,7 @@ public class MundoInfinitoMod extends Mod{
                 }
             }
 
-            // --- decoración / props ---
+            // --- decoraciÃ³n / props ---
             if(muro == 0 && mena == 0 && !liq && !spawn && !enPozo && !pzLibre && hue == 0){
                 if((p == P_CRYST || p == P_CRYSTF) && rnd(x, y, sem(s, 5201)) < 0.012f){
                     prop = p == P_CRYSTF ? 3 : 2;
@@ -1362,7 +1362,7 @@ public class MundoInfinitoMod extends Mod{
     }
 
     // ==================================================================
-    // Paleta: traduce códigos a ids de bloque (se construye en el hilo principal)
+    // Paleta: traduce cÃ³digos a ids de bloque (se construye en el hilo principal)
     // ==================================================================
     static final class Paleta{
         final int[] idPiso = new int[Muestreo.N_PISOS];
@@ -1452,7 +1452,7 @@ public class MundoInfinitoMod extends Mod{
     }
 
     // ==================================================================
-    // Utilidades de carga (seguras también en modo headless)
+    // Utilidades de carga (seguras tambiÃ©n en modo headless)
     // ==================================================================
     static final class Carga{
         static void mostrar(String t){ if(!Vars.headless && Vars.ui != null) Vars.ui.loadfrag.show(t); }
@@ -1498,16 +1498,16 @@ public class MundoInfinitoMod extends Mod{
         /**
          * Pura: no toca el mundo. Seguro en hilos secundarios.
          * (ox, oy) = origen VIRTUAL de la ventana: el terreno depende solo de coordenadas virtuales,
-         * así que al deslizar la ventana el mundo es idéntico y sin costuras.
+         * asÃ­ que al deslizar la ventana el mundo es idÃ©ntico y sin costuras.
          * @param dim -1 = terreno mezclado (mundos antiguos), 0 = Serpulo, 1 = Erekir
-         * IMPORTANTE: al venir de un pool, CADA celda se escribe aquí (también las que se saltan).
+         * IMPORTANTE: al venir de un pool, CADA celda se escribe aquÃ­ (tambiÃ©n las que se saltan).
          */
         static ChunkData generar(Paleta pal, int semilla, int dim, int tam, int cx, int cy, int epoca, int ox, int oy){
             ChunkData d = obtener(cx, cy, epoca);
             int sd = Muestreo.semDim(semilla, dim);
-            Muestreo.Spawn sp = Muestreo.spawn(sd, dim);   // el spawn del mundo está en el origen virtual (0,0)
+            Muestreo.Spawn sp = Muestreo.spawn(sd, dim);   // el spawn del mundo estÃ¡ en el origen virtual (0,0)
             int bordePiso = pal.idPiso[Muestreo.P_STONE], bordeMuro = pal.idMuroDePiso[Muestreo.P_STONE];
-            d.aux[11] = 0f;   // caché de estructura de la celda: vacía al empezar el chunk
+            d.aux[11] = 0f;   // cachÃ© de estructura de la celda: vacÃ­a al empezar el chunk
             for(int ly = 0; ly < TAM_CHUNK; ly++){
                 for(int lx = 0; lx < TAM_CHUNK; lx++){
                     int x = cx * TAM_CHUNK + lx, y = cy * TAM_CHUNK + ly;
@@ -1520,7 +1520,7 @@ public class MundoInfinitoMod extends Mod{
                     }
                     int vx = ox + x, vy = oy + y;
                     if(vx < -LIMITE_MUNDO || vx > LIMITE_MUNDO || vy < -LIMITE_MUNDO || vy > LIMITE_MUNDO){
-                        // más allá del borde del mundo (±30 000 000): muro sólido, como el world border de Minecraft
+                        // mÃ¡s allÃ¡ del borde del mundo (Â±30 000 000): muro sÃ³lido, como el world border de Minecraft
                         d.piso[i] = (short)bordePiso;
                         d.bloque[i] = (short)bordeMuro;
                         continue;
@@ -1643,15 +1643,15 @@ public class MundoInfinitoMod extends Mod{
     }
 
     // ==================================================================
-    // Almacén de REGIONES (como los archivos .mca de Minecraft):
-    // 16x16 chunks por archivo, indexados por coordenadas virtuales => tamaño de mundo ilimitado en disco.
+    // AlmacÃ©n de REGIONES (como los archivos .mca de Minecraft):
+    // 16x16 chunks por archivo, indexados por coordenadas virtuales => tamaÃ±o de mundo ilimitado en disco.
     // ==================================================================
     static final class Regiones{
         static final class ChunkGuardado{
             final Seq<Reg> edificios = new Seq<>();
             final Seq<Estructuras.RegU> unidades = new Seq<>();   // unidades enemigas de guardia (bases y errantes)
             int[] niebla; // 32 enteros: una fila de 32 bits por fila del chunk (null = nada explorado)
-            double tick;  // reloj del mundo cuando se guardó: sirve para saber cuánto tiempo estuvo ausente
+            double tick;  // reloj del mundo cuando se guardÃ³: sirve para saber cuÃ¡nto tiempo estuvo ausente
         }
 
         static final class Region{
@@ -1670,7 +1670,7 @@ public class MundoInfinitoMod extends Mod{
             enVuelo.clear();
             llegadas.clear();
             epoca++;
-            if(m != null && m.dimensional()) Mapa.iniciar(Almacen.carpetaDatos(m).file());   // el minimapa guarda por dimensión
+            if(m != null && m.dimensional()) Mapa.iniciar(Almacen.carpetaDatos(m).file());   // el minimapa guarda por dimensiÃ³n
         }
 
         // ---- lectura anticipada: el hilo de E/S lee y descomprime; el juego solo recoge el resultado ----
@@ -1678,12 +1678,12 @@ public class MundoInfinitoMod extends Mod{
         static final java.util.HashSet<Long> enVuelo = new java.util.HashSet<>();
         static volatile int epoca;
 
-        /** Pide en segundo plano la región (rx, ry) si existe en disco y no está ya en memoria. */
+        /** Pide en segundo plano la regiÃ³n (rx, ry) si existe en disco y no estÃ¡ ya en memoria. */
         static void precargar(int rx, int ry){
             long key = k(rx, ry);
             if(meta == null || regiones.containsKey(key) || enVuelo.contains(key)) return;
             final Fi f = archivo(rx, ry);
-            if(!f.exists()) return;       // región vacía: no hay nada que leer
+            if(!f.exists()) return;       // regiÃ³n vacÃ­a: no hay nada que leer
             enVuelo.add(key);
             final int ep = epoca;
             Disco.leer(() -> {
@@ -1693,7 +1693,7 @@ public class MundoInfinitoMod extends Mod{
             });
         }
 
-        /** Hilo del juego, cada fotograma: incorpora las regiones que el hilo de E/S ya leyó. */
+        /** Hilo del juego, cada fotograma: incorpora las regiones que el hilo de E/S ya leyÃ³. */
         static void sincronizar(){
             Region r;
             while((r = llegadas.poll()) != null){
@@ -1742,16 +1742,16 @@ public class MundoInfinitoMod extends Mod{
             try{
                 leerFlujo(r, new DataInputStream(new GZIPInputStream(f.read())));
             }catch(Throwable t){
-                Log.err("[MundoInfinito] Región ilegible " + f.name(), t);
+                Log.err("[MundoInfinito] RegiÃ³n ilegible " + f.name(), t);
             }
         }
 
-        /** Analiza los bytes SIN comprimir de una región (tal como los entrega bytes(Region)). */
+        /** Analiza los bytes SIN comprimir de una regiÃ³n (tal como los entrega bytes(Region)). */
         static void leerBytes(Region r, byte[] raw){
             try{
                 leerFlujo(r, new DataInputStream(new java.io.ByteArrayInputStream(raw)));
             }catch(Throwable t){
-                Log.err("[MundoInfinito] Región ilegible", t);
+                Log.err("[MundoInfinito] RegiÃ³n ilegible", t);
             }
         }
 
@@ -1780,7 +1780,7 @@ public class MundoInfinitoMod extends Mod{
         }
 
         static byte[] bytes(Region r){
-            if(r.chunks.isEmpty()) return null; // región vacía => se borra el archivo
+            if(r.chunks.isEmpty()) return null; // regiÃ³n vacÃ­a => se borra el archivo
             try{
                 ByteArrayOutputStream bos = new ByteArrayOutputStream();
                 DataOutputStream out = new DataOutputStream(bos);   // sin comprimir: lo comprime el hilo de E/S
@@ -1800,12 +1800,12 @@ public class MundoInfinitoMod extends Mod{
                 out.flush();
                 return bos.toByteArray();
             }catch(Throwable t){
-                Log.err("[MundoInfinito] No se pudo serializar región", t);
+                Log.err("[MundoInfinito] No se pudo serializar regiÃ³n", t);
                 return null;
             }
         }
 
-        /** Hilo principal: serializa las regiones modificadas (rápido). La escritura a disco la hace otro hilo. */
+        /** Hilo principal: serializa las regiones modificadas (rÃ¡pido). La escritura a disco la hace otro hilo. */
         static java.util.HashMap<Fi, byte[]> serializarSucias(){
             java.util.HashMap<Fi, byte[]> r = new java.util.HashMap<>();
             for(Region reg : regiones.values()){
@@ -1832,11 +1832,11 @@ public class MundoInfinitoMod extends Mod{
     }
 
     // ==================================================================
-    // Estado pequeño de una dimensión (posición, inventario, unidades)
+    // Estado pequeÃ±o de una dimensiÃ³n (posiciÃ³n, inventario, unidades)
     // ==================================================================
     static final class Datos{
         int ox, oy;                 // origen virtual de la ventana al guardar
-        double vx, vy;              // posición virtual del jugador (tiles)
+        double vx, vy;              // posiciÃ³n virtual del jugador (tiles)
         String tipoJugador = "";
         final Seq<String> itemsN = new Seq<>();
         final Seq<Integer> itemsC = new Seq<>();
@@ -1848,7 +1848,7 @@ public class MundoInfinitoMod extends Mod{
             float rot, vida;
         }
 
-        /** Hilo principal: fotografía del estado vivo. */
+        /** Hilo principal: fotografÃ­a del estado vivo. */
         static Datos capturar(double vx, double vy){
             Datos d = new Datos();
             d.ox = Streamer.ox;
@@ -1953,20 +1953,20 @@ public class MundoInfinitoMod extends Mod{
                 in.close();
                 return d;
             }catch(Throwable t){
-                Log.err("[MundoInfinito] Estado de dimensión ilegible", t);
+                Log.err("[MundoInfinito] Estado de dimensiÃ³n ilegible", t);
                 return null;
             }
         }
     }
 
     // ==================================================================
-    // STREAMING DE CHUNKS (carga PASIVA: pocos chunks a la vez, trozos pequeños por frame)
+    // STREAMING DE CHUNKS (carga PASIVA: pocos chunks a la vez, trozos pequeÃ±os por frame)
     // ==================================================================
     static final class Streamer{
         static final long PRESUPUESTO_NS = 900_000L;             // 0.9 ms por frame (se reduce solo si el FPS baja)
-        static final long PRESUPUESTO_RESTAURAR_NS = 9_000_000L; // con la pantalla de carga puesta se puede gastar más
+        static final long PRESUPUESTO_RESTAURAR_NS = 9_000_000L; // con la pantalla de carga puesta se puede gastar mÃ¡s
         static final int R_JUGADOR = 3, R_UNIDAD = 2, R_EDIFICIO = 1;
-        /** Chunks "en vuelo" a la vez (cola + calculando + esperando aplicar): crece con los hilos de generación. */
+        /** Chunks "en vuelo" a la vez (cola + calculando + esperando aplicar): crece con los hilos de generaciÃ³n. */
         static int maxEnCola(){
             return Math.max(8, Ajustes.hilos() * 6);
         }
@@ -1977,7 +1977,7 @@ public class MundoInfinitoMod extends Mod{
 
         static Meta meta;
         static Paleta paleta;
-        static volatile int ox, oy;                      // origen VIRTUAL de la ventana (tiles, múltiplo de 32)
+        static volatile int ox, oy;                      // origen VIRTUAL de la ventana (tiles, mÃºltiplo de 32)
         static volatile int nch;                         // chunks por lado de la ventana
         static final IntSet generados = new IntSet();    // aplicados al mundo
         static final IntSet solicitados = new IntSet();  // en cola / calculando / esperando aplicar
@@ -1994,7 +1994,7 @@ public class MundoInfinitoMod extends Mod{
         static Datos datosPendientes;
         static final Thread[] trabajadores = new Thread[8];
         static volatile int hilosObjetivo = 1;
-        /** Precarga de terreno FUERA de la ventana (solo a la caché, sin aplicar): cola de baja prioridad, protegida por 'cola'. */
+        /** Precarga de terreno FUERA de la ventana (solo a la cachÃ©, sin aplicar): cola de baja prioridad, protegida por 'cola'. */
         static final ArrayDeque<Long> colaBaja = new ArrayDeque<>();
         static final java.util.HashSet<Long> pendBaja = new java.util.HashSet<>();
         static int cursorPlan;
@@ -2002,7 +2002,7 @@ public class MundoInfinitoMod extends Mod{
         static ChunkData actual;
         static int paso;
         static float acumEscaneo, acumGuardado, muerto;
-        static float jugadorX, jugadorY;                 // última posición válida LOCAL (tiles)
+        static float jugadorX, jugadorY;                 // Ãºltima posiciÃ³n vÃ¡lida LOCAL (tiles)
 
         static int clave(int cx, int cy){
             return cy * nch + cx;
@@ -2042,7 +2042,7 @@ public class MundoInfinitoMod extends Mod{
             ajustarHilos();
         }
 
-        /** Arranca (o deja dormir) hilos de generación hasta igualar el ajuste del jugador. Seguro de llamar a cada escaneo. */
+        /** Arranca (o deja dormir) hilos de generaciÃ³n hasta igualar el ajuste del jugador. Seguro de llamar a cada escaneo. */
         static void ajustarHilos(){
             int obj = Ajustes.hilos();
             hilosObjetivo = obj;
@@ -2058,8 +2058,8 @@ public class MundoInfinitoMod extends Mod{
         }
 
         /**
-         * Un hilo de generación. Varios corren a la vez: ChunkData.generar es pura (solo lee la semilla y escribe en SU chunk).
-         * Primero atienden lo que pide el juego (cola); si no hay nada, precargan terreno a la caché (colaBaja).
+         * Un hilo de generaciÃ³n. Varios corren a la vez: ChunkData.generar es pura (solo lee la semilla y escribe en SU chunk).
+         * Primero atienden lo que pide el juego (cola); si no hay nada, precargan terreno a la cachÃ© (colaBaja).
          */
         static void bucleTrabajador(int id){
             while(true){
@@ -2079,7 +2079,7 @@ public class MundoInfinitoMod extends Mod{
                     }
                     ep = epoca;
                     m = meta;
-                    dm = m == null ? -1 : m.dimGen();   // se captura junto con la época: un chunk viejo nunca mezcla dimensiones
+                    dm = m == null ? -1 : m.dimGen();   // se captura junto con la Ã©poca: un chunk viejo nunca mezcla dimensiones
                     p = paleta;
                     vox = ox;
                     voy = oy;
@@ -2089,7 +2089,7 @@ public class MundoInfinitoMod extends Mod{
                 try{
                     if(m == null || p == null || n <= 0) continue;
                     if(baja != null){
-                        // precarga: chunk virtual suelto. Se genera con origen = su propia esquina, así que x, y locales = 0..31.
+                        // precarga: chunk virtual suelto. Se genera con origen = su propia esquina, asÃ­ que x, y locales = 0..31.
                         long vk = baja;
                         if(CacheChunks.tiene(mid, vk)) continue;
                         ChunkData cd = ChunkData.generar(p, m.semilla, dm, m.tam, 0, 0, ep, Coord.vcxDeClave(vk) * TAM_CHUNK, Coord.vcyDeClave(vk) * TAM_CHUNK);
@@ -2098,7 +2098,7 @@ public class MundoInfinitoMod extends Mod{
                     }else{
                         int cx = key % n, cy = key / n;
                         long vk = Coord.claveVirtual(vox / TAM_CHUNK + cx, voy / TAM_CHUNK + cy);
-                        ChunkData cd = CacheChunks.copiar(mid, vk, cx, cy, ep);   // ¿ya se generó antes? entonces no se recalcula
+                        ChunkData cd = CacheChunks.copiar(mid, vk, cx, cy, ep);   // Â¿ya se generÃ³ antes? entonces no se recalcula
                         if(cd == null){
                             cd = ChunkData.generar(p, m.semilla, dm, m.tam, cx, cy, ep, vox, voy);
                             if((cx + 1) * TAM_CHUNK <= m.tam && (cy + 1) * TAM_CHUNK <= m.tam) CacheChunks.poner(mid, vk, cd);   // los de borde no: llevan relleno
@@ -2108,7 +2108,7 @@ public class MundoInfinitoMod extends Mod{
                 }catch(Throwable t){
                     Log.err("[MundoInfinito] Error generando chunk", t);
                 }
-                // pausa mínima entre chunks: ningún hilo acapara un núcleo de la CPU (con varios hilos basta 1 ms)
+                // pausa mÃ­nima entre chunks: ningÃºn hilo acapara un nÃºcleo de la CPU (con varios hilos basta 1 ms)
                 try{ Thread.sleep(1); }catch(InterruptedException e){ return; }
             }
         }
@@ -2133,7 +2133,7 @@ public class MundoInfinitoMod extends Mod{
                 if(f instanceof Floor && t.floor() != f) t.setFloor((Floor)f);
                 Block o = d.mena[i] == 0 ? Blocks.air : Vars.content.block(d.mena[i]);
                 if(t.overlay() != o) t.setOverlay(o);
-                if(t.build == null){   // sin edificio encima: lo que hay es terreno (aire, muro estático o roca) y se iguala al calculado
+                if(t.build == null){   // sin edificio encima: lo que hay es terreno (aire, muro estÃ¡tico o roca) y se iguala al calculado
                     Block b = d.bloque[i] == 0 ? Blocks.air : Vars.content.block(d.bloque[i]);
                     if(t.block() != b){
                         if(b == Blocks.air) t.setAir(); else t.setBlock(b);
@@ -2146,16 +2146,16 @@ public class MundoInfinitoMod extends Mod{
             int k = clave(d.cx, d.cy);
             generados.add(k);
             solicitados.remove(k);
-            d.liberar();   // ya está en el mundo: vuelve al pool para el siguiente chunk
+            d.liberar();   // ya estÃ¡ en el mundo: vuelve al pool para el siguiente chunk
         }
 
-        /** Descarta los chunks calculados que nadie aplicó (cambio de época), devolviéndolos al pool. */
+        /** Descarta los chunks calculados que nadie aplicÃ³ (cambio de Ã©poca), devolviÃ©ndolos al pool. */
         static void vaciarListos(){
             ChunkData c;
             while((c = listos.poll()) != null) c.liberar();
         }
 
-        /** Presupuesto por frame: baja solo si el juego va justo de FPS (así moverse nunca causa tirones). */
+        /** Presupuesto por frame: baja solo si el juego va justo de FPS (asÃ­ moverse nunca causa tirones). */
         static long presupuesto(){
             float dt = Core.graphics == null ? 0.016f : Core.graphics.getDeltaTime();
             long base = Ajustes.presupuestoNs();
@@ -2189,8 +2189,8 @@ public class MundoInfinitoMod extends Mod{
             }
 
             Estructuras.procesar(System.nanoTime() + 1_500_000L);   // coloca bases y ruinas de a poco
-            Bases.procesar(System.nanoTime() + 1_500_000L);         // despierta estructuras hibernadas que el jugador volvió a acercar
-            Ausencia.tick(System.nanoTime() + 2_500_000L);          // las fábricas que estuvieron lejos se ponen al día
+            Bases.procesar(System.nanoTime() + 1_500_000L);         // despierta estructuras hibernadas que el jugador volviÃ³ a acercar
+            Ausencia.tick(System.nanoTime() + 2_500_000L);          // las fÃ¡bricas que estuvieron lejos se ponen al dÃ­a
             Mapa.tick(Mathf.clamp((int)jugadorX / TAM_CHUNK, 0, nch - 1), Mathf.clamp((int)jugadorY / TAM_CHUNK, 0, nch - 1));
 
             long fin = System.nanoTime() + presupuesto();
@@ -2209,7 +2209,7 @@ public class MundoInfinitoMod extends Mod{
                 }
             }
 
-            pedirMas();   // mantiene la tubería llena sin esperar al siguiente escaneo (antes: 5 chunks cada 0,5 s)
+            pedirMas();   // mantiene la tuberÃ­a llena sin esperar al siguiente escaneo (antes: 5 chunks cada 0,5 s)
 
             acumEscaneo += Time.delta;
             if(acumEscaneo >= 30f){
@@ -2252,7 +2252,7 @@ public class MundoInfinitoMod extends Mod{
         static final IntSeq faltanK = new IntSeq();
         static final FloatSeq faltanS = new FloatSeq();
 
-        /** Decide qué chunks necesita el mundo y, si el jugador se acerca al borde de la ventana, la reubica. */
+        /** Decide quÃ© chunks necesita el mundo y, si el jugador se acerca al borde de la ventana, la reubica. */
         static void escanear(){
             deseados.clear();
 
@@ -2264,7 +2264,7 @@ public class MundoInfinitoMod extends Mod{
             int pcx = Mathf.clamp((int)jugadorX / TAM_CHUNK, 0, nch - 1);
             int pcy = Mathf.clamp((int)jugadorY / TAM_CHUNK, 0, nch - 1);
 
-            // Mundo infinito: al acercarse al borde, la ventana se recentra sobre el jugador (en sitio, sin menú).
+            // Mundo infinito: al acercarse al borde, la ventana se recentra sobre el jugador (en sitio, sin menÃº).
             if(Vars.player != null && !Vars.player.dead()
                 && (pcx < MARGEN_REBASE || pcy < MARGEN_REBASE || pcx >= nch - MARGEN_REBASE || pcy >= nch - MARGEN_REBASE)){
                 Mundos.rebasar();
@@ -2275,13 +2275,13 @@ public class MundoInfinitoMod extends Mod{
             if(Core.camera != null){
                 cenX = Mathf.clamp((int)(Core.camera.position.x / 8f) / TAM_CHUNK, 0, nch - 1);
                 cenY = Mathf.clamp((int)(Core.camera.position.y / 8f) / TAM_CHUNK, 0, nch - 1);
-                // radio según lo que se ve en pantalla (con zoom alejado hacen falta más chunks)
+                // radio segÃºn lo que se ve en pantalla (con zoom alejado hacen falta mÃ¡s chunks)
                 float mitad = Math.max(Core.camera.width, Core.camera.height) / 2f / 8f;
-                rVista = Mathf.clamp((int)Math.ceil(mitad / TAM_CHUNK) + 1, 2, 7);
+                rVista = Mathf.clamp((int)Math.ceil(mitad / TAM_CHUNK) + 1, 2, Math.max(2, Math.min(7, Ajustes.carga())));
             }
 
-            // MOTOR DE CHUNKS: decide qué hace falta y en qué orden según el JUGADOR y hacia dónde se dirige.
-            // Ni las unidades ni los edificios piden terreno por su cuenta (antes se recorrían todos cada vez).
+            // MOTOR DE CHUNKS: decide quÃ© hace falta y en quÃ© orden segÃºn el JUGADOR y hacia dÃ³nde se dirige.
+            // Ni las unidades ni los edificios piden terreno por su cuenta (antes se recorrÃ­an todos cada vez).
             motor.actualizar(jugadorX, jugadorY, Math.max(1f, Time.time - ultimoEscaneo));
             ultimoEscaneo = Time.time;
             motor.plan(nch, pcx, pcy, cenX, cenY, rVista, requeridos);
@@ -2302,7 +2302,7 @@ public class MundoInfinitoMod extends Mod{
             pedirMas();
         }
 
-        /** Pide a los hilos los siguientes chunks del plan que aún no están ni cargados ni en camino, hasta llenar la tubería. */
+        /** Pide a los hilos los siguientes chunks del plan que aÃºn no estÃ¡n ni cargados ni en camino, hasta llenar la tuberÃ­a. */
         static void pedirMas(){
             int libres = maxEnCola() - solicitados.size;
             if(libres <= 0 || cursorPlan >= motor.claves.size) return;
@@ -2320,8 +2320,8 @@ public class MundoInfinitoMod extends Mod{
         }
 
         /**
-         * Cerca del borde de la ventana, el terreno que quedará dentro tras reubicarla todavía es "virtual": se calcula ya, en
-         * segundo plano y solo a la caché, para que al reubicar se copie en vez de calcularse (y no se vea terreno sin cargar).
+         * Cerca del borde de la ventana, el terreno que quedarÃ¡ dentro tras reubicarla todavÃ­a es "virtual": se calcula ya, en
+         * segundo plano y solo a la cachÃ©, para que al reubicar se copie en vez de calcularse (y no se vea terreno sin cargar).
          */
         static void precargarFuera(int pcx, int pcy){
             if(CacheChunks.maxChunks() <= 0) return;
@@ -2383,13 +2383,13 @@ public class MundoInfinitoMod extends Mod{
         static Meta actual;
         static boolean viajando = false;
         static float ultimoRebase = -100000f;
-        static int proxyPos = -1;   // posición del núcleo "proxy" (inventario compartido cuando el núcleo real está lejos)
+        static int proxyPos = -1;   // posiciÃ³n del nÃºcleo "proxy" (inventario compartido cuando el nÃºcleo real estÃ¡ lejos)
 
         /** Unidades "avatar" del jugador: nunca se guardan ni se restauran como seguidores (evita duplicados del dron). */
         static final java.util.HashSet<String> UNIDADES_NUCLEO = new java.util.HashSet<>(
             java.util.Arrays.asList("alpha", "beta", "gamma", "evoke", "incite", "emanate"));
 
-        // ---------- creación / continuar ----------
+        // ---------- creaciÃ³n / continuar ----------
         static void crearNuevo(String nombre, int nucleo, String semillaTxt){
             String t = semillaTxt == null ? "" : semillaTxt.trim();
             if(!t.isEmpty()){
@@ -2413,7 +2413,7 @@ public class MundoInfinitoMod extends Mod{
             m.creado = m.ultimo = System.currentTimeMillis();
             Almacen.guardarMeta(m);
             Regiones.iniciar(m);
-            Orbita.reiniciar();          // mundo nuevo: sin drones en tránsito...
+            Orbita.reiniciar();          // mundo nuevo: sin drones en trÃ¡nsito...
             Estructuras.cargar(m);       // ...y sin estructuras ni checkpoints
             abrir(m, null, 0.0, 0.0);
         }
@@ -2432,7 +2432,7 @@ public class MundoInfinitoMod extends Mod{
         /** Mete en las colas lo guardado (edificios + niebla) de los chunks propios de la ventana actual. */
         static void cargarDesdeAlmacen(){
             int n = Streamer.nch, vcx0 = Streamer.ox / TAM_CHUNK, vcy0 = Streamer.oy / TAM_CHUNK;
-            // Se ignora el anillo exterior de chunks: ahí un edificio grande podría quedar cortado por el borde.
+            // Se ignora el anillo exterior de chunks: ahÃ­ un edificio grande podrÃ­a quedar cortado por el borde.
             for(int cy = 1; cy <= n - 2; cy++){
                 for(int cx = 1; cx <= n - 2; cx++){
                     Regiones.ChunkGuardado c = Regiones.chunk(vcx0 + cx, vcy0 + cy, false);
@@ -2456,17 +2456,17 @@ public class MundoInfinitoMod extends Mod{
         static final boolean RECURSOS_GLOBALES = true;
         static Seq<String> resN;
         static Seq<Integer> resC;
-        static boolean llegadaNueva = false;   // true = primera vez en esa dimensión: se coloca un silo de recepción junto al núcleo
+        static boolean llegadaNueva = false;   // true = primera vez en esa dimensiÃ³n: se coloca un silo de recepciÃ³n junto al nÃºcleo
 
-        /** Dimensión actual (0 Serpulo / 1 Erekir). En mundos antiguos (mezclados) siempre 0. */
+        /** DimensiÃ³n actual (0 Serpulo / 1 Erekir). En mundos antiguos (mezclados) siempre 0. */
         static int dimActual(){
             return actual != null && actual.dimensional() ? actual.dim : DIM_SERPULO;
         }
 
         /**
-         * Viaja a la otra dimensión: efecto de despegue, guarda la actual (regiones + estado + órbita + estructuras),
-         * cambia de carpeta de datos, reglas y paleta, y aparece en el (0,0) de la nueva (o donde se quedó).
-         * Una dimensión se reconstruye entera (logic.reset), así que aquí SÍ hay capa de carga; no ocurre al explorar.
+         * Viaja a la otra dimensiÃ³n: efecto de despegue, guarda la actual (regiones + estado + Ã³rbita + estructuras),
+         * cambia de carpeta de datos, reglas y paleta, y aparece en el (0,0) de la nueva (o donde se quedÃ³).
+         * Una dimensiÃ³n se reconstruye entera (logic.reset), asÃ­ que aquÃ­ SÃ hay capa de carga; no ocurre al explorar.
          */
         static void saltar(int destino){
             if(viajando || actual == null || !actual.dimensional() || destino == actual.dim) return;
@@ -2477,13 +2477,13 @@ public class MundoInfinitoMod extends Mod{
             Carga.mostrar("Despegando hacia " + (destino == DIM_SERPULO ? "Serpulo" : "Erekir") + "...");
             Time.runTask(50f, () -> {
                 try{
-                    guardar(true);                       // síncrono: escribe en la carpeta de la dimensión de origen
+                    guardar(true);                       // sÃ­ncrono: escribe en la carpeta de la dimensiÃ³n de origen
                     if(RECURSOS_GLOBALES){
                         // el inventario es UNO solo para las dos dimensiones: se lleva consigo
                         Datos origen = Datos.leer(Almacen.archivoEstado(m));
                         if(origen != null){ resN = new Seq<>(origen.itemsN); resC = new Seq<>(origen.itemsC); }
                     }
-                    m.dim = destino;                     // a partir de aquí todas las rutas apuntan a la nueva
+                    m.dim = destino;                     // a partir de aquÃ­ todas las rutas apuntan a la nueva
                     Almacen.guardarMeta(m);
                     Regiones.iniciar(m);
                     Estructuras.cargar(m);
@@ -2493,7 +2493,7 @@ public class MundoInfinitoMod extends Mod{
                     if(d != null) abrir(m, d, d.vx, d.vy);
                     else abrir(m, null, 0.0, 0.0);       // (0,0) del planeta nuevo
                 }catch(Throwable t){
-                    Log.err("[MundoInfinito] Error al saltar de dimensión", t);
+                    Log.err("[MundoInfinito] Error al saltar de dimensiÃ³n", t);
                     Carga.ocultar();
                     viajando = false;
                 }
@@ -2502,8 +2502,8 @@ public class MundoInfinitoMod extends Mod{
 
         // ---------- apertura de la ventana ----------
         /**
-         * Construye la ventana en RAM alrededor de una posición VIRTUAL (carga completa: entrar, continuar, portales).
-         * @param datos  null = dimensión nueva (núcleo + portal); si no, se restaura inventario/unidades
+         * Construye la ventana en RAM alrededor de una posiciÃ³n VIRTUAL (carga completa: entrar, continuar, portales).
+         * @param datos  null = dimensiÃ³n nueva (nÃºcleo + portal); si no, se restaura inventario/unidades
          */
         static void abrir(Meta m, Datos datos, double vx, double vy){
             Carga.mostrar("Preparando mundo...");
@@ -2529,7 +2529,7 @@ public class MundoInfinitoMod extends Mod{
                 nox = Math.floorDiv((int)Math.floor(vx) - tam / 2, TAM_CHUNK) * TAM_CHUNK;
                 noy = Math.floorDiv((int)Math.floor(vy) - tam / 2, TAM_CHUNK) * TAM_CHUNK;
             }
-            final int px = (int)Math.floor(vx) - nox, py = (int)Math.floor(vy) - noy; // posición LOCAL
+            final int px = (int)Math.floor(vx) - nox, py = (int)Math.floor(vy) - noy; // posiciÃ³n LOCAL
 
             Paleta pal = Paleta.crear();
             Streamer.epoca++;
@@ -2579,7 +2579,7 @@ public class MundoInfinitoMod extends Mod{
             llegadaNueva = false;
 
             Vars.world.endMapLoad();          // oscuridad de muros, proximidades, WorldLoadEvent (niebla, minimapa, indexador)
-            Vars.logic.play();                // PlayEvent añade al jugador y reparte el loadout inicial
+            Vars.logic.play();                // PlayEvent aÃ±ade al jugador y reparte el loadout inicial
 
             Streamer.jugadorX = px;
             Streamer.jugadorY = py;
@@ -2591,7 +2591,7 @@ public class MundoInfinitoMod extends Mod{
             Almacen.guardarMeta(m);
         }
 
-        /** Última fase de apertura: configs relativas, núcleo/proxy, inventario, jugador, unidades y niebla. */
+        /** Ãltima fase de apertura: configs relativas, nÃºcleo/proxy, inventario, jugador, unidades y niebla. */
         static void finalizarRestauracion(){
             final int ep = Streamer.epoca;
             Datos d = Streamer.datosPendientes;
@@ -2600,8 +2600,8 @@ public class MundoInfinitoMod extends Mod{
             Streamer.rebaseEnSitio = false;
             int px = (int)Streamer.jugadorX, py = (int)Streamer.jugadorY;
 
-            // 1) Puentes, nodos de energía, mass drivers y procesadores guardan enlaces RELATIVOS:
-            //    se reaplican ahora que todos los edificios existen (así sobreviven a mover la ventana).
+            // 1) Puentes, nodos de energÃ­a, mass drivers y procesadores guardan enlaces RELATIVOS:
+            //    se reaplican ahora que todos los edificios existen (asÃ­ sobreviven a mover la ventana).
             for(Reg r : Streamer.configsPendientes){
                 try{
                     Tile t = Vars.world.tile(r.x - Streamer.ox, r.y - Streamer.oy);
@@ -2610,7 +2610,7 @@ public class MundoInfinitoMod extends Mod{
             }
             Streamer.configsPendientes.clear();
 
-            // 2) Si el núcleo real quedó fuera de la ventana, un núcleo "proxy" oculto (esquina, bajo la niebla)
+            // 2) Si el nÃºcleo real quedÃ³ fuera de la ventana, un nÃºcleo "proxy" oculto (esquina, bajo la niebla)
             //    mantiene el inventario compartido del equipo para poder seguir construyendo.
             if(Vars.state.teams.cores(Team.sharded).isEmpty()){
                 int c = 8;
@@ -2627,7 +2627,7 @@ public class MundoInfinitoMod extends Mod{
                 }
             }
 
-            // 3) Inventario compartido (al cruzar de dimensión llega el inventario global; si no, el guardado)
+            // 3) Inventario compartido (al cruzar de dimensiÃ³n llega el inventario global; si no, el guardado)
             final boolean global = resN != null;
             final Seq<String> invN = global ? resN : (d != null ? d.itemsN : null);
             final Seq<Integer> invC = global ? resC : (d != null ? d.itemsC : null);
@@ -2645,12 +2645,12 @@ public class MundoInfinitoMod extends Mod{
                 }
             }
 
-            // 3b) Unidades enemigas de guardia guardadas con los chunks (también tras mover la ventana)
+            // 3b) Unidades enemigas de guardia guardadas con los chunks (tambiÃ©n tras mover la ventana)
             for(Estructuras.RegU ru : Streamer.unidadesPend) Estructuras.restaurarUnidad(ru);
             Streamer.unidadesPend.clear();
 
             if(!enSitio){
-                // 4) Jugador: UN solo reaparecer, en su posición exacta (sin requestSpawn, que duplicaba al dron)
+                // 4) Jugador: UN solo reaparecer, en su posiciÃ³n exacta (sin requestSpawn, que duplicaba al dron)
                 spawnEnPosicion(px, py, d);
                 if(Core.camera != null) Core.camera.position.set(px * 8f, py * 8f);
 
@@ -2678,7 +2678,7 @@ public class MundoInfinitoMod extends Mod{
             viajando = false;
         }
 
-        /** Reaparece al jugador (si no tiene unidad) en una posición LOCAL, con su tipo de unidad o el del núcleo. */
+        /** Reaparece al jugador (si no tiene unidad) en una posiciÃ³n LOCAL, con su tipo de unidad o el del nÃºcleo. */
         static void spawnEnPosicion(int px, int py, Datos d){
             try{
                 if(Vars.player == null || !Vars.player.dead()) return;   // ya tiene unidad: nunca crear una segunda
@@ -2690,7 +2690,7 @@ public class MundoInfinitoMod extends Mod{
                 }
                 if(!tipo.supportsEnv(Vars.state.rules.env)) tipo = UnitTypes.alpha;
                 Unit u = tipo.spawn(Team.sharded, px * 8f, py * 8f);
-                u.spawnedByCore = true;   // como los avatares reales: el límite de unidades no debe eliminarlo
+                u.spawnedByCore = true;   // como los avatares reales: el lÃ­mite de unidades no debe eliminarlo
                 Vars.player.unit(u);
             }catch(Throwable t){
                 Log.err("[MundoInfinito] No se pudo reaparecer al jugador", t);
@@ -2704,7 +2704,7 @@ public class MundoInfinitoMod extends Mod{
             return false;
         }
 
-        /** Borde del mundo virtual (±30 000 000): las unidades no pueden salir. */
+        /** Borde del mundo virtual (Â±30 000 000): las unidades no pueden salir. */
         static void limitarUnidades(){
             float minX = (-LIMITE_MUNDO - (float)Streamer.ox) * 8f, maxX = (LIMITE_MUNDO - (float)Streamer.ox) * 8f;
             float minY = (-LIMITE_MUNDO - (float)Streamer.oy) * 8f, maxY = (LIMITE_MUNDO - (float)Streamer.oy) * 8f;
@@ -2729,21 +2729,21 @@ public class MundoInfinitoMod extends Mod{
             r.borderDarkness = true;
             r.lighting = false;
             r.coreIncinerates = true;
-            // Niebla de campaña: lo no explorado se oculta en pantalla Y en el minimapa.
+            // Niebla de campaÃ±a: lo no explorado se oculta en pantalla Y en el minimapa.
             r.fog = true;
             r.staticFog = true;
             r.bannedBlocks.clear();
             if(actual != null && actual.dimensional()){
-                // Dimensión: la UI nativa de Mindustry se adapta sola al planeta (bloques por entorno, ítems ocultos del otro planeta).
+                // DimensiÃ³n: la UI nativa de Mindustry se adapta sola al planeta (bloques por entorno, Ã­tems ocultos del otro planeta).
                 Planet p = actual.dim == DIM_SERPULO ? Planets.serpulo : Planets.erekir;
                 r.planet = p;
                 r.env = p.defaultEnv;
                 r.loadout = actual.dim == DIM_SERPULO
                     ? ItemStack.list(Items.copper, 400, Items.lead, 250, Items.sand, 100, Items.graphite, 150)
                     : ItemStack.list(Items.beryllium, 200, Items.graphite, 150);
-                // Todo se puede construir: sin árbol tecnológico ni bloques baneados.
-                // Los equipos enemigos juegan "con trampa": sus torretas siempre tienen munición y sus bloques no piden energía.
-                // Sin límite de unidades: el tope sale de los núcleos CARGADOS y, al alejarse de la base, valía 0 (morían al crearse).
+                // Todo se puede construir: sin Ã¡rbol tecnolÃ³gico ni bloques baneados.
+                // Los equipos enemigos juegan "con trampa": sus torretas siempre tienen municiÃ³n y sus bloques no piden energÃ­a.
+                // Sin lÃ­mite de unidades: el tope sale de los nÃºcleos CARGADOS y, al alejarse de la base, valÃ­a 0 (morÃ­an al crearse).
                 r.disableUnitCap = true;
                 for(Team et : new Team[]{Team.crux, Team.malis}){
                     Rules.TeamRule tr = r.teams.get(et);
@@ -2751,14 +2751,14 @@ public class MundoInfinitoMod extends Mod{
                     tr.aiCoreSpawn = false;
                 }
             }else{
-                // Mundos antiguos: menú de construcción con bloques de AMBOS planetas (planeta "sol" = sin filtro por planeta).
+                // Mundos antiguos: menÃº de construcciÃ³n con bloques de AMBOS planetas (planeta "sol" = sin filtro por planeta).
                 r.planet = Planets.sun;
                 r.env = ENTORNO_COMBINADO;
                 r.loadout = ItemStack.list(Items.copper, 400, Items.lead, 250, Items.sand, 100, Items.beryllium, 200, Items.graphite, 150);
             }
         }
 
-        /** Reinicio completo (solo al entrar, continuar o cruzar un portal): vacía entidades y suelta el arreglo de tiles. */
+        /** Reinicio completo (solo al entrar, continuar o cruzar un portal): vacÃ­a entidades y suelta el arreglo de tiles. */
         static void liberarMundo(){
             Streamer.activo = false;
             Streamer.epoca++;
@@ -2780,7 +2780,7 @@ public class MundoInfinitoMod extends Mod{
             tn.setBlock(m.nucleoBlock(), Team.sharded);
         }
 
-        /** Silo de recepción junto al núcleo de una dimensión recién visitada (para que los drones tengan dónde aterrizar). */
+        /** Silo de recepciÃ³n junto al nÃºcleo de una dimensiÃ³n reciÃ©n visitada (para que los drones tengan dÃ³nde aterrizar). */
         static void colocarSilo(int px, int py){
             if(SiloInterdimensional.silo == null) return;
             Tile t = Vars.world.tile(px + 8, py);
@@ -2792,14 +2792,14 @@ public class MundoInfinitoMod extends Mod{
             return actual == null ? 0.0 : actual.reloj;
         }
 
-        // ---------- restauración de edificios ----------
+        // ---------- restauraciÃ³n de edificios ----------
         static void restaurarEdificio(Reg r){
             try{
                 Block b = Vars.content.block(r.bloque);
                 Tile t = Vars.world.tile(r.x - Streamer.ox, r.y - Streamer.oy);
                 if(b == null || t == null) return;
-                // Saneamiento de partidas guardadas con el error antiguo: un edificio enemigo o abandonado solo es legítimo si cae
-                // dentro de una estructura que la semilla genera ahí. Los "trozos de estructura" sueltos se descartan (y el siguiente
+                // Saneamiento de partidas guardadas con el error antiguo: un edificio enemigo o abandonado solo es legÃ­timo si cae
+                // dentro de una estructura que la semilla genera ahÃ­. Los "trozos de estructura" sueltos se descartan (y el siguiente
                 // guardado ya no los escribe).
                 if(!Estructuras.legitimo(r.x, r.y, r.equipo)) return;
                 t.setBlock(b, Team.get(r.equipo), r.rot);
@@ -2812,13 +2812,13 @@ public class MundoInfinitoMod extends Mod{
                     }
                 }
                 if(r.cfgTipo != 0) Streamer.configsPendientes.add(r);
-                if(r.dt > 0 && t.build != null && r.equipo == Team.sharded.id) Ausencia.agregar(t.build, r.dt);   // se pone al día
+                if(r.dt > 0 && t.build != null && r.equipo == Team.sharded.id) Ausencia.agregar(t.build, r.dt);   // se pone al dÃ­a
             }catch(Throwable t){
                 Log.warn("[MundoInfinito] No se pudo restaurar @", r.bloque);
             }
         }
 
-        /** La niebla se crea un instante después de empezar a jugar; se reintenta unos frames. */
+        /** La niebla se crea un instante despuÃ©s de empezar a jugar; se reintenta unos frames. */
         static void aplicarNiebla(int ep, int intento){
             if(ep != Streamer.epoca) return;
             Bits bits = Vars.fogControl == null ? null : Vars.fogControl.getDiscovered(Team.sharded);
@@ -2861,7 +2861,7 @@ public class MundoInfinitoMod extends Mod{
             return new double[]{Streamer.ox + Streamer.jugadorX, Streamer.oy + Streamer.jugadorY};
         }
 
-        /** Copia lo que hay en la ventana (edificios + niebla) al almacén de regiones, en coordenadas virtuales. */
+        /** Copia lo que hay en la ventana (edificios + niebla) al almacÃ©n de regiones, en coordenadas virtuales. */
         static void capturarEnMemoria(){
             int n = Streamer.nch, vcx0 = Streamer.ox / TAM_CHUNK, vcy0 = Streamer.oy / TAM_CHUNK;
             Bits desc = Vars.fogControl == null ? null : Vars.fogControl.getDiscovered(Team.sharded);
@@ -2878,7 +2878,7 @@ public class MundoInfinitoMod extends Mod{
                     if(viejo != null){
                         r.sucia = true;
                         if(viejo.niebla != null) nieblaVieja.put(Streamer.clave(cx, cy), viejo.niebla);
-                        // chunk de una estructura HIBERNADA: sus edificios enemigos y guardias solo existen en el almacén, así que se conservan
+                        // chunk de una estructura HIBERNADA: sus edificios enemigos y guardias solo existen en el almacÃ©n, asÃ­ que se conservan
                         boolean hib = Bases.dormida(Coord.claveVirtual(vcx0 + cx, vcy0 + cy));
                         Seq<Estructuras.RegU> dorm = new Seq<>();
                         for(Estructuras.RegU u : viejo.unidades) if(u.clase == 1 || hib) dorm.add(u);
@@ -2892,7 +2892,7 @@ public class MundoInfinitoMod extends Mod{
                 }
             }
             // 2) edificios
-            // OJO: Groups.build NO incluye bloques que no actualizan (muros, nodos de energía...); TeamData.buildings sí.
+            // OJO: Groups.build NO incluye bloques que no actualizan (muros, nodos de energÃ­a...); TeamData.buildings sÃ­.
             // (todos los equipos: el jugador, las bases enemigas y las ruinas abandonadas conservan su estado)
             for(Team eq : EQUIPOS_GUARDADO){
                 for(Building b : Vars.state.teams.get(eq).buildings){
@@ -2913,7 +2913,7 @@ public class MundoInfinitoMod extends Mod{
                 int cx = e.getKey() % n, cy = e.getKey() / n;
                 Regiones.chunk(vcx0 + cx, vcy0 + cy, true).edificios.addAll(e.getValue());
             }
-            // unidades de guardia enemigas (se guardan junto al chunk donde están)
+            // unidades de guardia enemigas (se guardan junto al chunk donde estÃ¡n)
             for(Unit u : Groups.unit){
                 if(!u.isValid() || !(u.controller() instanceof Estructuras.Guardia)) continue;
                 int cx = u.tileX() / TAM_CHUNK, cy = u.tileY() / TAM_CHUNK;
@@ -2922,7 +2922,7 @@ public class MundoInfinitoMod extends Mod{
                 cg.unidades.add(Estructuras.RegU.desde(u, Streamer.ox, Streamer.oy));
                 cg.tick = reloj();
             }
-            // 3) niebla explorada (si la niebla aún no existe, se conserva la anterior)
+            // 3) niebla explorada (si la niebla aÃºn no existe, se conserva la anterior)
             for(int cy = 1; cy <= n - 2; cy++){
                 for(int cx = 1; cx <= n - 2; cx++){
                     int[] m = null;
@@ -2955,7 +2955,7 @@ public class MundoInfinitoMod extends Mod{
             final byte[] estructuras = m.dimensional() ? Estructuras.bytes() : null;
             final Fi fEstructuras = Almacen.archivoEstructuras(m);
             final java.util.HashMap<Fi, byte[]> regs = Regiones.serializarSucias();
-            // Todo el acceso a disco lo hace el hilo de E/S: escritura atómica, coalescente y comprimida allí
+            // Todo el acceso a disco lo hace el hilo de E/S: escritura atÃ³mica, coalescente y comprimida allÃ­
             for(java.util.Map.Entry<Fi, byte[]> e : regs.entrySet()){
                 if(e.getValue() == null) Disco.borrar(e.getKey().file());
                 else Disco.escribir(e.getKey().file(), e.getValue(), true);
@@ -2979,34 +2979,36 @@ public class MundoInfinitoMod extends Mod{
 
         // ---------- MUNDO INFINITO: reubicar la ventana EN SITIO ----------
         /**
-         * Se llama cuando el jugador se acerca al borde. NO reinicia la partida (nada de menú, ni logic.reset,
+         * Se llama cuando el jugador se acerca al borde. NO reinicia la partida (nada de menÃº, ni logic.reset,
          * ni segundo dron): se muestra una capa de carga, se guarda en coordenadas virtuales y, dos frames
-         * después, rebaseEnSitio() desplaza terreno, entidades y edificios.
+         * despuÃ©s, rebaseEnSitio() desplaza terreno, entidades y edificios.
          */
-        // ---------- reubicación progresiva de la ventana (sin pantalla de carga) ----------
+        // ---------- reubicaciÃ³n progresiva de la ventana (sin pantalla de carga) ----------
         static final class RebaseJob{
             int tam, n, dx, dy, dcx, dcy, vcx0, vcy0;
             boolean[] visible;            // chunks de DESTINO que ve el jugador: se copian en el MISMO fotograma que el desplazamiento
             int pcx, pcy;                 // chunk del jugador en la ventana nueva
-            boolean[] enDisco;            // chunks de DESTINO que se reubican ahora (círculo alrededor del jugador); el resto se rehace al cargarse
-            int[] orden;                  // chunks de DESTINO, del más cercano al jugador al más lejano
+            boolean[] enDisco;            // chunks de DESTINO que se reubican ahora (cÃ­rculo alrededor del jugador); el resto se rehace al cargarse
+            int[] orden;                  // chunks de DESTINO, del mÃ¡s cercano al jugador al mÃ¡s lejano
             int idx;
             boolean[] hecho, restaurado;
             final java.util.ArrayDeque<Reg> pend = new java.util.ArrayDeque<>();
+            final java.util.ArrayDeque<Integer> urgentes = new java.util.ArrayDeque<>();   // visibles sin cachÃ©: se piden a los hilos
             boolean nieblaSucia;
         }
 
         static RebaseJob rebase;
         static java.lang.reflect.Field campoNiebla;
 
-        /** Copia un chunk de destino desde la fotografía (solo lo que cambia: cada cambio real cuesta eventos de render). */
+        /** Copia un chunk de destino desde la fotografÃ­a (solo lo que cambia: cada cambio real cuesta eventos de render). */
         static void copiarChunk(RebaseJob j, int di){
             final int n = j.n, tam = j.tam;
+            if(j.hecho[di]) return;   // ya lo aplicÃ³ atenderUrgentes() (los visibles que pidieron los hilos)
             int cx0 = di % n, cy0 = di / n;
             if(!j.enDisco[di]){
-                // fuera del círculo: no se toca ni una casilla de terreno. Conserva el de la posición anterior (no se ve: está lejos)
+                // fuera del cÃ­rculo: no se toca ni una casilla de terreno. Conserva el de la posiciÃ³n anterior (no se ve: estÃ¡ lejos)
                 // y se sobrescribe por el flujo normal cuando el jugador se acerque (Streamer.aplicarTramo iguala piso, mena y muro).
-                // Solo se pone su niebla guardada (la del juego se vació al empezar) y cuenta como "hecho" para restaurar sus edificios.
+                // Solo se pone su niebla guardada (la del juego se vaciÃ³ al empezar) y cuenta como "hecho" para restaurar sus edificios.
                 Bits bitsF = Vars.fogControl == null ? null : Vars.fogControl.getDiscovered(Team.sharded);
                 Regiones.ChunkGuardado cg = Regiones.chunk(j.vcx0 + cx0, j.vcy0 + cy0, false);
                 if(cg != null && cg.niebla != null && bitsF != null){
@@ -3023,23 +3025,25 @@ public class MundoInfinitoMod extends Mod{
                 j.hecho[di] = true;
                 return;
             }
-            // Fuente del terreno: la CACHÉ (el terreno es una función pura de la coordenada virtual). Ya no se fotografía el mundo
-            // vivo: eso costaba ~300 000 lecturas de Tile en un solo fotograma. Los chunks VISIBLES que no estén en caché se
-            // calculan aquí mismo (j.visible[di]); los lejanos que falten se dejan para el flujo normal del streaming.
+            // Fuente del terreno: la CACHÃ (el terreno es una funciÃ³n pura de la coordenada virtual). Ya no se fotografÃ­a el mundo
+            // vivo: eso costaba ~300 000 lecturas de Tile en un solo fotograma. Los chunks VISIBLES que no estÃ©n en cachÃ© se
+            // calculan aquÃ­ mismo (j.visible[di]); los lejanos que falten se dejan para el flujo normal del streaming.
             Bits bits = Vars.fogControl == null ? null : Vars.fogControl.getDiscovered(Team.sharded);
             int w = Vars.world.width();
             long vk = Coord.claveVirtual(j.vcx0 + cx0, j.vcy0 + cy0);
             ChunkData cd = CacheChunks.copiar(CacheChunks.mundo(), vk, cx0, cy0, Streamer.epoca);
             if(cd == null && j.visible[di]){
-                cd = ChunkData.generar(Streamer.paleta, Streamer.meta.semilla, Streamer.meta.dimGen(), tam, cx0, cy0, Streamer.epoca, Streamer.ox, Streamer.oy);
-                CacheChunks.poner(CacheChunks.mundo(), vk, cd);
+                // NUNCA se genera aquÃ­: era el congelamiento (generar decenas de chunks 32x32 en el hilo principal,
+                // en un solo fotograma). Se pide a los hilos de generaciÃ³n con prioridad mÃ¡xima y atenderUrgentes()
+                // lo aplica en cuanto llega (1-2 fotogramas). Hasta entonces se ve sin explorar, nunca terreno viejo.
+                j.urgentes.add(di);
             }
             if(cd != null){
                 Streamer.aplicarTramo(cd, 0, TAM_CHUNK * TAM_CHUNK);   // solo escribe lo que cambia
                 cd.liberar();
                 Streamer.generados.add(Streamer.clave(cx0, cy0));
             }else{
-                // sin datos todavía: negro (no explorado) hasta que el streaming lo genere; nunca terreno viejo de otra zona
+                // sin datos todavÃ­a: negro (no explorado) hasta que el streaming lo genere; nunca terreno viejo de otra zona
                 for(int ly = 0; ly < TAM_CHUNK; ly++){
                     for(int lx = 0; lx < TAM_CHUNK; lx++){
                         Tile t = Vars.world.rawTile(cx0 * TAM_CHUNK + lx, cy0 * TAM_CHUNK + ly);
@@ -3054,7 +3058,7 @@ public class MundoInfinitoMod extends Mod{
                     for(int lx = 0; lx < TAM_CHUNK; lx++) bits.clear((cx0 * TAM_CHUNK + lx) + (cy0 * TAM_CHUNK + ly) * w);   // la niebla vieja ya no corresponde
                 }
             }
-            // niebla explorada de este chunk (desde el almacén de regiones)
+            // niebla explorada de este chunk (desde el almacÃ©n de regiones)
             Regiones.ChunkGuardado c = Regiones.chunk(j.vcx0 + cx0, j.vcy0 + cy0, false);
             if(c != null && c.niebla != null && bits != null){
                 for(int ly = 0; ly < TAM_CHUNK; ly++){
@@ -3080,7 +3084,7 @@ public class MundoInfinitoMod extends Mod{
             return true;
         }
 
-        /** Los edificios de un chunk se restauran cuando él y sus 8 vecinos ya tienen su terreno (un edificio grande cruza bordes). */
+        /** Los edificios de un chunk se restauran cuando Ã©l y sus 8 vecinos ya tienen su terreno (un edificio grande cruza bordes). */
         static void encolarEntidades(RebaseJob j, int cx, int cy){
             int n = j.n;
             if(cx < 1 || cy < 1 || cx > n - 2 || cy > n - 2) return;   // el anillo exterior se ignora, como al abrir el mundo
@@ -3097,16 +3101,60 @@ public class MundoInfinitoMod extends Mod{
                 j.pend.addLast(r);
             }
             if(!hib) for(Estructuras.RegU u : c.unidades) if(u.clase == 0) Estructuras.restaurarUnidad(u);
-            Entidades.despertarEnChunk(j.vcx0 + cx, j.vcy0 + cy);   // las aliadas que dormían aquí vuelven con su vida
+            Entidades.despertarEnChunk(j.vcx0 + cx, j.vcy0 + cy);   // las aliadas que dormÃ­an aquÃ­ vuelven con su vida
             if(!c.edificios.isEmpty() || !c.unidades.isEmpty()) Streamer.requeridos.add(Streamer.clave(cx, cy));
         }
 
-        /** Un trozo de la reubicación por fotograma. Primero lo que ve el jugador; el resto, en segundo plano. */
+        /**
+         * Los chunks visibles que no estaban en cachÃ© se pidieron a los hilos de generaciÃ³n (urgentes):
+         * aquÃ­, cada fotograma de la reubicaciÃ³n, se piden los que faltan y se aplican los que ya llegaron.
+         * Nada de esto toca la GPU ni genera terreno en el hilo principal.
+         */
+        static void atenderUrgentes(RebaseJob j){
+            if(!j.urgentes.isEmpty()){
+                synchronized(Streamer.cola){
+                    for(Integer di : j.urgentes){
+                        int k = di;
+                        if(Streamer.generados.contains(k) || Streamer.solicitados.contains(k)) continue;
+                        Streamer.solicitados.add(k);
+                        Streamer.cola.addFirst(k);   // delante de todo: es lo que el jugador estÃ¡ mirando
+                    }
+                    j.urgentes.clear();
+                    Streamer.cola.notifyAll();
+                }
+            }
+            ChunkData c;
+            while((c = Streamer.listos.poll()) != null){
+                if(c.epoca != Streamer.epoca){ c.liberar(); continue; }
+                int di = c.cy * j.n + c.cx;
+                Streamer.aplicarChunkCompleto(c);
+                j.hecho[di] = true;
+                for(int dy = -1; dy <= 1; dy++){
+                    for(int dx = -1; dx <= 1; dx++) encolarEntidades(j, c.cx + dx, c.cy + dy);
+                }
+            }
+        }
+
+        /**
+         * VacÃ­a las cachÃ©s de dibujado del renderizador de bloques. Al reescribir cientos de tiles sobre
+         * posiciones que ya tenÃ­an cachÃ© de vÃ©rtices, el renderizador mezclaba los vÃ©rtices viejos con los
+         * nuevos y salÃ­an texturas DUPLICADAS en los cuadrados de 4 vÃ©rtices. Se llama al comprometer lo
+         * visible y al terminar la reubicaciÃ³n. Seguro ante cambios de API del juego.
+         */
+        static void invalidarRender(){
+            if(Vars.headless || Vars.renderer == null) return;
+            try{ Vars.renderer.blocks.clear(); }catch(Throwable ignored){}
+        }
+
+        /** Un trozo de la reubicaciÃ³n por fotograma. Primero lo que ve el jugador; el resto, en segundo plano. */
         static void avanzarRebase(){
             RebaseJob j = rebase;
             if(j == null) return;
             try{
-                long fin = System.nanoTime() + (j.idx < 40 ? 12_000_000L : 4_000_000L);
+                atenderUrgentes(j);   // aplicar lo que ya calcularon los hilos antes de seguir copiando
+                // Presupuesto acotado: antes los primeros 40 chunks se llevaban 12 ms de golpe (medio fotograma
+                // congelado en Android). Ahora el mismo presupuesto del streaming, con un mÃ­nimo de 1 ms.
+                long fin = System.nanoTime() + Math.max(1_000_000L, Math.min(3_000_000L, Streamer.presupuesto()));
                 while(System.nanoTime() < fin){
                     if(!j.pend.isEmpty()){
                         restaurarEdificio(j.pend.pollFirst());
@@ -3120,7 +3168,8 @@ public class MundoInfinitoMod extends Mod{
                     }else{
                         rebase = null;
                         refrescarNiebla();
-                        finalizarRestauracion();    // enlaces, núcleo proxy, inventario; Carga.ocultar y viajando = false
+                        invalidarRender();           // sin esto las cachÃ©s viejas dejaban texturas duplicadas
+                        finalizarRestauracion();    // enlaces, nÃºcleo proxy, inventario; Carga.ocultar y viajando = false
                         return;
                     }
                 }
@@ -3129,7 +3178,7 @@ public class MundoInfinitoMod extends Mod{
                     refrescarNiebla();
                 }
             }catch(Throwable t){
-                Log.err("[MundoInfinito] Error en la reubicación progresiva", t);
+                Log.err("[MundoInfinito] Error en la reubicaciÃ³n progresiva", t);
                 rebase = null;
                 viajando = false;
             }
@@ -3159,9 +3208,9 @@ public class MundoInfinitoMod extends Mod{
         }
 
         /**
-         * Desplaza la ventana: el terreno ya generado se COPIA a su nueva posición local (así lo explorado no se
+         * Desplaza la ventana: el terreno ya generado se COPIA a su nueva posiciÃ³n local (asÃ­ lo explorado no se
          * pierde ni se ve negro), las entidades se mueven el mismo desplazamiento, y los edificios se vuelven a
-         * colocar desde el almacén de regiones. Solo el borde nuevo de la ventana se genera de cero (pasivamente).
+         * colocar desde el almacÃ©n de regiones. Solo el borde nuevo de la ventana se genera de cero (pasivamente).
          */
         static void rebaseEnSitio(){
             try{
@@ -3174,7 +3223,7 @@ public class MundoInfinitoMod extends Mod{
                 if(dx == 0 && dy == 0){ viajando = false; Carga.ocultar(); return; }
                 final int dcx = dx / TAM_CHUNK, dcy = dy / TAM_CHUNK;
 
-                // 0) las unidades aliadas se duermen (con vida y posición) y despiertan cuando su chunk vuelva a estar listo
+                // 0) las unidades aliadas se duermen (con vida y posiciÃ³n) y despiertan cuando su chunk vuelva a estar listo
                 Entidades.hibernarTodas();
 
                 // 1) persistir lo vivo en coordenadas virtuales
@@ -3182,7 +3231,7 @@ public class MundoInfinitoMod extends Mod{
                 capturarEnMemoria();
                 escribirAsync(d, false);
 
-                // 2) qué chunks se reubican ahora: un CÍRCULO alrededor del jugador (con su nueva posición local)
+                // 2) quÃ© chunks se reubican ahora: un CÃRCULO alrededor del jugador (con su nueva posiciÃ³n local)
                 float njx = Streamer.jugadorX - dx, njy = Streamer.jugadorY - dy;
                 int npcx = Mathf.clamp((int)njx / TAM_CHUNK, 0, n - 1), npcy = Mathf.clamp((int)njy / TAM_CHUNK, 0, n - 1);
                 final boolean circ = Ajustes.rebaseCircular();
@@ -3195,9 +3244,9 @@ public class MundoInfinitoMod extends Mod{
                 }
 
                 // 3) quitar los edificios de TODOS los equipos que se guardan (los mismos que captura capturarEnMemoria).
-                //    ANTES se usaba teams.getActive(), que solo incluye equipos con núcleo: las RUINAS (Team.derelict) y las bases
-                //    cuyo núcleo cayó se quedaban en su casilla LOCAL vieja, así que tras mover la ventana aparecían en otro sitio
-                //    (sobre agua, trozos sueltos) y el siguiente guardado los escribía en coordenadas virtuales equivocadas, en
+                //    ANTES se usaba teams.getActive(), que solo incluye equipos con nÃºcleo: las RUINAS (Team.derelict) y las bases
+                //    cuyo nÃºcleo cayÃ³ se quedaban en su casilla LOCAL vieja, asÃ­ que tras mover la ventana aparecÃ­an en otro sitio
+                //    (sobre agua, trozos sueltos) y el siguiente guardado los escribÃ­a en coordenadas virtuales equivocadas, en
                 //    todos los chunks recorridos.
                 Seq<Building> edificios = new Seq<>();
                 for(Team eq : EQUIPOS_GUARDADO) edificios.addAll(Vars.state.teams.get(eq).buildings);
@@ -3205,7 +3254,7 @@ public class MundoInfinitoMod extends Mod{
                     if(b.tile != null && b.tile.build == b) b.tile.setAir();
                 }
 
-                // 4) entidades y cámara: MISMO desplazamiento que el mundo, y en este mismo fotograma
+                // 4) entidades y cÃ¡mara: MISMO desplazamiento que el mundo, y en este mismo fotograma
                 float ox8 = dx * 8f, oy8 = dy * 8f;
                 for(Unit u : Groups.unit){ u.x -= ox8; u.y -= oy8; }
                 for(Bullet b : Groups.bullet){ b.x -= ox8; b.y -= oy8; }
@@ -3214,8 +3263,8 @@ public class MundoInfinitoMod extends Mod{
                 Seq<Unit> guardias = new Seq<>();
                 for(Unit u : Groups.unit) if(u.controller() instanceof Estructuras.Guardia) guardias.add(u);
                 for(Unit u : guardias) u.remove();
-                // La cámara se DESPLAZA igual que el mundo. Antes se plantaba sobre la unidad: si la cámara iba un poco por detrás
-                // (suavizado) o descentrada, la vista pegaba un salto de ese tamaño = el parpadeo.
+                // La cÃ¡mara se DESPLAZA igual que el mundo. Antes se plantaba sobre la unidad: si la cÃ¡mara iba un poco por detrÃ¡s
+                // (suavizado) o descentrada, la vista pegaba un salto de ese tamaÃ±o = el parpadeo.
                 if(Core.camera != null){
                     Core.camera.position.x -= ox8;
                     Core.camera.position.y -= oy8;
@@ -3269,7 +3318,7 @@ public class MundoInfinitoMod extends Mod{
                 rebase = job;
 
                 // 6) lo que se VE se copia ahora, en este mismo fotograma: el render nunca dibuja terreno viejo en coordenadas nuevas.
-                //    (Los visibles salen de la caché: acaban de generarse alrededor del jugador, dentro de la ventana anterior.)
+                //    (Los visibles salen de la cachÃ©: acaban de generarse alrededor del jugador, dentro de la ventana anterior.)
                 comprometerVisible(job);
             }catch(Throwable t){
                 Log.err("[MundoInfinito] Error al reubicar la ventana", t);
@@ -3278,7 +3327,7 @@ public class MundoInfinitoMod extends Mod{
             }
         }
 
-        /** Decales y efectos se mueven con el mundo; fuegos y charcos están ligados a una casilla y se quitan. */
+        /** Decales y efectos se mueven con el mundo; fuegos y charcos estÃ¡n ligados a una casilla y se quitan. */
         static void desplazarEfimeros(float ox8, float oy8){
             Seq<mindustry.gen.Entityc> quitar = new Seq<>();
             for(mindustry.gen.Entityc e : Groups.all){
@@ -3288,7 +3337,7 @@ public class MundoInfinitoMod extends Mod{
             for(mindustry.gen.Entityc e : quitar) e.remove();
         }
 
-        /** Copia de golpe los chunks visibles (un prefijo de 'orden', que va del más cercano al más lejano) y restaura sus edificios. */
+        /** Copia de golpe los chunks visibles (un prefijo de 'orden', que va del mÃ¡s cercano al mÃ¡s lejano) y restaura sus edificios. */
         static void comprometerVisible(RebaseJob j){
             while(j.idx < j.orden.length && j.visible[j.orden[j.idx]]){
                 int di = j.orden[j.idx++];
@@ -3298,12 +3347,14 @@ public class MundoInfinitoMod extends Mod{
                     for(int dx = -1; dx <= 1; dx++) encolarEntidades(j, cx + dx, cy + dy);
                 }
             }
-            while(!j.pend.isEmpty()) restaurarEdificio(j.pend.pollFirst());
+            // Los edificios pendientes NO se colocan todos de golpe (eso congelaba el fotograma al reubicar):
+            // los coloca avanzarRebase() dentro de su presupuesto, priorizando lo que rodea al jugador.
+            invalidarRender();   // el terreno visible acaba de moverse: cachÃ©s de dibujado limpias
         }
     }
 
     // ==================================================================
-    // INTERFAZ: botón del menú + lista de mundos + nuevo mundo
+    // INTERFAZ: botÃ³n del menÃº + lista de mundos + nuevo mundo
     // ==================================================================
     static final class MenuUI{
         static boolean inyectado = false;
@@ -3323,7 +3374,7 @@ public class MundoInfinitoMod extends Mod{
                     t.visible(() -> Vars.state.isMenu());
                     t.button("Mundo Infinito", Styles.cleart, MenuUI::abrirLista).width(240f).padBottom(12f);
                 }));
-                Log.warn("[MundoInfinito] getMenuTable() no disponible; botón en capa alternativa.");
+                Log.warn("[MundoInfinito] getMenuTable() no disponible; botÃ³n en capa alternativa.");
             }
             inyectado = true;
         }
@@ -3339,7 +3390,7 @@ public class MundoInfinitoMod extends Mod{
         }
 
         static String hace(long t){
-            if(t <= 0) return "—";
+            if(t <= 0) return "â";
             long min = (System.currentTimeMillis() - t) / 60000L;
             if(min < 1) return "hace un momento";
             if(min < 60) return "hace " + min + " min";
@@ -3356,19 +3407,19 @@ public class MundoInfinitoMod extends Mod{
                 lista.clear();
                 Seq<Meta> metas = Almacen.listar();
                 if(metas.isEmpty()){
-                    lista.add("Aún no tienes mundos. ¡Crea el primero!").pad(20f).row();
+                    lista.add("AÃºn no tienes mundos. Â¡Crea el primero!").pad(20f).row();
                     return;
                 }
                 for(Meta m : metas){
                     Table fila = new Table();
                     boolean ok = m.compatible();
                     String detalle = ok
-                        ? m.nombreDim() + " · núcleo " + (m.nucleoBlock() == Blocks.coreShard ? "Shard" : "Bastion") + " · semilla " + m.semillaTexto() + " · " + hace(m.ultimo)
+                        ? m.nombreDim() + " Â· nÃºcleo " + (m.nucleoBlock() == Blocks.coreShard ? "Shard" : "Bastion") + " Â· semilla " + m.semillaTexto() + " Â· " + hace(m.ultimo)
                         : "[scarlet]Generador antiguo: ya no es compatible, solo se puede borrar[]";
                     fila.add("[accent]" + m.nombre + "[]\n" + detalle)
                         .left().growX().pad(8f).minWidth(260f);
                     if(ok) fila.button("Jugar", () -> { d.hide(); Mundos.continuar(m); }).size(110f, 52f).pad(4f);
-                    fila.button("Borrar", () -> Vars.ui.showConfirm("Borrar mundo", "¿Borrar \"" + m.nombre + "\" para siempre?", () -> {
+                    fila.button("Borrar", () -> Vars.ui.showConfirm("Borrar mundo", "Â¿Borrar \"" + m.nombre + "\" para siempre?", () -> {
                         Almacen.borrar(m.id);
                         rellenar[0].run();
                     })).size(110f, 52f).pad(4f);
@@ -3384,18 +3435,18 @@ public class MundoInfinitoMod extends Mod{
             d.show();
         }
 
-        /** Nuevo mundo: nombre, semilla (opcional) y dimensión inicial. Cada mundo tiene dos dimensiones: Serpulo y Erekir. */
+        /** Nuevo mundo: nombre, semilla (opcional) y dimensiÃ³n inicial. Cada mundo tiene dos dimensiones: Serpulo y Erekir. */
         static void abrirNuevo(){
             BaseDialog d = new BaseDialog("Nuevo mundo");
             final String[] nombre = {"Mundo " + (Almacen.listar().size + 1)};
             final String[] semilla = {""};
             final int[] nuc = {0};
-            final String[] etiquetas = {"Empezar en: según la semilla", "Empezar en: Serpulo (Shard)", "Empezar en: Erekir (Bastion)"};
+            final String[] etiquetas = {"Empezar en: segÃºn la semilla", "Empezar en: Serpulo (Shard)", "Empezar en: Erekir (Bastion)"};
 
             d.cont.add("Nombre del mundo").padBottom(6f).row();
             d.cont.field(nombre[0], t -> nombre[0] = t).width(320f).padBottom(12f).row();
 
-            d.cont.add("Semilla (vacío = aleatoria; sirve cualquier número o texto)").padBottom(6f).row();
+            d.cont.add("Semilla (vacÃ­o = aleatoria; sirve cualquier nÃºmero o texto)").padBottom(6f).row();
             d.cont.field("", t -> semilla[0] = t).width(320f).padBottom(14f).row();
 
             TextButton nb = d.cont.button(etiquetas[0], () -> {}).size(320f, 56f).padBottom(16f).get();

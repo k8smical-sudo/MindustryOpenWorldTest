@@ -19,12 +19,16 @@ import mundoinfinito.MundoInfinitoMod.Mundos;
 import mundoinfinito.MundoInfinitoMod.Streamer;
 
 /**
- * Minimapa del HUD. Toca para cambiar el zoom (1, 2, 4 u 8 tiles por píxel). Se compone con las miniaturas del mod y se
- * sube a la GPU UNA vez cada pocos fotogramas (el del juego hacía una llamada por cada tile que cambiaba).
+ * Minimapa del HUD. Toca para cambiar el zoom (1, 2, 4 u 8 tiles por pÃ­xel). Se compone con las miniaturas del mod y se
+ * sube a la GPU UNA vez cada pocos fotogramas (el del juego hacÃ­a una llamada por cada tile que cambiaba).
  */
 final class MapaVista extends Element{
     static final int LADO = 144;
     static boolean creado;
+
+    // Ãºltima posiciÃ³n VIRTUAL conocida del nÃºcleo REAL del jugador (sobrevive a mover la ventana)
+    static double nucleoVx, nucleoVy;
+    static boolean nucleoVacia = true;
 
     private final int[] buf = new int[LADO * LADO];
     private final Pixmap pixmap = new Pixmap(LADO, LADO);
@@ -71,11 +75,22 @@ final class MapaVista extends Element{
         Draw.alpha(parentAlpha);
         Draw.rect(region, x + width / 2f, y + height / 2f, width, height);
         float cx = x + width / 2f, cy = y + height / 2f, pxEscala = width / LADO;
-        // núcleos propios
+        // nÃºcleos propios. El nÃºcleo PROXY (esquina de la ventana, cuando el real estÃ¡ lejos) NO se dibuja:
+        // antes aparecÃ­a como marcador dorado "cerca del jugador" en un sitio incorrecto hasta volver a acercarse
+        // a la base. Se recuerda la Ãºltima posiciÃ³n VIRTUAL del nÃºcleo real y esa es la que se marca siempre.
         Draw.color(Color.gold);
+        boolean hayReal = false;
         for(Building n : Vars.state.teams.get(Team.sharded).cores){
+            if(Mundos.proxyPos == n.pos()) continue;      // proxy: solo mantiene el inventario, no es la base
             double vx = Coord.virtualX(n.x), vy = Coord.virtualY(n.y);
+            nucleoVx = vx; nucleoVy = vy; nucleoVacia = false;   // recordar dÃ³nde estÃ¡ la base de verdad
+            hayReal = true;
             float dx = (float)((vx - p[0]) / tpp) * pxEscala, dy = (float)((vy - p[1]) / tpp) * pxEscala;
+            if(Math.abs(dx) < width / 2f - 3 && Math.abs(dy) < height / 2f - 3) Fill.square(cx + dx, cy + dy, 3f);
+        }
+        if(!hayReal && !nucleoVacia){
+            // el nÃºcleo real estÃ¡ fuera de la ventana cargada: marcar su posiciÃ³n virtual recordada
+            float dx = (float)((nucleoVx - p[0]) / tpp) * pxEscala, dy = (float)((nucleoVy - p[1]) / tpp) * pxEscala;
             if(Math.abs(dx) < width / 2f - 3 && Math.abs(dy) < height / 2f - 3) Fill.square(cx + dx, cy + dy, 3f);
         }
         // jugador

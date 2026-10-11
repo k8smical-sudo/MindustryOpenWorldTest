@@ -12,14 +12,18 @@ import mundoinfinito.MundoInfinitoMod.Regiones;
 import mundoinfinito.MundoInfinitoMod.Streamer;
 
 /**
- * Unidades aliadas "por chunk", como las entidades de Minecraft: las que quedan lejos del jugador, sobre terreno que aún no
- * existe o fuera de la ventana, DUERMEN: se guardan con su posición virtual, vida, escudo y munición, y vuelven al acercarse
- * el jugador. Así nunca mueren por salir del mundo cargado, por caer sobre terreno viejo ni por el límite de unidades.
+ * Unidades aliadas "por chunk", como las entidades de Minecraft: las que quedan lejos del jugador, sobre terreno que aÃºn no
+ * existe o fuera de la ventana, DUERMEN: se guardan con su posiciÃ³n virtual, vida, escudo y municiÃ³n, y vuelven al acercarse
+ * el jugador. AsÃ­ nunca mueren por salir del mundo cargado, por caer sobre terreno viejo ni por el lÃ­mite de unidades.
  */
 final class Entidades{
-    /** Radio (en chunks, REDONDO) dentro del cual viven las unidades aliadas: "distancia de simulación" de Ajustes. Lo que se ve en pantalla nunca duerme. */
+    /**
+     * Radio (en chunks, REDONDO) dentro del cual viven las unidades aliadas: "distancia de simulaciÃ³n" de Ajustes.
+     * Se respeta el ajuste del jugador: la vista en pantalla nunca amplÃ­a el radio mÃ¡s allÃ¡ de la distancia de carga
+     * (antes rVista+1 podÃ­a forzar un radio mayor que el configurado y el ajuste parecÃ­a ignorado).
+     */
     static int radioActivo(){
-        return Math.max(Ajustes.sim(), Streamer.rVista + 1);
+        return Math.max(Ajustes.sim(), Math.min(Streamer.rVista + 1, Ajustes.carga()));
     }
 
     static boolean dormible(Unit u){
@@ -27,7 +31,7 @@ final class Entidades{
             && !u.isPlayer() && !u.spawnedByCore && !(u.controller() instanceof Estructuras.Guardia);
     }
 
-    /** Guarda la unidad en el almacén (en el chunk virtual donde está) y la quita del mundo. */
+    /** Guarda la unidad en el almacÃ©n (en el chunk virtual donde estÃ¡) y la quita del mundo. */
     static void hibernar(Unit u){
         try{
             Estructuras.RegU r = Estructuras.RegU.aliada(u, Coord.origenX(), Coord.origenY());
@@ -39,14 +43,14 @@ final class Entidades{
         }
     }
 
-    /** Antes de mover la ventana: todas las aliadas (menos la que controla el jugador) pasan al almacén. */
+    /** Antes de mover la ventana: todas las aliadas (menos la que controla el jugador) pasan al almacÃ©n. */
     static void hibernarTodas(){
         Seq<Unit> lista = new Seq<>();
         for(Unit u : Groups.unit) if(dormible(u)) lista.add(u);
         for(Unit u : lista) hibernar(u);
     }
 
-    /** Despierta una unidad dormida en su posición virtual exacta, con la vida que tenía. */
+    /** Despierta una unidad dormida en su posiciÃ³n virtual exacta, con la vida que tenÃ­a. */
     static boolean despertar(Estructuras.RegU r){
         try{
             UnitType t = Vars.content.unit(r.tipo);
@@ -55,8 +59,8 @@ final class Entidades{
             if(lx < 1 || ly < 1 || lx > Streamer.meta.tam - 1 || ly > Streamer.meta.tam - 1) return false;
             float wx = (float)(lx * 8.0), wy = (float)(ly * 8.0);
             if(!t.flying && !t.allowLegStep){
-                // una unidad terrestre que cae sobre una casilla sólida muere al instante (aunque tenga la vida completa):
-                // se busca la casilla libre más cercana; si el terreno aún no está listo, sigue durmiendo
+                // una unidad terrestre que cae sobre una casilla sÃ³lida muere al instante (aunque tenga la vida completa):
+                // se busca la casilla libre mÃ¡s cercana; si el terreno aÃºn no estÃ¡ listo, sigue durmiendo
                 mindustry.world.Tile ti = Vars.world.tileWorld(wx, wy);
                 if(ti == null || ti.solid()){
                     mindustry.world.Tile libre = null;
@@ -85,7 +89,7 @@ final class Entidades{
         }
     }
 
-    /** Despierta las dormidas del chunk virtual (vcx, vcy) si están dentro del radio activo del jugador. */
+    /** Despierta las dormidas del chunk virtual (vcx, vcy) si estÃ¡n dentro del radio activo del jugador. */
     static void despertarEnChunk(int vcx, int vcy){
         Regiones.ChunkGuardado c = Regiones.chunk(vcx, vcy, false);
         if(c == null || c.unidades.isEmpty()) return;
@@ -99,10 +103,10 @@ final class Entidades{
             if(r.clase != 1) continue;
             if(despertar(r)){ c.unidades.remove(i); cambio = true; }
         }
-        if(cambio) Regiones.chunk(vcx, vcy, true);   // marca la región como modificada
+        if(cambio) Regiones.chunk(vcx, vcy, true);   // marca la regiÃ³n como modificada
     }
 
-    /** Cada ~0,5 s: duerme las que se alejaron y despierta las que el jugador volvió a acercar. */
+    /** Cada ~0,5 s: duerme las que se alejaron y despierta las que el jugador volviÃ³ a acercar. */
     static void tick(int pcx, int pcy){
         if(Streamer.restaurando || Mundos.rebase != null || Mundos.viajando) return;
         int radio = radioActivo();
@@ -111,7 +115,7 @@ final class Entidades{
             if(!dormible(u)) continue;
             int cx = Math.floorDiv(u.tileX(), MundoInfinitoMod.TAM_CHUNK), cy = Math.floorDiv(u.tileY(), MundoInfinitoMod.TAM_CHUNK);
             boolean fuera = !Streamer.enMapa(cx, cy) || !Streamer.generados.contains(Streamer.clave(cx, cy));
-            if(fuera || !Ajustes.dentro(cx - pcx, cy - pcy, radio + 1)) dormir.add(u);   // +1: histéresis, no parpadea en el borde
+            if(fuera || !Ajustes.dentro(cx - pcx, cy - pcy, radio + 1)) dormir.add(u);   // +1: histÃ©resis, no parpadea en el borde
         }
         for(Unit u : dormir) hibernar(u);
         int vcx0 = Coord.vcx(0), vcy0 = Coord.vcy(0);

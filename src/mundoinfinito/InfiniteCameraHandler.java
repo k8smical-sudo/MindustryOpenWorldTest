@@ -31,6 +31,12 @@ final class InfiniteCameraHandler{
     static final float HORIZONTE_S = 4f;        // segundos de viaje que se intenta tener ya cargados
     static final int ADELANTE_MAX = 6;          // chunks máximos de adelanto
     static final float UMBRAL = 0.15f;          // chunks/s por debajo de los cuales se considera quieto
+    /**
+     * false (por defecto): el adelanto solo alimenta la PRECARGA de terreno del renderizador. true: además amplía el centro y el
+     * radio que usa Streamer.escanear(). Se dejó apagado porque Streamer.rVista también lo usan la reubicación de la ventana, las
+     * entidades y Ventana.avanzar: inflarlo hace más caro justo el momento en que más importa que no haya tirones.
+     */
+    static final boolean AMPLIAR_STREAMER = false;
 
     // rectángulo predictivo en unidades de mundo (ventana local); ancho 0 = sin datos
     static float predX0, predY0, predX1, predY1;
@@ -67,15 +73,18 @@ final class InfiniteCameraHandler{
 
     // ---------------------------------------------------------------- API para Streamer.escanear()
     static int centroX(int cenX){
+        if(!AMPLIAR_STREAMER) return cenX;
         return cenX + Math.round(dirX * adelante * 0.5f);
     }
 
     static int centroY(int cenY){
+        if(!AMPLIAR_STREAMER) return cenY;
         return cenY + Math.round(dirY * adelante * 0.5f);
     }
 
     /** Radio de vista (chunks) ampliado: junto con el centro adelantado, la vista actual queda cubierta y se alarga hacia delante. */
     static int radio(int rBase){
+        if(!AMPLIAR_STREAMER) return rBase;
         return rBase + (adelante + 1) / 2;
     }
 

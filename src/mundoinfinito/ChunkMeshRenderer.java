@@ -50,7 +50,7 @@ final class ChunkMeshRenderer{
     private static final float CH = Coord.CHUNK * 8f;       // lado de un chunk en unidades de mundo (256)
 
     private static final int LIBRE = 0, SIN_DATOS = 1, COCINANDO = 2, LISTA = 3;
-    private static final int MAX_COCCIONES_FRAME = 4, MAX_SUBIDAS_FRAME = 3, MAX_TERRENO_FRAME = 8;
+    private static final int MAX_COCCIONES_FRAME = 4, MAX_SUBIDAS_FRAME = 2, MAX_TERRENO_FRAME = 8;
     private static final int MAX_VISIBLES = 512;
 
     private static final String VERT =
@@ -108,6 +108,8 @@ final class ChunkMeshRenderer{
     private static final int[] lcx = new int[MAX_VISIBLES], lcy = new int[MAX_VISIBLES];
     private static final float[] ldist = new float[MAX_VISIBLES];
     private static final long[] porBorrar = new long[256];
+    private static final int[] NDX = {1, 1, 0, -1, -1, -1, 0, 1}, NDY = {0, 1, 1, 1, 0, -1, -1, -1};
+    private static boolean avisado;
 
     // reflexión sobre el FloorRenderer del juego
     private static FloorRenderer suelo;
@@ -175,7 +177,19 @@ final class ChunkMeshRenderer{
         }catch(Throwable t){
             habilitado = false;
             Log.err("[MundoInfinito] No se pudo activar el renderizador por chunks; se usa el del juego.", t);
+            aviso("Render por chunks: NO activo (" + t.getClass().getSimpleName() + "); sigue el suelo del juego");
         }
+    }
+
+    /** Aviso en pantalla (una vez por tipo de mensaje): así se sabe sin mirar el log si el renderizador nuevo está en marcha. */
+    private static void aviso(String texto){
+        Log.info("[MundoInfinito] @", texto);
+        try{
+            if(!avisado && Vars.ui != null){
+                avisado = true;
+                Vars.ui.showInfoToast(texto, 4f);
+            }
+        }catch(Throwable ignored){}
     }
 
     // ================================================================== renderizador vanilla: apagar / restaurar
@@ -192,9 +206,11 @@ final class ChunkMeshRenderer{
                 fDirty.set(suelo, null);
             }
             vanillaApagado = true;
+            aviso("Render por chunks: ACTIVO (suelo del juego apagado)");
         }catch(Throwable t){
             habilitado = false;
             Log.err("[MundoInfinito] Falló la reflexión sobre FloorRenderer; renderizador por chunks desactivado.", t);
+            aviso("Render por chunks: NO activo (" + t.getClass().getSimpleName() + "); sigue el suelo del juego");
         }
     }
 
@@ -322,6 +338,9 @@ final class ChunkMeshRenderer{
         }
 
         if((cuadro % 30) == 0) reciclar();
+        if((cuadro % 900) == 0){
+            Log.info("[MundoInfinito] Render chunks: @ visibles, @ dibujados, @ mallas libres, @ ranuras en uso", nVisibles, nDibujo, mallasLibres.size(), mapa.size);
+        }
     }
 
     /** ¿El chunk está "de verdad" en la ventana de tiles? Entonces el juego ya aplica su propia oscuridad y no se hornea. */
@@ -350,9 +369,8 @@ final class ChunkMeshRenderer{
         if(cocciones >= MAX_COCCIONES_FRAME) return;
         boolean obsoleto = oscuroDeseado(vcx, vcy) != r.oscuro;
         if(!obsoleto && r.faltantes != 0){
-            final int[] ndx = {1, 1, 0, -1, -1, -1, 0, 1}, ndy = {0, 1, 1, 1, 0, -1, -1, -1};
             for(int i = 0; i < 8 && !obsoleto; i++){
-                if((r.faltantes & (1 << i)) != 0 && CacheChunks.tiene(mid, Coord.claveVirtual(vcx + ndx[i], vcy + ndy[i]))) obsoleto = true;
+                if((r.faltantes & (1 << i)) != 0 && CacheChunks.tiene(mid, Coord.claveVirtual(vcx + NDX[i], vcy + NDY[i]))) obsoleto = true;
             }
         }
         if(obsoleto && ChunkGeometryCooker.solicitar(r.clave, mid, oscuroDeseado(vcx, vcy))){

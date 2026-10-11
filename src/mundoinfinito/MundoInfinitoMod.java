@@ -27,10 +27,15 @@ import mindustry.content.Items;
 import mindustry.content.Planets;
 import mindustry.content.UnitTypes;
 import mindustry.core.GameState.State;
+import mindustry.game.EventType;
 import mindustry.game.EventType.ClientLoadEvent;
 import mindustry.game.EventType.ResetEvent;
 import mindustry.game.EventType.StateChangeEvent;
 import mindustry.game.EventType.TapEvent;
+import mindustry.game.EventType.TileChangeEvent;
+import mindustry.game.EventType.TileFloorChangeEvent;
+import mindustry.game.EventType.TileOverlayChangeEvent;
+import mindustry.game.EventType.TilePreChangeEvent;
 import mindustry.game.EventType.Trigger;
 import mindustry.game.Rules;
 import mindustry.game.Team;
@@ -2113,8 +2118,119 @@ public class MundoInfinitoMod extends Mod{
             }
         }
 
+        // ==================================================================
+        // CARGA SILENCIOSA (reubicaciÃ³n de la ventana sin micro-congelamientos)
+        // ==================================================================
+        // Mindustry dispara eventos por cada tile que cambia (cachÃ© de render, minimapa, indexador de la IA,
+        // pathfinder...). Al reescribir la ventana entera eso eran cientos de miles de eventos en pocos frames:
+        // EL congelamiento. Como al abrir un mundo, se silencian con el flag privado "generating" de World...
+        // pero SIN beginMapLoad/endMapLoad, que disparan un WorldLoadEvent y rehacen TODAS las cachÃ©s de golpe.
+        // Lo escrito en silencio se apunta aquÃ­ y un refresco por presupuesto (refrescarCambios) repite los
+        // eventos mÃ¡s tarde, del mÃ¡s cercano al mÃ¡s lejano: el juego nunca se detiene, como en Minecraft.
+        static java.lang.reflect.Field campoGenerando;
+        static boolean silencioPuesto;      // el flag estÃ¡ en true AHORA (escrituras silenciosas)
+        static boolean silencioEfectivo;    // el flag se pudo cambiar al menos una vez: hay algo que refrescar
+        static final IntSet anotadosVistos = new IntSet();
+        static final IntSeq anotadosPos = new IntSeq();
+        static final IntSeq anotadosPisoViejo = new IntSeq(), anotadosMenaVieja = new IntSeq(), anotadosBloqueViejo = new IntSeq();
+        static int refrescoIdx;
+        static final EventType.TilePreChangeEvent evPreCambio = new EventType.TilePreChangeEvent();
+        static final EventType.TileChangeEvent evCambio = new EventType.TileChangeEvent();
+        static final EventType.TileFloorChangeEvent evPisoCambio = new EventType.TileFloorChangeEvent();
+        static final EventType.TileOverlayChangeEvent evMenaCambio = new EventType.TileOverlayChangeEvent();
+
+        /** Cambia el flag "generating" del mundo por reflexiÃ³n: true = los tiles no disparan eventos. */
+        static boolean ponerSilencio(boolean on){
+            try{
+                if(campoGenerando == null){
+                    campoGenerando = Vars.world.getClass().getDeclaredField("generating");
+                    campoGenerando.setAccessible(true);
+                }
+                campoGenerando.set(Vars.world, on);
+                silencioPuesto = on;
+                if(on) silencioEfectivo = true;
+                return true;
+            }catch(Throwable t){
+                campoGenerando = null;   // otro build del juego: se reintenta en la prÃ³xima reubicaciÃ³n
+                silencioPuesto = false;
+                return false;            // sin silencio: los tiles disparan eventos (mÃ¡s lento, igual de correcto)
+            }
+        }
+
+        static void limpiarAnotados(){
+            anotadosVistos.clear();
+            anotadosPos.clear();
+            anotadosPisoViejo.clear();
+            anotadosMenaVieja.clear();
+            anotadosBloqueViejo.clear();
+            refrescoIdx = 0;
+        }
+
+        /** Apunta un tile a punto de cambiar en silencio (se llama ANTES de escribirlo, con su contenido VIEJO). */
+        static void anotarCambio(Tile t){
+            int p = t.pos();
+            if(anotadosVistos.add(p)){
+                anotadosPos.add(p);
+                anotadosPisoViejo.add(t.floor().id);
+                anotadosMenaVieja.add(t.overlay().id);
+                anotadosBloqueViejo.add(t.block().id);
+            }
+        }
+
+        static boolean hayRefrescoPendiente(){
+            return silencioEfectivo && refrescoIdx < anotadosPos.size;
+        }
+
+        /**
+         * Repite, por presupuesto, los eventos de los tiles reescritos en silencio. Por cada tile: se pone el
+         * contenido VIEJO y se dispara TilePreChangeEvent (Ã¡rboles de render e indexador sueltan lo que habÃ­a),
+         * se vuelve a poner el NUEVO y se disparan los eventos de cambio + recache + pathfinder (vuelven a
+         * indexar lo que hay ahora). Es exactamente lo que el juego harÃ­a al escribir el tile... repartido
+         * en fotogramas y empezando por lo que rodea al jugador.
+         */
+        static void refrescarCambios(long finNs){
+            final int w = Vars.world.width();
+            while(System.nanoTime() < finNs && refrescoIdx < anotadosPos.size){
+                final int i = refrescoIdx++;
+                try{
+                    int p = anotadosPos.items[i];
+                    Tile t = Vars.world.rawTile(p % w, p / w);
+                    if(t == null) continue;
+                    Floor pV = (Floor)Vars.content.block(anotadosPisoViejo.items[i]);
+                    Floor mV = (Floor)Vars.content.block(anotadosMenaVieja.items[i]);
+                    Block bV = Vars.content.block(anotadosBloqueViejo.items[i]);
+                    if(pV == null || mV == null || bV == null) continue;
+                    Floor pN = t.floor(), mN = t.overlay();
+                    Block bN = t.block();
+                    boolean muroV = bV.isStatic(), muroN = bN.isStatic();
+                    // 1) contenido viejo, en silencio + TilePreChangeEvent: se des-indexa lo que habÃ­a
+                    if(ponerSilencio(true)){
+                        if(t.floor() != pV) t.setFloor(pV);
+                        if(t.overlay() != mV) t.setOverlay(mV);
+                        if(t.block() != bV) t.setBlock(bV, Team.derelict, 0);
+                        ponerSilencio(false);
+                    }
+                    Events.fire(evPreCambio.set(t));
+                    // 2) contenido nuevo, en silencio + eventos de cambio: se indexa lo que hay ahora
+                    if(ponerSilencio(true)){
+                        if(t.floor() != pN) t.setFloor(pN);
+                        if(t.overlay() != mN) t.setOverlay(mN);
+                        if(t.block() != bN) t.setBlock(bN, Team.derelict, 0);
+                        ponerSilencio(false);
+                    }
+                    Events.fire(evCambio.set(t));
+                    if(pV != pN) Events.fire(evPisoCambio.set(t, pV, pN));
+                    if(mV != mN) Events.fire(evMenaCambio.set(t, mV, mN));
+                    t.recache();   // cachÃ©s de pisos, minimapa e Ã­ndice de pisos del renderizador
+                    if(muroV || muroN) t.recacheWall();   // oscuridad alrededor de muros estÃ¡ticos
+                    if(Vars.pathfinder != null) Vars.pathfinder.updateTile(t);
+                }catch(Throwable ignored){}
+            }
+        }
+
         /** Aplica un chunk COMPLETO (modo carga: Vars.world.isGenerating() == true, sin eventos por tile). */
         static void aplicarChunkCompleto(ChunkData d){
+
             aplicarTramo(d, 0, TAM_CHUNK * TAM_CHUNK);
             terminarChunk(d);
         }
@@ -2130,12 +2246,19 @@ public class MundoInfinitoMod extends Mod{
                 // muchas casillas ya tienen el piso correcto (biomas grandes). Se compara siempre, porque la casilla
                 // puede venir de otra zona del mundo y traer su piso, mena o muro viejos.
                 Block f = Vars.content.block(d.piso[i]);
-                if(f instanceof Floor && t.floor() != f) t.setFloor((Floor)f);
+                if(f instanceof Floor && t.floor() != f){
+                    if(silencioPuesto) anotarCambio(t);
+                    t.setFloor((Floor)f);
+                }
                 Block o = d.mena[i] == 0 ? Blocks.air : Vars.content.block(d.mena[i]);
-                if(t.overlay() != o) t.setOverlay(o);
+                if(t.overlay() != o){
+                    if(silencioPuesto) anotarCambio(t);
+                    t.setOverlay(o);
+                }
                 if(t.build == null){   // sin edificio encima: lo que hay es terreno (aire, muro estÃ¡tico o roca) y se iguala al calculado
                     Block b = d.bloque[i] == 0 ? Blocks.air : Vars.content.block(d.bloque[i]);
                     if(t.block() != b){
+                        if(silencioPuesto) anotarCambio(t);
                         if(b == Blocks.air) t.setAir(); else t.setBlock(b);
                     }
                 }
@@ -2170,11 +2293,18 @@ public class MundoInfinitoMod extends Mod{
         }
 
         static void tickInterno(){
+            if(silencioPuesto && Mundos.rebase == null) ponerSilencio(false);   // red de seguridad: nunca quedarse sin eventos
             if(!activo || !Vars.state.isPlaying()) return;
             if(Mundos.actual != null) Mundos.actual.reloj += Time.delta;
             Regiones.sincronizar();
 
-            if(Mundos.rebase != null){ Mundos.avanzarRebase(); Mapa.vaciarColaDelJuego(); return; }   // reubicando la ventana: el streaming espera
+            if(Mundos.rebase != null){
+                Mundos.avanzarRebase();
+                // Mientras el terreno se copia en silencio, el streaming espera (los chunks urgentes los
+                // atiende la propia reubicaciÃ³n). Con el silencio ya cerrado, el refresco de cachÃ©s y los
+                // edificios conviven con el streaming normal: el juego sigue cargando terreno alrededor.
+                if(Mundos.rebase != null && !Mundos.rebase.silencioCerrado){ Mapa.vaciarColaDelJuego(); return; }
+            }
 
             if(restaurando){
                 long finR = System.nanoTime() + PRESUPUESTO_RESTAURAR_NS;
@@ -2275,7 +2405,8 @@ public class MundoInfinitoMod extends Mod{
             if(Core.camera != null){
                 cenX = Mathf.clamp((int)(Core.camera.position.x / 8f) / TAM_CHUNK, 0, nch - 1);
                 cenY = Mathf.clamp((int)(Core.camera.position.y / 8f) / TAM_CHUNK, 0, nch - 1);
-                // radio segÃºn lo que se ve en pantalla (con zoom alejado hacen falta mÃ¡s chunks)
+                // radio segÃºn lo que se ve en pantalla (con zoom alejado hacen falta mÃ¡s chunks),
+                // nunca mÃ¡s allÃ¡ de la distancia de carga: ese ajuste antes se ignoraba
                 float mitad = Math.max(Core.camera.width, Core.camera.height) / 2f / 8f;
                 rVista = Mathf.clamp((int)Math.ceil(mitad / TAM_CHUNK) + 1, 2, Math.max(2, Math.min(7, Ajustes.carga())));
             }
@@ -2995,6 +3126,7 @@ public class MundoInfinitoMod extends Mod{
             final java.util.ArrayDeque<Reg> pend = new java.util.ArrayDeque<>();
             final java.util.ArrayDeque<Integer> urgentes = new java.util.ArrayDeque<>();   // visibles sin cachÃ©: se piden a los hilos
             boolean nieblaSucia;
+            boolean silencioCerrado;   // true tras cerrar la carga silenciosa: ya se colocan edificios con eventos
         }
 
         static RebaseJob rebase;
@@ -3003,7 +3135,7 @@ public class MundoInfinitoMod extends Mod{
         /** Copia un chunk de destino desde la fotografÃ­a (solo lo que cambia: cada cambio real cuesta eventos de render). */
         static void copiarChunk(RebaseJob j, int di){
             final int n = j.n, tam = j.tam;
-            if(j.hecho[di]) return;   // ya lo aplicÃ³ atenderUrgentes() (los visibles que pidieron los hilos)
+            if(j.hecho[di]) return;   // ya lo aplicÃ³ atenderUrgentes() (un visible que calcularon los hilos)
             int cx0 = di % n, cy0 = di / n;
             if(!j.enDisco[di]){
                 // fuera del cÃ­rculo: no se toca ni una casilla de terreno. Conserva el de la posiciÃ³n anterior (no se ve: estÃ¡ lejos)
@@ -3033,9 +3165,10 @@ public class MundoInfinitoMod extends Mod{
             long vk = Coord.claveVirtual(j.vcx0 + cx0, j.vcy0 + cy0);
             ChunkData cd = CacheChunks.copiar(CacheChunks.mundo(), vk, cx0, cy0, Streamer.epoca);
             if(cd == null && j.visible[di]){
-                // NUNCA se genera aquÃ­: era el congelamiento (generar decenas de chunks 32x32 en el hilo principal,
-                // en un solo fotograma). Se pide a los hilos de generaciÃ³n con prioridad mÃ¡xima y atenderUrgentes()
-                // lo aplica en cuanto llega (1-2 fotogramas). Hasta entonces se ve sin explorar, nunca terreno viejo.
+                // NUNCA se genera aquÃ­: era EL congelamiento (decenas de chunks de 32x32 calculados en el
+                // hilo principal, en un solo fotograma). Se pide a los hilos de generaciÃ³n con prioridad
+                // mÃ¡xima (pedirUrgentes) y avanzarRebase() lo aplica en cuanto llega, 1-2 fotogramas
+                // despuÃ©s. Hasta entonces se ve sin explorar, nunca terreno viejo de otra zona.
                 j.urgentes.add(di);
             }
             if(cd != null){
@@ -3047,6 +3180,7 @@ public class MundoInfinitoMod extends Mod{
                 for(int ly = 0; ly < TAM_CHUNK; ly++){
                     for(int lx = 0; lx < TAM_CHUNK; lx++){
                         Tile t = Vars.world.rawTile(cx0 * TAM_CHUNK + lx, cy0 * TAM_CHUNK + ly);
+                        if(Streamer.silencioPuesto && (t.floor() != Blocks.air || t.overlay() != Blocks.air || t.block() != Blocks.air)) Streamer.anotarCambio(t);
                         if(t.floor() != Blocks.air) t.setFloor((Floor)Blocks.air);
                         if(t.overlay() != Blocks.air) t.setOverlay(Blocks.air);
                         if(t.block() != Blocks.air) t.setAir();
@@ -3106,29 +3240,31 @@ public class MundoInfinitoMod extends Mod{
         }
 
         /**
-         * Los chunks visibles que no estaban en cachÃ© se pidieron a los hilos de generaciÃ³n (urgentes):
-         * aquÃ­, cada fotograma de la reubicaciÃ³n, se piden los que faltan y se aplican los que ya llegaron.
-         * Nada de esto toca la GPU ni genera terreno en el hilo principal.
+         * Los visibles sin cachÃ© se piden a los hilos de generaciÃ³n POR DELANTE de la cola normal:
+         * es lo que el jugador estÃ¡ mirando.
          */
-        static void atenderUrgentes(RebaseJob j){
-            if(!j.urgentes.isEmpty()){
-                synchronized(Streamer.cola){
-                    for(Integer di : j.urgentes){
-                        int k = di;
-                        if(Streamer.generados.contains(k) || Streamer.solicitados.contains(k)) continue;
-                        Streamer.solicitados.add(k);
-                        Streamer.cola.addFirst(k);   // delante de todo: es lo que el jugador estÃ¡ mirando
-                    }
-                    j.urgentes.clear();
-                    Streamer.cola.notifyAll();
+        static void pedirUrgentes(RebaseJob j){
+            if(j.urgentes.isEmpty()) return;
+            synchronized(Streamer.cola){
+                for(Integer di : j.urgentes){
+                    int k = di;
+                    if(Streamer.generados.contains(k) || Streamer.solicitados.contains(k)) continue;
+                    Streamer.solicitados.add(k);
+                    Streamer.cola.addFirst(k);
                 }
+                j.urgentes.clear();
+                Streamer.cola.notifyAll();
             }
+        }
+
+        /** Aplica los urgentes que ya calcularon los hilos (llegan en 1-2 fotogramas) y programa lo que haya encima. */
+        static void atenderUrgentes(RebaseJob j){
             ChunkData c;
             while((c = Streamer.listos.poll()) != null){
                 if(c.epoca != Streamer.epoca){ c.liberar(); continue; }
                 int di = c.cy * j.n + c.cx;
                 Streamer.aplicarChunkCompleto(c);
-                j.hecho[di] = true;
+                if(di >= 0 && di < j.hecho.length) j.hecho[di] = true;   // copiarChunk ya no lo reescribirÃ¡
                 for(int dy = -1; dy <= 1; dy++){
                     for(int dx = -1; dx <= 1; dx++) encolarEntidades(j, c.cx + dx, c.cy + dy);
                 }
@@ -3136,56 +3272,53 @@ public class MundoInfinitoMod extends Mod{
         }
 
         /**
-         * VacÃ­a las cachÃ©s de dibujado del renderizador de bloques. Al reescribir cientos de tiles sobre
-         * posiciones que ya tenÃ­an cachÃ© de vÃ©rtices, el renderizador mezclaba los vÃ©rtices viejos con los
-         * nuevos y salÃ­an texturas DUPLICADAS en los cuadrados de 4 vÃ©rtices. Se llama al comprometer lo
-         * visible y al terminar la reubicaciÃ³n.
+         * Un trozo de la reubicaciÃ³n por fotograma, con presupuesto acotado (1-3,5 ms): como en Minecraft,
+         * el terreno se rellena sin frenar el juego. Antes los primeros 40 chunks se llevaban 12 ms de golpe
+         * (medio fotograma congelado) y cada tile disparaba sus eventos de render.
          *
-         * La API cambia entre builds del juego (vanilla actual: BlockRenderer.reload(); builds antiguos:
-         * clear(); otros forks: invalidate()). Por eso se usa REFLEXIÃN con varios candidatos: compila contra
-         * cualquier versiÃ³n y, si ninguno existe, no hace nada (solo queda el riesgo de texturas repetidas).
+         * Fases: (1) urgentes (lo que el jugador mira, reciÃ©n calculado por los hilos), (2) resto del terreno
+         * en silencio, del mÃ¡s cercano al mÃ¡s lejano; al terminar el terreno se cierra la carga silenciosa y
+         * (3) se colocan los edificios con eventos normales mientras el refresco repone las cachÃ©s de render
+         * de lo escrito en silencio, tambiÃ©n del mÃ¡s cercano al mÃ¡s lejano.
          */
-        static void invalidarRender(){
-            if(Vars.headless || Vars.renderer == null) return;
-            try{
-                Object br = Vars.renderer.blocks;
-                if(br == null) return;
-                for(String nombre : new String[]{"reload", "clear", "clearAll", "invalidate", "invalidateAll"}){
-                    try{
-                        java.lang.reflect.Method m = br.getClass().getMethod(nombre);
-                        m.invoke(br);
-                        return;
-                    }catch(NoSuchMethodException ignored){}
-                }
-            }catch(Throwable ignored){}
-        }
-
-        /** Un trozo de la reubicaciÃ³n por fotograma. Primero lo que ve el jugador; el resto, en segundo plano. */
         static void avanzarRebase(){
             RebaseJob j = rebase;
             if(j == null) return;
             try{
-                atenderUrgentes(j);   // aplicar lo que ya calcularon los hilos antes de seguir copiando
-                // Presupuesto acotado: antes los primeros 40 chunks se llevaban 12 ms de golpe (medio fotograma
-                // congelado en Android). Ahora el mismo presupuesto del streaming, con un mÃ­nimo de 1 ms.
-                long fin = System.nanoTime() + Math.max(1_000_000L, Math.min(3_000_000L, Streamer.presupuesto()));
+                long fin = System.nanoTime() + Math.max(1_500_000L, Math.min(3_500_000L, Streamer.presupuesto()));
                 while(System.nanoTime() < fin){
-                    if(!j.pend.isEmpty()){
-                        restaurarEdificio(j.pend.pollFirst());
-                    }else if(j.idx < j.orden.length){
+                    if(j.silencioCerrado){
+                        // Fase 3: con eventos ya activos se colocan los edificios y se refrescan las cachÃ©s
+                        if(!j.pend.isEmpty()){
+                            restaurarEdificio(j.pend.pollFirst());
+                            continue;
+                        }
+                        if(Streamer.hayRefrescoPendiente()){
+                            Streamer.refrescarCambios(fin);
+                            continue;
+                        }
+                        rebase = null;
+                        finalizarRestauracion();    // enlaces, nÃºcleo proxy, inventario; viajando = false
+                        return;
+                    }
+                    // Fase 1: urgentes
+                    pedirUrgentes(j);
+                    atenderUrgentes(j);
+                    // Fase 2: resto del terreno, en silencio
+                    if(j.idx < j.orden.length){
                         int di = j.orden[j.idx++];
                         copiarChunk(j, di);
                         int cx = di % j.n, cy = di / j.n;
                         for(int dy = -1; dy <= 1; dy++){
                             for(int dx = -1; dx <= 1; dx++) encolarEntidades(j, cx + dx, cy + dy);
                         }
-                    }else{
-                        rebase = null;
-                        refrescarNiebla();
-                        invalidarRender();           // sin esto las cachÃ©s viejas dejaban texturas duplicadas
-                        finalizarRestauracion();    // enlaces, nÃºcleo proxy, inventario; Carga.ocultar y viajando = false
-                        return;
+                        continue;
                     }
+                    // Terreno terminado: se cierra el silencio UNA sola vez. Desde aquÃ­ los tiles vuelven a
+                    // disparar eventos y los edificios pendientes se colocan con eventos (el indexador los ve).
+                    j.silencioCerrado = true;
+                    Streamer.ponerSilencio(false);
+                    refrescarNiebla();
                 }
                 if(j.nieblaSucia){
                     j.nieblaSucia = false;
@@ -3193,8 +3326,10 @@ public class MundoInfinitoMod extends Mod{
                 }
             }catch(Throwable t){
                 Log.err("[MundoInfinito] Error en la reubicaciÃ³n progresiva", t);
+                Streamer.ponerSilencio(false);
                 rebase = null;
                 viajando = false;
+                Carga.ocultar();
             }
         }
 
@@ -3213,7 +3348,7 @@ public class MundoInfinitoMod extends Mod{
 
         static void rebasar(){
             if(viajando || rebase != null || actual == null || !Streamer.activo || Streamer.restaurando || Bases.ocupada()) return;
-            if(Time.time - ultimoRebase < 600f) return;
+            if(Time.time - ultimoRebase < 180f) return;   // antes 600f: con el paso corto hay que reaccionar antes
             if(Vars.player == null || Vars.player.dead()) return;
             viajando = true;
             ultimoRebase = Time.time;
@@ -3231,8 +3366,21 @@ public class MundoInfinitoMod extends Mod{
                 if(actual == null || !Streamer.activo){ viajando = false; Carga.ocultar(); return; }
                 final int tam = Streamer.meta.tam, n = Streamer.nch;
                 double[] pos = posicionVirtual();
-                int nox = Math.floorDiv((int)Math.floor(pos[0]) - tam / 2, TAM_CHUNK) * TAM_CHUNK;
-                int noy = Math.floorDiv((int)Math.floor(pos[1]) - tam / 2, TAM_CHUNK) * TAM_CHUNK;
+                // PASO CORTO, como Minecraft: la ventana NO se recentra del todo, solo se desplaza lo justo
+                // para recuperar margen en el lado del borde. El recentrado completo movÃ­a media ventana de
+                // golpe: cientos de chunks que cambiar de una vez. Con el paso corto el salto es mÃ­nimo y el
+                // jugador vuelve a quedar a unos 4-9 chunks del borde.
+                final int salto = (MARGEN_REBASE + 4) * TAM_CHUNK;
+                int lx0 = (int)Math.floor(pos[0]) - Streamer.ox, ly0 = (int)Math.floor(pos[1]) - Streamer.oy;
+                int nox, noy;
+                if(lx0 < MARGEN_REBASE * TAM_CHUNK) nox = Streamer.ox - (salto - lx0);
+                else if(lx0 >= tam - MARGEN_REBASE * TAM_CHUNK) nox = Streamer.ox + (lx0 - (tam - salto));
+                else nox = Streamer.ox;
+                if(ly0 < MARGEN_REBASE * TAM_CHUNK) noy = Streamer.oy - (salto - ly0);
+                else if(ly0 >= tam - MARGEN_REBASE * TAM_CHUNK) noy = Streamer.oy + (ly0 - (tam - salto));
+                else noy = Streamer.oy;
+                nox = Math.floorDiv(nox, TAM_CHUNK) * TAM_CHUNK;
+                noy = Math.floorDiv(noy, TAM_CHUNK) * TAM_CHUNK;
                 final int dx = nox - Streamer.ox, dy = noy - Streamer.oy;
                 if(dx == 0 && dy == 0){ viajando = false; Carga.ocultar(); return; }
                 final int dcx = dx / TAM_CHUNK, dcy = dy / TAM_CHUNK;
@@ -3267,6 +3415,13 @@ public class MundoInfinitoMod extends Mod{
                 for(Building b : edificios){
                     if(b.tile != null && b.tile.build == b) b.tile.setAir();
                 }
+
+                // 3b) CARGA SILENCIOSA (el truco del arranque del mundo, pero sin endMapLoad): mientras la
+                //     ventana se reescribe, los tiles no disparan eventos (render, minimapa, indexador...):
+                //     ese chapoteo de eventos por tile era EL micro-congelamiento. Se cierra en avanzarRebase()
+                //     al terminar el terreno y refrescarCambios() repone las cachÃ©s por presupuesto.
+                Streamer.limpiarAnotados();
+                Streamer.ponerSilencio(true);
 
                 // 4) entidades y cÃ¡mara: MISMO desplazamiento que el mundo, y en este mismo fotograma
                 float ox8 = dx * 8f, oy8 = dy * 8f;
@@ -3336,6 +3491,7 @@ public class MundoInfinitoMod extends Mod{
                 comprometerVisible(job);
             }catch(Throwable t){
                 Log.err("[MundoInfinito] Error al reubicar la ventana", t);
+                Streamer.ponerSilencio(false);
                 Carga.ocultar();
                 viajando = false;
             }
@@ -3351,9 +3507,19 @@ public class MundoInfinitoMod extends Mod{
             for(mindustry.gen.Entityc e : quitar) e.remove();
         }
 
-        /** Copia de golpe los chunks visibles (un prefijo de 'orden', que va del mÃ¡s cercano al mÃ¡s lejano) y restaura sus edificios. */
+        /**
+         * Copia en ESTE fotograma lo que ve el jugador (prefijo de 'orden', del mÃ¡s cercano al mÃ¡s lejano).
+         * OBLIGATORIO: la cÃ¡mara se desplazÃ³ junto con la ventana y, hasta reescribir un chunk, este seguirÃ­a
+         * mostrando el terreno de su posiciÃ³n virtual anterior (el mundo "saltarÃ­a" en pantalla). Con la carga
+         * silenciosa abierta no hay eventos por tile y los visibles sin cachÃ© se piden a los hilos (urgentes)
+         * en vez de calcularse aquÃ­: ese cÃ¡lculo en el hilo principal era el congelamiento. Tope suave de
+         * tiempo: si con mucho zoom alejado no da tiempo a todo, el resto lo copia avanzarRebase() en los
+         * siguientes fotogramas (solo se nota en el borde de la pantalla).
+         * Los edificios encolados NO se colocan aquÃ­: salen por presupuesto, ya con los eventos activos.
+         */
         static void comprometerVisible(RebaseJob j){
-            while(j.idx < j.orden.length && j.visible[j.orden[j.idx]]){
+            long fin = System.nanoTime() + 8_000_000L;
+            while(j.idx < j.orden.length && j.visible[j.orden[j.idx]] && System.nanoTime() < fin){
                 int di = j.orden[j.idx++];
                 copiarChunk(j, di);
                 int cx = di % j.n, cy = di / j.n;
@@ -3361,9 +3527,6 @@ public class MundoInfinitoMod extends Mod{
                     for(int dx = -1; dx <= 1; dx++) encolarEntidades(j, cx + dx, cy + dy);
                 }
             }
-            // Los edificios pendientes NO se colocan todos de golpe (eso congelaba el fotograma al reubicar):
-            // los coloca avanzarRebase() dentro de su presupuesto, priorizando lo que rodea al jugador.
-            invalidarRender();   // el terreno visible acaba de moverse: cachÃ©s de dibujado limpias
         }
     }
 

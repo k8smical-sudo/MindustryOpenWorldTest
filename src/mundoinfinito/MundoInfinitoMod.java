@@ -3139,11 +3139,25 @@ public class MundoInfinitoMod extends Mod{
          * VacÃ­a las cachÃ©s de dibujado del renderizador de bloques. Al reescribir cientos de tiles sobre
          * posiciones que ya tenÃ­an cachÃ© de vÃ©rtices, el renderizador mezclaba los vÃ©rtices viejos con los
          * nuevos y salÃ­an texturas DUPLICADAS en los cuadrados de 4 vÃ©rtices. Se llama al comprometer lo
-         * visible y al terminar la reubicaciÃ³n. Seguro ante cambios de API del juego.
+         * visible y al terminar la reubicaciÃ³n.
+         *
+         * La API cambia entre builds del juego (vanilla actual: BlockRenderer.reload(); builds antiguos:
+         * clear(); otros forks: invalidate()). Por eso se usa REFLEXIÃN con varios candidatos: compila contra
+         * cualquier versiÃ³n y, si ninguno existe, no hace nada (solo queda el riesgo de texturas repetidas).
          */
         static void invalidarRender(){
             if(Vars.headless || Vars.renderer == null) return;
-            try{ Vars.renderer.blocks.clear(); }catch(Throwable ignored){}
+            try{
+                Object br = Vars.renderer.blocks;
+                if(br == null) return;
+                for(String nombre : new String[]{"reload", "clear", "clearAll", "invalidate", "invalidateAll"}){
+                    try{
+                        java.lang.reflect.Method m = br.getClass().getMethod(nombre);
+                        m.invoke(br);
+                        return;
+                    }catch(NoSuchMethodException ignored){}
+                }
+            }catch(Throwable ignored){}
         }
 
         /** Un trozo de la reubicaciÃ³n por fotograma. Primero lo que ve el jugador; el resto, en segundo plano. */

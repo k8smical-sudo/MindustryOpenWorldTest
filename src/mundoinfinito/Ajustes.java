@@ -50,9 +50,11 @@ final class Ajustes{
         return Mathf.clamp(Core.settings.getInt(K_CACHE, 24), 8, 256);   // mínimo 8: la reubicación de la ventana lee de la caché
     }
 
-    /** En décimas de milisegundo (9 = 0,9 ms, el valor original del mod). */
+    /** En décimas de milisegundo (30 = 3 ms). Antes el valor por defecto era 0,9 ms: apenas ~1 chunk por
+     *  fotograma y la distancia de carga tardaba ~20 s en materializarse; con FPS justo se auto-limita (ver
+     *  Streamer.presupuesto), así que un valor alto nunca congela el juego. */
     static long presupuestoNs(){
-        return Mathf.clamp(Core.settings.getInt(K_PRESUP, 9), 2, 60) * 100_000L;
+        return Mathf.clamp(Core.settings.getInt(K_PRESUP, 30), 2, 60) * 100_000L;
     }
 
     static boolean rebaseCircular(){
@@ -80,10 +82,10 @@ final class Ajustes{
             p.put("setting." + K_CIRCULAR + ".name", "Reubicación circular de la ventana");
             Vars.ui.settings.addCategory("OpenWorld", Icon.map, t -> {
                 t.add("[accent]Carga de chunks[]").left().padTop(6f).row();
-                t.sliderPref(K_CARGA, Math.min(8, maxCarga()), 3, maxCarga(), v -> v + " chunks (" + (v * MundoInfinitoMod.TAM_CHUNK) + " tiles, redondo)");
+                t.sliderPref(K_CARGA, Math.min(8, maxCarga()), 3, maxCarga(), v -> v + " chunks");
                 t.sliderPref(K_HILOS, Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() - 1)), 1, maxHilos(), v -> v + (v == 1 ? " hilo" : " hilos"));
                 t.sliderPref(K_CACHE, 24, 8, 256, v -> v + " MB (40 % caliente, 60 % comprimida)");
-                t.sliderPref(K_PRESUP, 9, 2, 60, v -> (v / 10f) + " ms");
+                t.sliderPref(K_PRESUP, 30, 2, 60, v -> (v / 10f) + " ms");
                 t.checkPref(K_CIRCULAR, true);
                 t.add("[accent]Simulación[]").left().padTop(10f).row();
                 t.sliderPref(K_SIM, 6, 2, maxCarga(), v -> v + " chunks (redondo)");

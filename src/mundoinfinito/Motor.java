@@ -5,56 +5,36 @@ import arc.struct.IntSeq;
 import arc.struct.IntSet;
 
 /**
- * MOTOR DE CHUNKS (polÃ­tica de carga), separado del juego. Solo sabe de chunks, no de Tiles ni de unidades:
- * decide QUÃ chunks hacen falta y en quÃ© ORDEN segÃºn el jugador y hacia dÃ³nde se dirige, como Minecraft.
+ * MOTOR DE CHUNKS (politica de carga), separado del juego. Solo sabe de chunks, no de Tiles ni de
+ * unidades: decide QUE chunks hacen falta y en QUE orden segun el jugador, COMO MINECRAFT:
+ * sin prediccion y sin valores fijos. El unico radio es el que el usuario configura en Ajustes
+ * ("distancia de carga"), y el terreno se genera a medida que el usuario se mueve: continuo y
+ * procedural, sin barreras que esperar.
  *
  *   nivel 0  lo que el jugador pisa y lo que ve en pantalla                       (urgente)
- *   nivel 1  un cono hacia donde se mueve; cuanto mÃ¡s rÃ¡pido, mÃ¡s lejos llega     (anticipaciÃ³n)
- *   nivel 2  un DISCO alrededor del jugador, de radio = "distancia de carga" de Ajustes  (reserva)
- *   nivel 3  chunks con edificios guardados, que deben existir bajo ellos         (Ãºltimo)
+ *   nivel 1  un DISCO alrededor del jugador de radio = "distancia de carga" de Ajustes,
+ *            que se llena del mas cercano al mas lejano: al moverse, lo nuevo que entra al
+ *            disco se pide en el escaneo siguiente (medio segundo como mucho)          (continuo)
+ *   nivel 2  chunks con edificios guardados, que deben existir bajo ellos         (ultimo)
  *
  * Las unidades aliadas y enemigas NO piden terreno: lejos del jugador duermen (ver Entidades).
+ * La "distancia de simulacion" de Ajustes tampoco pide terreno: solo decide donde viven las
+ * unidades. No hay cono de anticipacion ni radios internos: TODO lo pone la config del usuario.
  */
 final class Motor{
-    // Todas las zonas son CÃRCULOS (no cuadrados): a igual radio, un disco tiene ~21 % menos chunks que su cuadrado.
+    // Todas las zonas son CIRCULOS (no cuadrados): a igual radio, un disco tiene ~21 % menos chunks que su cuadrado.
     static final int R_BASE = 2;                 // siempre cargado alrededor del jugador
-    static final int AD_MIN = 3, AD_MAX = 9;     // alcance del cono hacia delante, en chunks
-    static final float SEGUNDOS_ADELANTE = 4f;   // cuÃ¡nto tiempo de viaje se intenta tener ya cargado
-    static final float UMBRAL_MOVIMIENTO = 0.12f;// chunks/s por debajo de los cuales se considera quieto
 
-    private float px, py;                        // Ãºltima posiciÃ³n (tiles)
-    private boolean tienePos;
-    float vx, vy;                                // velocidad suavizada (tiles/tick)
-
-    final IntSeq claves = new IntSeq();          // salida: chunks deseados, del mÃ¡s urgente al menos
+    final IntSeq claves = new IntSeq();          // salida: chunks deseados, del mas urgente al menos
     final IntFloatMap mejor = new IntFloatMap();
 
-    /** Llamar con la posiciÃ³n del jugador cada vez que se escanea; dt = ticks transcurridos desde la Ãºltima llamada. */
+    private long[] orden = new long[512];
+
+    /** Llamar con la posicion del jugador cada vez que se escanea (no se predice nada: solo se llena el disco configurado). */
     void actualizar(float x, float y, float dt){
-        if(!tienePos || dt <= 0f){
-            px = x; py = y; tienePos = true;
-            return;
-        }
-        float dx = x - px, dy = y - py;
-        px = x; py = y;
-        if(Math.hypot(dx, dy) > 96f){ vx = vy = 0f; return; }   // teletransporte: no es velocidad
-        float a = 1f - (float)Math.exp(-dt / 30f);               // constante de tiempo ~0,5 s
-        vx += (dx / dt - vx) * a;
-        vy += (dy / dt - vy) * a;
     }
 
     void olvidar(){
-        tienePos = false;
-        vx = vy = 0f;
-    }
-
-    /** Velocidad en chunks por segundo. */
-    float velocidad(){
-        return (float)Math.hypot(vx, vy) * 60f / Coord.CHUNK;
-    }
-
-    int alcance(){
-        return Math.max(AD_MIN, Math.min(AD_MAX, Math.round(velocidad() * SEGUNDOS_ADELANTE) + AD_MIN));
     }
 
     private void poner(int n, int cx, int cy, float prio){
@@ -72,38 +52,25 @@ final class Motor{
         }
     }
 
-    private long[] orden = new long[512];
-
     /**
-     * Calcula los chunks deseados. n = chunks por lado de la ventana; (pcx, pcy) chunk del jugador; (camX, camY) chunk de la
-     * cÃ¡mara y rVista su radio; requeridos = chunks con edificios guardados (claves locales).
+     * Calcula los chunks deseados. n = chunks por lado de la ventana; (pcx, pcy) chunk del jugador;
+     * (camX, camY) chunk de la camara y rVista su radio; requeridos = chunks con edificios guardados
+     * (claves locales). Todo el radio lo pone la config del usuario: nunca hay un valor fijo.
      */
     void plan(int n, int pcx, int pcy, int camX, int camY, int rVista, IntSet requeridos){
         mejor.clear();
         claves.clear();
         final int carga = Ajustes.carga();
-        // nivel 0: bajo el jugador y lo que se ve (discos). El radio de visiÃ³n se recorta por la distancia de
-        // carga del jugador: el ajuste SIEMPRE se respeta (antes se cargaba la pantalla entera sin importar el ajuste).
+        // nivel 0: bajo el jugador y lo que se ve en pantalla. El radio de vision se recorta por la
+        // distancia de carga: el ajuste del usuario SIEMPRE se respeta (nunca se carga de mas).
         disco(n, pcx, pcy, R_BASE, 0f, 1f);
         disco(n, camX, camY, Math.min(rVista, carga), 0.5f, 0.05f);
-        // nivel 1: cono hacia donde se mueve, recortado por el disco de carga
-        float vel = velocidad();
-        if(vel > UMBRAL_MOVIMIENTO){
-            float len = (float)Math.hypot(vx, vy), dirx = vx / len, diry = vy / len;
-            float cxf = px / Coord.CHUNK, cyf = py / Coord.CHUNK;
-            int ad = Math.min(alcance(), carga);
-            for(int d = 1; d <= ad; d++){
-                int w = (int)Math.ceil(1 + d * 0.45f);
-                for(int l = -w; l <= w; l++){
-                    int cx = (int)Math.floor(cxf + dirx * d - diry * l), cy = (int)Math.floor(cyf + diry * d + dirx * l);
-                    if(!Ajustes.dentro(cx - pcx, cy - pcy, carga)) continue;
-                    poner(n, cx, cy, 1000f + d * 10f + Math.abs(l));
-                }
-            }
-        }
-        // nivel 2: reserva = disco de "distancia de carga" alrededor del jugador
+        // nivel 1: el DISCO de "distancia de carga" alrededor del jugador, SIN cono de anticipacion:
+        // continuo y procedural, del mas cercano al mas lejano. Lo nuevo que entra al disco al moverse
+        // esta a "carga" chunks del jugador (3 como minimo = 96 tiles de colchon), asi que nunca se
+        // alcanza antes de generarse: no hay barrera que esperar.
         disco(n, pcx, pcy, carga, 2000f, 1f);
-        // nivel 3: bajo los edificios guardados
+        // nivel 2: bajo los edificios guardados
         if(requeridos != null){
             IntSet.IntSetIterator it = requeridos.iterator();
             while(it.hasNext){
@@ -119,9 +86,5 @@ final class Motor{
         for(IntFloatMap.Entry e : mejor) orden[i++] = ((long)Float.floatToIntBits(e.value) << 32) | (e.key & 0xffffffffL);
         java.util.Arrays.sort(orden, 0, sz);
         for(int j = 0; j < sz; j++) claves.add((int)orden[j]);
-    }
-
-    float prioridad(int clave){
-        return mejor.get(clave, Float.MAX_VALUE);
     }
 }

@@ -1990,7 +1990,7 @@ public class MundoInfinitoMod extends Mod{
         static int maxEnCola(){
             return Math.max(8, Ajustes.hilos() * 6);
         }
-        static final int TRAMO = 8;                              // tiles aplicados por paso
+        static final int TRAMO = 32;                             // tiles aplicados por paso (antes 8: sobrecarga por pasada)
 
         static volatile boolean activo = false;
         static volatile int epoca = 0;
@@ -2423,7 +2423,7 @@ public class MundoInfinitoMod extends Mod{
                 // radio segÃÂºn lo que se ve en pantalla (con zoom alejado hacen falta mÃÂ¡s chunks),
                 // nunca mÃÂ¡s allÃÂ¡ de la distancia de carga: ese ajuste antes se ignoraba
                 float mitad = Math.max(Core.camera.width, Core.camera.height) / 2f / 8f;
-                rVista = Mathf.clamp((int)Math.ceil(mitad / TAM_CHUNK) + 1, 2, Math.max(2, Math.min(7, Ajustes.carga())));
+                rVista = Mathf.clamp((int)Math.ceil(mitad / TAM_CHUNK) + 1, 2, Math.max(2, Ajustes.carga()));   // recortado SOLO por la config del usuario: sin tope fijo
             }
 
             // MOTOR DE CHUNKS: decide quÃÂ© hace falta y en quÃÂ© orden segÃÂºn el JUGADOR y hacia dÃÂ³nde se dirige.
@@ -3289,7 +3289,7 @@ public class MundoInfinitoMod extends Mod{
         }
 
         /**
-         * Un trozo de la reubicaciÃÂ³n por fotograma, con presupuesto acotado (1-3,5 ms): como en Minecraft,
+         * Un trozo de la reubicaciÃÂ³n por fotograma, con presupuesto acotado (2-6 ms): como en Minecraft,
          * el terreno se rellena sin frenar el juego. Antes los primeros 40 chunks se llevaban 12 ms de golpe
          * (medio fotograma congelado) y cada tile disparaba sus eventos de render.
          *
@@ -3302,7 +3302,7 @@ public class MundoInfinitoMod extends Mod{
             RebaseJob j = rebase;
             if(j == null) return;
             try{
-                long fin = System.nanoTime() + Math.max(1_500_000L, Math.min(3_500_000L, Streamer.presupuesto()));
+                long fin = System.nanoTime() + Math.max(2_000_000L, Math.min(6_000_000L, Streamer.presupuesto() * 2));
                 while(System.nanoTime() < fin){
                     if(j.silencioCerrado){
                         // Fase 3: con eventos ya activos se colocan los edificios y se refrescan las cachÃÂ©s
@@ -3414,7 +3414,10 @@ public class MundoInfinitoMod extends Mod{
                 float njx = Streamer.jugadorX - dx, njy = Streamer.jugadorY - dy;
                 int npcx = Mathf.clamp((int)njx / TAM_CHUNK, 0, n - 1), npcy = Mathf.clamp((int)njy / TAM_CHUNK, 0, n - 1);
                 final boolean circ = Ajustes.rebaseCircular();
-                final int rd = Math.max(Ajustes.carga(), Streamer.rVista) + 2;
+                final int rd = Streamer.rVista + 2;   // solo la zona urgente (lo que alcanza a ver la cámara, +1 de margen):
+                // el resto del disco de carga lo trae el streaming normal desde la caché, SIN pausa. Antes el círculo
+                // era de radio "carga+2": con la distancia de carga alta eran ~1.800 chunks copiados en silencio con el
+                // streaming detenido (era LA barrera: decenas de segundos sin generar terreno alrededor del jugador).
                 final int rc = Streamer.rVista + 1;   // lo que se ve en pantalla (+1): se copia en ESTE mismo fotograma
                 boolean[] enDisco = new boolean[n * n], visible = new boolean[n * n];
                 for(int k = 0; k < enDisco.length; k++){

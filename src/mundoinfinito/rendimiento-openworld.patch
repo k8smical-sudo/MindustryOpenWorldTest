@@ -1,0 +1,969 @@
+diff -ruN orig/src/mundoinfinito/Ajustes.java MindustryOpenWorldTest-main/src/mundoinfinito/Ajustes.java
+--- orig/src/mundoinfinito/Ajustes.java	2026-10-12 02:04:49.238035715 +0000
++++ MindustryOpenWorldTest-main/src/mundoinfinito/Ajustes.java	2026-10-12 02:08:30.952159897 +0000
+@@ -25,13 +25,26 @@
+         return Math.max(4, MundoInfinitoMod.ventana() / MundoInfinitoMod.TAM_CHUNK / 2 - 2);
+     }
+ 
++    /**
++     * En móvil se aplican ~120 chunks reales (radio 6) en vez de ~290 (radio 8): cada chunk son 1024 casillas escritas en el hilo
++     * del juego. Lo que se VE más allá lo dibuja el render por chunks desde la caché (no necesita casillas), como el rango de
++     * envío de Luanti frente a su rango de bloques activos. Quien ya tenga el ajuste guardado conserva su valor.
++     */
++    static int cargaPorDefecto(){
++        return Vars.mobile ? 6 : 8;
++    }
++
++    static int simPorDefecto(){
++        return Vars.mobile ? 4 : 6;
++    }
++
+     static int carga(){
+-        return Mathf.clamp(Core.settings.getInt(K_CARGA, Math.min(8, maxCarga())), 3, maxCarga());
++        return Mathf.clamp(Core.settings.getInt(K_CARGA, Math.min(cargaPorDefecto(), maxCarga())), 3, maxCarga());
+     }
+ 
+     /** Nunca mayor que la carga: no se puede simular lo que no está cargado. */
+     static int sim(){
+-        return Mathf.clamp(Core.settings.getInt(K_SIM, 6), 2, carga());
++        return Mathf.clamp(Core.settings.getInt(K_SIM, simPorDefecto()), 2, carga());
+     }
+ 
+     // ---- valores fijos (antes eran ajustes) ----
+@@ -86,8 +99,8 @@
+             p.put("setting." + K_CARGA + ".name", "Distancia de chunks (carga)");
+             p.put("setting." + K_SIM + ".name", "Distancia de simulación (chunks)");
+             Vars.ui.settings.addCategory("OpenWorld", Icon.map, t -> {
+-                t.sliderPref(K_CARGA, Math.min(8, maxCarga()), 3, maxCarga(), v -> v + " chunks (" + (v * MundoInfinitoMod.TAM_CHUNK) + " tiles, redondo)");
+-                t.sliderPref(K_SIM, 6, 2, maxCarga(), v -> v + " chunks (redondo)");
++                t.sliderPref(K_CARGA, Math.min(cargaPorDefecto(), maxCarga()), 3, maxCarga(), v -> v + " chunks (" + (v * MundoInfinitoMod.TAM_CHUNK) + " tiles, redondo)");
++                t.sliderPref(K_SIM, simPorDefecto(), 2, maxCarga(), v -> v + " chunks (redondo)");
+             });
+         }catch(Throwable e){
+             Log.err("[MundoInfinito] No se pudo crear la sección OpenWorld en Ajustes", e);
+diff -ruN orig/src/mundoinfinito/Bases.java MindustryOpenWorldTest-main/src/mundoinfinito/Bases.java
+--- orig/src/mundoinfinito/Bases.java	2026-10-12 02:04:49.238120439 +0000
++++ MindustryOpenWorldTest-main/src/mundoinfinito/Bases.java	2026-10-12 02:07:17.382240862 +0000
+@@ -50,6 +50,37 @@
+     static Dorm enCurso;
+     static long ultimaDormida;
+ 
++    /**
++     * Hibernación POR TROZOS. Antes dormir() serializaba TODOS los edificios de la estructura y los quitaba del mundo en UN
++     * fotograma (cientos de Reg.desde + setAir: decenas de ms = el congelamiento al alejarse de una base), y cada 0,5 s se
++     * recorrían todos los edificios enemigos calculando su estructura por ruido. Ahora:
++     *   escaneo: reparte el recorrido por fotogramas (pocos edificios cada vez);
++     *   fase A:  serializa los edificios dentro del presupuesto del fotograma (el mundo NO cambia; si el jugador vuelve, se cancela);
++     *   confirmar: anota la estructura en el almacén (barato) y marca sus chunks como dormidos;
++     *   fase C:  quita los edificios del mundo dentro del presupuesto del fotograma.
++     */
++    static final class Hib{
++        long id;
++        int cx, cy, radio;
++        Seq<Building> edificios;
++        final Seq<Building> vivos = new Seq<>();
++        final Seq<Reg> regs = new Seq<>();
++        int idx, idxRetirar, espera;
++        Dorm dorm;   // != null: ya confirmada, solo falta retirarla del mundo
++    }
++    static Hib hib;
++
++    // escaneo repartido en fotogramas
++    static Seq<Building> escLista;
++    static int escI;
++    static HashMap<Long, Seq<Building>> escGrupos;
++    static HashMap<Long, int[]> escDatos;
++    static int escSd;
++    static Spawn escSp;
++    static long escFin;
++    static boolean puedeEscanear;
++    static final int[] escCen = new int[3], escEst = new int[5];
++
+     private Bases(){}
+ 
+     /** Mundo nuevo / continuar / cambio de dimensión. */
+@@ -59,11 +90,23 @@
+         pend.clear();
+         unidadesPend.clear();
+         enCurso = null;
++        hib = null;
++        reiniciarEscaneo();
++        puedeEscanear = false;
++    }
++
++    private static void reiniciarEscaneo(){
++        escLista = null;
++        escGrupos = null;
++        escDatos = null;
+     }
+ 
+     /** Al mover la ventana las claves virtuales siguen valiendo: no hay nada que rehacer. */
+     static void reiniciarVentana(){
+         // Lo que estaba a medio despertar (cola en coordenadas virtuales) sigue siendo válido; se retoma solo.
++        // Lo que estaba a medio hibernar SIN confirmar usa coordenadas locales de la ventana vieja: se descarta (nada cambió en el mundo).
++        if(hib != null && hib.dorm == null) hib = null;
++        reiniciarEscaneo();
+     }
+ 
+     static boolean dormida(long vk){
+@@ -72,7 +115,7 @@
+ 
+     /** ¿Hay estructuras despertando? Entonces no se reubica la ventana ni se guarda. */
+     static boolean ocupada(){
+-        return enCurso != null || !pend.isEmpty() || !unidadesPend.isEmpty();
++        return enCurso != null || !pend.isEmpty() || !unidadesPend.isEmpty() || (hib != null && hib.dorm != null);
+     }
+ 
+     // ---------------------------------------------------------------- utilidades
+@@ -109,95 +152,155 @@
+ 
+     // ---------------------------------------------------------------- ciclo (cada ~0,5 s)
+     static void tick(){
++        puedeEscanear = false;
+         Meta m = Streamer.meta;
+         if(m == null || !m.dimensional() || !Streamer.activo || Streamer.restaurando || Mundos.rebase != null || Mundos.viajando) return;
++        puedeEscanear = false;
+         if(!Estructuras.cola.isEmpty() || !Estructuras.enCola.isEmpty()) return;
+         despertarCercanas();
+         if(enCurso != null) return;     // una cosa a la vez
+-        dormirLejanas(m);
++        puedeEscanear = true;           // el escaneo y la hibernación avanzan por trozos en procesar()
+     }
+ 
+-    private static void dormirLejanas(Meta m){
+-        int sd = Muestreo.semDim(m.semilla, m.dim);
+-        Spawn sp = Muestreo.spawn(sd, m.dim);
+-        int[] cen = new int[3], est = new int[5];
+-        HashMap<Long, Seq<Building>> grupos = new HashMap<>();
+-        HashMap<Long, int[]> datos = new HashMap<>();
+-        for(Team eq : new Team[]{Team.crux, Team.malis, Team.derelict}){
+-            for(Building b : Vars.state.teams.get(eq).buildings){
+-                if(!b.isValid() || b.tile == null || b.tile.build != b) continue;
+-                double vx = Coord.virtualX(b.x), vy = Coord.virtualY(b.y);
+-                if(!estructuraDe(sd, sp, vx, vy, est, cen)) continue;
+-                long id = Estructuras.clave(est[3], est[4], 0);
+-                if(!Estructuras.colocadas.contains(id)) continue;       // aún no está terminada
+-                if(cerca(est[0], est[1], 2)) continue;                  // histéresis: duerme 2 chunks más lejos de lo que despierta
+-                Seq<Building> g = grupos.get(id);
+-                if(g == null){ g = new Seq<>(); grupos.put(id, g); datos.put(id, new int[]{est[0], est[1], est[2]}); }
+-                g.add(b);
+-            }
++    /**
++     * Recorre los edificios enemigos/abandonados A TROZOS (una porción de tiempo por fotograma) y, al terminar la vuelta, empieza a
++     * hibernar la primera estructura terminada y lejana. Un ciclo completo como máximo por segundo.
++     */
++    private static void escanearLejanas(Meta m, long finNs){
++        if(escLista == null){
++            if(System.nanoTime() - escFin < 1_000_000_000L) return;
++            escLista = new Seq<>();
++            for(Team eq : new Team[]{Team.crux, Team.malis, Team.derelict}) escLista.addAll(Vars.state.teams.get(eq).buildings);
++            escI = 0;
++            escGrupos = new HashMap<>();
++            escDatos = new HashMap<>();
++            escSd = Muestreo.semDim(m.semilla, m.dim);
++            escSp = Muestreo.spawn(escSd, m.dim);
++        }
++        int hechos = 0;
++        while(escI < escLista.size){
++            if((++hechos & 7) == 0 && System.nanoTime() >= finNs) return;   // sigue en el próximo fotograma
++            Building b = escLista.get(escI++);
++            if(!b.isValid() || b.tile == null || b.tile.build != b) continue;
++            double vx = Coord.virtualX(b.x), vy = Coord.virtualY(b.y);
++            if(!estructuraDe(escSd, escSp, vx, vy, escEst, escCen)) continue;
++            long id = Estructuras.clave(escEst[3], escEst[4], 0);
++            if(!Estructuras.colocadas.contains(id)) continue;       // aún no está terminada
++            if(cerca(escEst[0], escEst[1], 2)) continue;            // histéresis: duerme 2 chunks más lejos de lo que despierta
++            Seq<Building> g = escGrupos.get(id);
++            if(g == null){ g = new Seq<>(); escGrupos.put(id, g); escDatos.put(id, new int[]{escEst[0], escEst[1], escEst[2]}); }
++            g.add(b);
+         }
++        // vuelta completa
++        HashMap<Long, Seq<Building>> grupos = escGrupos;
++        HashMap<Long, int[]> datos = escDatos;
++        reiniciarEscaneo();
++        escFin = System.nanoTime();
+         for(java.util.Map.Entry<Long, Seq<Building>> e : grupos.entrySet()){
+             if(dormidas.containsKey(e.getKey())) continue;
+             int[] c = datos.get(e.getKey());
+-            dormir(e.getKey(), c[0], c[1], c[2], e.getValue());
+-            return;   // una por ciclo
++            empezarHibernacion(e.getKey(), c[0], c[1], c[2], e.getValue());
++            return;   // una por vuelta
+         }
+     }
+ 
+-    /** Guarda la estructura entera en el almacén y la quita del mundo. */
+-    private static void dormir(long id, int cx, int cy, int radio, Seq<Building> edificios){
++    private static void empezarHibernacion(long id, int cx, int cy, int radio, Seq<Building> edificios){
++        Hib h = new Hib();
++        h.id = id; h.cx = cx; h.cy = cy; h.radio = radio;
++        h.edificios = edificios;
++        hib = h;
++    }
++
++    /** Avanza la hibernación en curso (fases A y C) dentro del presupuesto del fotograma. */
++    private static void avanzarHibernacion(long finNs){
++        Hib h = hib;
++        if(h == null) return;
+         try{
+-            Dorm d = new Dorm();
+-            d.id = id; d.vx = cx; d.vy = cy; d.radio = radio;
+-            double ahora = Mundos.reloj();
+-            // 1) edificios -> chunk donde está cada uno. Antes se borra lo enemigo que ya hubiera en esos chunks (la copia de un
+-            //    guardado anterior), para no duplicarlo al despertar.
+-            HashSet<Long> tocados = new HashSet<>();
+-            Seq<Reg> regs = new Seq<>();
+-            for(Building b : edificios){
+-                Reg r = Reg.desde(b, Streamer.ox, Streamer.oy);
+-                regs.add(r);
+-                tocados.add(claveChunk(r.x, r.y));
+-            }
+-            // 2) guardias de la casa de esta base
+-            Seq<Unit> guardias = new Seq<>();
+-            for(Unit u : Groups.unit){
+-                if(!u.isValid() || !(u.controller() instanceof Estructuras.Guardia)) continue;
+-                Estructuras.Guardia g = (Estructuras.Guardia)u.controller();
+-                if(Math.hypot(g.hvx - cx, g.hvy - cy) > 3.0) continue;
+-                guardias.add(u);
+-                tocados.add(claveChunk((int)Math.floor(Coord.virtualX(u.x)), (int)Math.floor(Coord.virtualY(u.y))));
+-            }
+-            for(long vk : tocados){
+-                Regiones.ChunkGuardado cg = Regiones.chunk(Coord.vcxDeClave(vk), Coord.vcyDeClave(vk), true);
+-                for(int i = cg.edificios.size - 1; i >= 0; i--) if(cg.edificios.get(i).equipo != Team.sharded.id) cg.edificios.remove(i);
+-                for(int i = cg.unidades.size - 1; i >= 0; i--) if(cg.unidades.get(i).clase == 0) cg.unidades.remove(i);
+-                cg.tick = ahora;
+-            }
+-            for(Reg r : regs) Regiones.chunk(Math.floorDiv(r.x, MundoInfinitoMod.TAM_CHUNK), Math.floorDiv(r.y, MundoInfinitoMod.TAM_CHUNK), true).edificios.add(r);
+-            for(Unit u : guardias){
+-                Estructuras.RegU ru = Estructuras.RegU.desde(u, Streamer.ox, Streamer.oy);
+-                Regiones.chunk(Math.floorDiv((int)Math.floor(ru.vx), MundoInfinitoMod.TAM_CHUNK), Math.floorDiv((int)Math.floor(ru.vy), MundoInfinitoMod.TAM_CHUNK), true).unidades.add(ru);
++            if(h.dorm == null){
++                // fase A: serializar. El mundo no cambia, así que si el jugador vuelve se cancela sin consecuencias.
++                if(cerca(h.cx, h.cy, 1) || Streamer.restaurando || Mundos.rebase != null || Mundos.viajando){ hib = null; return; }
++                int n = 0;
++                while(h.idx < h.edificios.size){
++                    if((++n & 3) == 0 && System.nanoTime() >= finNs) break;
++                    Building b = h.edificios.get(h.idx++);
++                    if(!b.isValid() || b.tile == null || b.tile.build != b) continue;
++                    h.regs.add(Reg.desde(b, Streamer.ox, Streamer.oy));
++                    h.vivos.add(b);
++                }
++                if(h.idx < h.edificios.size) return;
++                if(!confirmarHibernacion(h)){
++                    if(++h.espera > 600) hib = null;   // las regiones de disco tardan demasiado: se vuelve a intentar en otro ciclo
++                    return;
++                }
+             }
+-            // 3) marcar los chunks como dormidos ANTES de quitar nada
+-            d.chunks.addAll(tocados);
+-            for(long vk : d.chunks) chunksDormidos.merge(vk, 1, Integer::sum);
+-            dormidas.put(id, d);
+-            // 4) quitar del mundo
+-            for(Unit u : guardias) u.remove();
+-            Seq<Building> copia = new Seq<>(edificios);
+-            for(Building b : copia){
++            // fase C: quitar del mundo, por trozos
++            int n = 0;
++            while(h.idxRetirar < h.vivos.size){
++                if((++n & 3) == 0 && System.nanoTime() >= finNs) return;
++                Building b = h.vivos.get(h.idxRetirar++);
+                 if(b.tile != null && b.tile.build == b) b.tile.setAir();
+             }
++            hib = null;
+             ultimaDormida = System.nanoTime();
+         }catch(Throwable t){
+             Log.err("[MundoInfinito] No se pudo hibernar una estructura", t);
++            hib = null;
+         }
+     }
+ 
++    /**
++     * Anota la estructura en el almacén y marca sus chunks como dormidos (barato). @return false si alguna región de disco aún no
++     * está en memoria: leerla aquí (hilo del juego) congelaría el juego, así que se pide la lectura y se reintenta en el siguiente fotograma.
++     */
++    private static boolean confirmarHibernacion(Hib h){
++        long t0 = Perfil.t();
++        HashSet<Long> tocados = new HashSet<>();
++        for(Reg r : h.regs) tocados.add(claveChunk(r.x, r.y));
++        // guardias de la casa de esta base
++        Seq<Unit> guardias = new Seq<>();
++        for(Unit u : Groups.unit){
++            if(!u.isValid() || !(u.controller() instanceof Estructuras.Guardia)) continue;
++            Estructuras.Guardia g = (Estructuras.Guardia)u.controller();
++            if(Math.hypot(g.hvx - h.cx, g.hvy - h.cy) > 3.0) continue;
++            guardias.add(u);
++            tocados.add(claveChunk((int)Math.floor(Coord.virtualX(u.x)), (int)Math.floor(Coord.virtualY(u.y))));
++        }
++        boolean listas = true;
++        for(long vk : tocados){
++            if(!Regiones.lista(Coord.vcxDeClave(vk), Coord.vcyDeClave(vk))) listas = false;   // sin cortocircuito: lanza todas las lecturas
++        }
++        if(!listas) return false;
++
++        Dorm d = new Dorm();
++        d.id = h.id; d.vx = h.cx; d.vy = h.cy; d.radio = h.radio;
++        double ahora = Mundos.reloj();
++        // 1) antes se borra lo enemigo que ya hubiera en esos chunks (la copia de un guardado anterior), para no duplicarlo al despertar
++        for(long vk : tocados){
++            Regiones.ChunkGuardado cg = Regiones.chunk(Coord.vcxDeClave(vk), Coord.vcyDeClave(vk), true);
++            for(int i = cg.edificios.size - 1; i >= 0; i--) if(cg.edificios.get(i).equipo != Team.sharded.id) cg.edificios.remove(i);
++            for(int i = cg.unidades.size - 1; i >= 0; i--) if(cg.unidades.get(i).clase == 0) cg.unidades.remove(i);
++            cg.tick = ahora;
++        }
++        for(Reg r : h.regs) Regiones.chunk(Math.floorDiv(r.x, MundoInfinitoMod.TAM_CHUNK), Math.floorDiv(r.y, MundoInfinitoMod.TAM_CHUNK), true).edificios.add(r);
++        for(Unit u : guardias){
++            Estructuras.RegU ru = Estructuras.RegU.desde(u, Streamer.ox, Streamer.oy);
++            Regiones.chunk(Math.floorDiv((int)Math.floor(ru.vx), MundoInfinitoMod.TAM_CHUNK), Math.floorDiv((int)Math.floor(ru.vy), MundoInfinitoMod.TAM_CHUNK), true).unidades.add(ru);
++        }
++        // 2) marcar los chunks como dormidos ANTES de quitar nada
++        d.chunks.addAll(tocados);
++        for(long vk : d.chunks) chunksDormidos.merge(vk, 1, Integer::sum);
++        dormidas.put(h.id, d);
++        // 3) los guardias salen ya (pocos); los edificios, por trozos en la fase C
++        for(Unit u : guardias) u.remove();
++        h.dorm = d;
++        Perfil.evento("hibernar: confirmar", t0);
++        return true;
++    }
++
+     private static void despertarCercanas(){
+         if(enCurso != null) return;
+         for(Dorm d : dormidas.values()){
++            if(hib != null && hib.dorm == d) continue;   // todavía se está retirando del mundo: primero termina de dormir
+             if(!cerca(d.vx, d.vy, 0)) continue;
+             if(!Estructuras.listo((int)d.vx, (int)d.vy, d.radio + 4)) continue;   // el terreno de su huella aún no está generado
+             despertar(d);
+@@ -223,7 +326,12 @@
+ 
+     /** Coloca las piezas pendientes dentro del presupuesto del fotograma. */
+     static void procesar(long finNs){
+-        if(enCurso == null) return;
++        if(enCurso == null){
++            // sin nada que despertar: hibernación y escaneo por trozos
++            if(hib != null) avanzarHibernacion(finNs);
++            else if(puedeEscanear && Streamer.meta != null) escanearLejanas(Streamer.meta, finNs);
++            return;
++        }
+         while(System.nanoTime() < finNs && !pend.isEmpty()) Mundos.restaurarEdificio(pend.pollFirst());
+         if(!pend.isEmpty()) return;
+         // enlaces entre edificios (nodos, puentes...) ya con todo colocado
+diff -ruN orig/src/mundoinfinito/ChunkMeshRenderer.java MindustryOpenWorldTest-main/src/mundoinfinito/ChunkMeshRenderer.java
+--- orig/src/mundoinfinito/ChunkMeshRenderer.java	2026-10-12 02:04:49.238175590 +0000
++++ MindustryOpenWorldTest-main/src/mundoinfinito/ChunkMeshRenderer.java	2026-10-12 02:07:17.382993005 +0000
+@@ -45,6 +45,10 @@
+ final class ChunkMeshRenderer{
+     /** Mallas de GPU asignadas al inicio: cada una cuesta MAX_SPRITES * 4 * 20 B ~ 480 KB. Chunks visibles simultáneos máximos. */
+     static final int MALLAS = 48;
++    /** Tope al que puede crecer el pool (según la RAM de Java): con zoom alejado en el móvil se ven más de 48 chunks a la vez. */
++    private static int mallasMax = MALLAS, mallasTotal;
++    private static VertexAttribute[] atributosMalla;
++    private static short[] indicesMalla;
+     static final int MAX_SPRITES = ChunkGeometryCooker.MAX_SPRITES;
+     static final int CAPAS = ChunkGeometryCooker.MAX_CAPAS;
+     private static final int FLOATS_SPRITE = ChunkGeometryCooker.FLOATS_SPRITE;
+@@ -120,8 +124,8 @@
+     private static Seq<Runnable> sumergidos;
+ 
+     private static final Blending BAJO_AGUA = new Blending(Gl.srcAlpha, Gl.oneMinusSrcAlpha, Gl.dstAlpha, Gl.oneMinusSrcAlpha);
+-    private static final Runnable DIBUJAR_SUELO = () -> pasada(false);
+-    private static final Runnable DIBUJAR_MUROS = () -> pasada(true);
++    private static final Runnable DIBUJAR_SUELO = () -> { long t0 = Perfil.t(); pasada(false); Perfil.fin(Perfil.S_RENDER_DIBUJO, t0); };
++    private static final Runnable DIBUJAR_MUROS = () -> { long t0 = Perfil.t(); pasada(true); Perfil.fin(Perfil.S_RENDER_DIBUJO, t0); };
+ 
+     private ChunkMeshRenderer(){}
+ 
+@@ -157,6 +161,9 @@
+             //    Los índices son los de un SpriteBatch (0,1,2, 2,3,0) y son idénticos para todas: se cargan una vez por malla.
+             final VertexAttribute[] atributos = {VertexAttribute.position, VertexAttribute.color, VertexAttribute.texCoords};
+             final short[] indices = new short[MAX_SPRITES * 6];
++            atributosMalla = atributos;
++            indicesMalla = indices;
++            mallasMax = Math.max(MALLAS, Math.min(96, (int)(Runtime.getRuntime().maxMemory() >> 22)));   // ~4 MB de heap por malla de margen
+             for(int i = 0, v = 0; i < MAX_SPRITES; i++, v += 4){
+                 int k = i * 6;
+                 indices[k] = (short)v;
+@@ -170,6 +177,7 @@
+                 Mesh m = new Mesh(false, MAX_SPRITES * 4, MAX_SPRITES * 6, atributos);   // isStatic=false: se reescribe al reciclar
+                 m.setIndices(indices);
+                 mallasLibres.add(m);
++                mallasTotal++;
+             }
+             for(int i = 0; i < MAX_VISIBLES; i++) ranurasLibres.add(new Ranura());
+ 
+@@ -247,7 +255,9 @@
+         try{
+             if(!vanillaApagado || fCache.get(suelo) != null) apagarVanilla();
+             if(!habilitado) return;
++            final long tAct = Perfil.t();
+             actualizar();
++            Perfil.fin(Perfil.S_RENDER_ACTUALIZAR, tAct);
+             if(nCubiertos > 0){
+                 final float z0 = Draw.z();
+                 Draw.z(Layer.blockOver + 0.5f);         // sobre suelo, muros y rocas; bajo edificios, unidades y balas
+@@ -364,7 +374,7 @@
+ 
+         if((cuadro % 30) == 0) reciclar();
+         if((cuadro % 900) == 0){
+-            Log.info("[MundoInfinito] Render chunks: @ visibles, @ dibujados, @ mallas libres, @ ranuras en uso", nVisibles, nDibujo, mallasLibres.size(), mapa.size);
++            Log.info("[MundoInfinito] Render chunks: @ visibles, @ dibujados, @ tapados en negro, @ mallas libres de @, @ ranuras en uso", nVisibles, nDibujo, nCubiertos, mallasLibres.size(), mallasTotal, mapa.size);
+         }
+     }
+ 
+@@ -488,6 +498,18 @@
+     private static Mesh tomarMalla(){
+         Mesh m = mallasLibres.poll();
+         if(m != null) return m;
++        if(mallasTotal < mallasMax && atributosMalla != null){
++            // el pool se agota con el zoom alejado: crear una malla (~0,5 MB) cuesta menos que dejar chunks sin dibujar
++            try{
++                m = new Mesh(false, MAX_SPRITES * 4, MAX_SPRITES * 6, atributosMalla);
++                m.setIndices(indicesMalla);
++                mallasTotal++;
++                if(mallasTotal == MALLAS + 1 || mallasTotal == mallasMax) Log.info("[MundoInfinito] Pool de mallas ampliado a @ (máx. @)", mallasTotal, mallasMax);
++                return m;
++            }catch(Throwable t){
++                mallasMax = mallasTotal;   // sin memoria: no se intenta más
++            }
++        }
+         Ranura peor = null;
+         for(LongMap.Entry<Ranura> e : mapa){
+             Ranura r = e.value;
+diff -ruN orig/src/mundoinfinito/Disco.java MindustryOpenWorldTest-main/src/mundoinfinito/Disco.java
+--- orig/src/mundoinfinito/Disco.java	2026-10-12 02:04:49.238205256 +0000
++++ MindustryOpenWorldTest-main/src/mundoinfinito/Disco.java	2026-10-12 02:06:23.138229856 +0000
+@@ -1,5 +1,6 @@
+ package mundoinfinito;
+ 
++import arc.func.Prov;
+ import arc.util.Log;
+ 
+ import java.io.File;
+@@ -26,7 +27,8 @@
+ final class Disco{
+     private static final class Tarea{
+         File destino;
+-        byte[] datos;     // null = borrar
++        byte[] datos;     // null = borrar (salvo que haya 'fuente')
++        Prov<byte[]> fuente;   // si no es null, los datos se generan AQUÍ, en el hilo de E/S (null devuelto = borrar)
+         boolean gzip;
+     }
+ 
+@@ -60,6 +62,19 @@
+         }
+     }
+ 
++    /** Como escribir(), pero los bytes los produce 'fuente' en el hilo de E/S: el hilo del juego solo entrega una instantánea. */
++    static void escribirDiferido(File destino, Prov<byte[]> fuente, boolean gzip){
++        Tarea t = new Tarea();
++        t.destino = destino;
++        t.fuente = fuente;
++        t.gzip = gzip;
++        synchronized(lock){
++            if(escrituras.put(destino.getPath(), t) != null) coalescidos++;
++            asegurarHilo();
++            lock.notifyAll();
++        }
++    }
++
+     static void borrar(File destino){
+         escribir(destino, null, false);
+     }
+@@ -169,10 +184,11 @@
+ 
+     private static void ejecutar(Tarea t){
+         try{
+-            if(t.datos == null){
++            byte[] datos = t.fuente != null ? t.fuente.get() : t.datos;
++            if(datos == null){
+                 if(t.destino.exists()) t.destino.delete();
+             }else{
+-                escribirAtomico(t.destino, t.datos, t.gzip);
++                escribirAtomico(t.destino, datos, t.gzip);
+             }
+             escritos++;
+         }catch(Throwable e){
+diff -ruN orig/src/mundoinfinito/Mapa.java MindustryOpenWorldTest-main/src/mundoinfinito/Mapa.java
+--- orig/src/mundoinfinito/Mapa.java	2026-10-12 02:04:49.238271849 +0000
++++ MindustryOpenWorldTest-main/src/mundoinfinito/Mapa.java	2026-10-12 02:07:17.383481385 +0000
+@@ -366,8 +366,10 @@
+         sincronizar();
+         actualizarNucleos();
+         int hechos = 0;
++        // con el juego lento (< ~30 FPS) solo una fotografía por fotograma: cada una lee 1024 casillas
++        final int tope = arc.Core.graphics != null && arc.Core.graphics.getDeltaTime() > 0.033f ? 1 : 2;
+         // 1) los que faltan
+-        for(int i = 0; i < anillo.size && hechos < 2; i++){
++        for(int i = 0; i < anillo.size && hechos < tope; i++){
+             int cx = pcx + anillo.get(i)[0], cy = pcy + anillo.get(i)[1];
+             if(!Streamer.enMapa(cx, cy) || !Streamer.generados.contains(Streamer.clave(cx, cy))) continue;
+             if(get(Coord.vcx(cx), Coord.vcy(cy)) != null) continue;
+@@ -376,7 +378,7 @@
+             hechos++;
+         }
+         // 2) refresco en rueda
+-        for(int k = 0; k < 2 && hechos < 2; k++){
++        for(int k = 0; k < 2 && hechos < tope; k++){
+             int[] d = anillo.get(cursor++ % anillo.size);
+             int cx = pcx + d[0], cy = pcy + d[1];
+             if(!Streamer.enMapa(cx, cy) || !Streamer.generados.contains(Streamer.clave(cx, cy))) continue;
+diff -ruN orig/src/mundoinfinito/MundoInfinitoMod.java MindustryOpenWorldTest-main/src/mundoinfinito/MundoInfinitoMod.java
+--- orig/src/mundoinfinito/MundoInfinitoMod.java	2026-10-12 02:04:49.238359496 +0000
++++ MindustryOpenWorldTest-main/src/mundoinfinito/MundoInfinitoMod.java	2026-10-12 02:06:23.137675348 +0000
+@@ -1796,21 +1796,51 @@
+             }
+         }
+ 
+-        static byte[] bytes(Region r){
+-            if(r.chunks.isEmpty()) return null; // región vacía => se borra el archivo
++        /**
++         * Copia SUPERFICIAL (solo referencias) de un chunk guardado. Reg y RegU no se modifican una vez creados (solo se añaden o se
++         * quitan de las listas), así que el hilo de E/S puede serializarlos mientras el juego sigue mutando las listas originales.
++         */
++        static final class InstantaneaChunk{
++            int idx;
++            Reg[] edificios;
++            Estructuras.RegU[] unidades;
++            int[] niebla;
++            double tick;
++        }
++
++        /** Hilo del juego: barato (copia de referencias), sin escribir ni un byte. */
++        static java.util.ArrayList<InstantaneaChunk> instantanea(Region r){
++            java.util.ArrayList<InstantaneaChunk> lista = new java.util.ArrayList<>(r.chunks.size());
++            for(java.util.Map.Entry<Integer, ChunkGuardado> e : r.chunks.entrySet()){
++                ChunkGuardado c = e.getValue();
++                InstantaneaChunk x = new InstantaneaChunk();
++                x.idx = e.getKey();
++                x.edificios = new Reg[c.edificios.size];
++                for(int i = 0; i < x.edificios.length; i++) x.edificios[i] = c.edificios.get(i);
++                x.unidades = new Estructuras.RegU[c.unidades.size];
++                for(int i = 0; i < x.unidades.length; i++) x.unidades[i] = c.unidades.get(i);
++                x.niebla = c.niebla;   // se reemplaza entero, nunca se modifica en sitio
++                x.tick = c.tick;
++                lista.add(x);
++            }
++            return lista;
++        }
++
++        /** Serializa una instantánea (SIN comprimir: lo comprime el hilo de E/S). null = región vacía => se borra el archivo. */
++        static byte[] bytes(java.util.List<InstantaneaChunk> lista){
++            if(lista.isEmpty()) return null;
+             try{
+                 ByteArrayOutputStream bos = new ByteArrayOutputStream();
+-                DataOutputStream out = new DataOutputStream(bos);   // sin comprimir: lo comprime el hilo de E/S
++                DataOutputStream out = new DataOutputStream(bos);
+                 out.writeInt(6);
+-                out.writeInt(r.chunks.size());
+-                for(java.util.Map.Entry<Integer, ChunkGuardado> e : r.chunks.entrySet()){
+-                    out.writeShort(e.getKey());
+-                    ChunkGuardado c = e.getValue();
+-                    out.writeInt(c.edificios.size);
++                out.writeInt(lista.size());
++                for(InstantaneaChunk c : lista){
++                    out.writeShort(c.idx);
++                    out.writeInt(c.edificios.length);
+                     for(Reg x : c.edificios) x.escribir(out);
+                     out.writeBoolean(c.niebla != null);
+                     if(c.niebla != null) for(int v : c.niebla) out.writeInt(v);
+-                    out.writeInt(c.unidades.size);
++                    out.writeInt(c.unidades.length);
+                     for(Estructuras.RegU u : c.unidades) u.escribir(out);
+                     out.writeDouble(c.tick);
+                 }
+@@ -1822,12 +1852,20 @@
+             }
+         }
+ 
+-        /** Hilo principal: serializa las regiones modificadas (rápido). La escritura a disco la hace otro hilo. */
+-        static java.util.HashMap<Fi, byte[]> serializarSucias(){
+-            java.util.HashMap<Fi, byte[]> r = new java.util.HashMap<>();
++        static byte[] bytes(Region r){
++            return bytes(instantanea(r));
++        }
++
++        /**
++         * Hilo principal: toma una instantánea de cada región modificada (barato). La serialización Y la escritura a disco las hace el
++         * hilo de E/S. Antes se serializaba aquí todo, en el fotograma del guardado/reubicación: decenas de ms con una base grande.
++         */
++        static java.util.HashMap<Fi, arc.func.Prov<byte[]>> serializarSucias(){
++            java.util.HashMap<Fi, arc.func.Prov<byte[]>> r = new java.util.HashMap<>();
+             for(Region reg : regiones.values()){
+                 if(!reg.sucia) continue;
+-                r.put(archivo(reg.rx, reg.ry), bytes(reg));
++                final java.util.ArrayList<InstantaneaChunk> snap = instantanea(reg);
++                r.put(archivo(reg.rx, reg.ry), () -> bytes(snap));
+                 reg.sucia = false;
+             }
+             return r;
+@@ -2178,8 +2216,10 @@
+         static long presupuesto(){
+             float dt = Core.graphics == null ? 0.016f : Core.graphics.getDeltaTime();
+             long base = Ajustes.presupuestoNs();
+-            if(dt > 0.05f) return Math.min(base, 150_000L);
+-            if(dt > 0.03f) return Math.min(base, 400_000L);
++            if(dt > 0.05f) return Math.min(base, 300_000L);   // antes 150 µs: con el juego lento el terreno casi no avanzaba y se veía negro/congelado
++            if(dt > 0.03f) return Math.min(base, 550_000L);
++            // sobrado de FPS y con terreno esperando: se aprovecha (el terreno que falta es lo que más se nota)
++            if(dt < 0.0185f && !listos.isEmpty()) return base * 2L;
+             return base;
+         }
+ 
+@@ -2187,6 +2227,7 @@
+             tickInterno();
+             Mapa.vaciarColaDelJuego();   // el minimapa del juego no debe acumular los tiles que acabamos de cambiar
+             Suelo.vigilarTirones();      // si hubo un tirón largo, repara la caché de suelo del renderizador
++            Perfil.cierre();             // escribe una línea [Perfil] si este fotograma se pasó de tiempo
+         }
+ 
+         static void tickInterno(){
+@@ -2194,11 +2235,20 @@
+             if(Mundos.actual != null) Mundos.actual.reloj += Time.delta;
+             Regiones.sincronizar();
+ 
+-            if(Mundos.rebase != null){ Mundos.avanzarRebase(); Mapa.vaciarColaDelJuego(); return; }   // reubicando la ventana: el streaming espera
++            Presupuesto.abrir();   // UN reparto de tiempo por fotograma para todos los sistemas de abajo
++            if(Mundos.rebase != null){
++                long tR = Perfil.t();
++                Mundos.avanzarRebase();
++                Mapa.vaciarColaDelJuego();
++                Perfil.fin(Perfil.S_REBASE, tR);
++                return;   // reubicando la ventana: el streaming espera
++            }
+ 
+             if(restaurando){
++                long tRes = Perfil.t();
+                 long finR = System.nanoTime() + PRESUPUESTO_RESTAURAR_NS;
+                 while(System.nanoTime() < finR && !colaRestaurar.isEmpty()) Mundos.restaurarEdificio(colaRestaurar.pollFirst());
++                Perfil.fin(Perfil.S_RESTAURAR, tRes);
+                 if(colaRestaurar.isEmpty()){
+                     restaurando = false;
+                     Mundos.finalizarRestauracion();
+@@ -2208,12 +2258,25 @@
+                 }
+             }
+ 
+-            Estructuras.procesar(System.nanoTime() + 1_500_000L);   // coloca bases y ruinas de a poco
+-            Bases.procesar(System.nanoTime() + 1_500_000L);         // despierta estructuras hibernadas que el jugador volvió a acercar
+-            Ausencia.tick(System.nanoTime() + 2_500_000L);          // las fábricas que estuvieron lejos se ponen al día
++            // Orden de prioridad: lo que el jugador ve (estructuras, bases) antes que lo que puede esperar (ausencia, ventana futura).
++            // Cada uno pide su máximo, pero recibe solo lo que quede del reparto del fotograma (con un mínimo para que avance siempre).
++            long tS = Perfil.t();
++            Estructuras.procesar(Presupuesto.hasta(1_500_000L));   // coloca bases y ruinas de a poco
++            Perfil.fin(Perfil.S_ESTRUCTURAS, tS);
++            tS = Perfil.t();
++            Bases.procesar(Presupuesto.hasta(1_500_000L));         // despierta/hiberna estructuras (por trozos) según la distancia al jugador
++            Perfil.fin(Perfil.S_BASES, tS);
++            tS = Perfil.t();
++            Ausencia.tick(Presupuesto.hasta(2_500_000L));          // las fábricas que estuvieron lejos se ponen al día
++            Perfil.fin(Perfil.S_AUSENCIA, tS);
++            tS = Perfil.t();
+             Mapa.tick(Mathf.clamp((int)jugadorX / TAM_CHUNK, 0, nch - 1), Mathf.clamp((int)jugadorY / TAM_CHUNK, 0, nch - 1));
++            Perfil.fin(Perfil.S_MAPA, tS);
+ 
+-            Ventana.avanzar(System.nanoTime() + Ventana.presupuesto());   // adelanta el terreno de la ventana futura, en trocitos
++            tS = Perfil.t();
++            Ventana.avanzar(Presupuesto.hasta(Ventana.presupuesto()));   // adelanta el terreno de la ventana futura, en trocitos
++            Perfil.fin(Perfil.S_VENTANA, tS);
++            tS = Perfil.t();
+ 
+             long fin = System.nanoTime() + presupuesto();
+             while(System.nanoTime() < fin){
+@@ -2237,17 +2300,26 @@
+                 }
+             }
+ 
++            Perfil.fin(Perfil.S_APLICAR, tS);
++
++            tS = Perfil.t();
+             pedirMas();   // mantiene la tubería llena sin esperar al siguiente escaneo (antes: 5 chunks cada 0,5 s)
++            Perfil.fin(Perfil.S_PEDIR, tS);
+ 
+             acumEscaneo += Time.delta;
+             if(acumEscaneo >= 30f){
+                 acumEscaneo = 0f;
++                tS = Perfil.t();
+                 escanear();
++                Perfil.fin(Perfil.S_ESCANEO, tS);
+             }
+             acumGuardado += Time.delta;
+             if(acumGuardado >= 5400f){ // ~90 s
+                 acumGuardado = 0f;
++                tS = Perfil.t();
+                 Mundos.guardar(false);
++                Perfil.fin(Perfil.S_GUARDAR, tS);
++                Perfil.evento("autoguardado", tS);
+             }
+ 
+             // Red de seguridad: si el jugador sigue sin unidad, reaparecerlo en su sitio (nunca en la esquina del proxy).
+@@ -2956,11 +3028,16 @@
+                 cg.unidades.add(Estructuras.RegU.desde(u, Streamer.ox, Streamer.oy));
+                 cg.tick = reloj();
+             }
+-            // 3) niebla explorada (si la niebla aún no existe, se conserva la anterior)
++            // 3) niebla explorada (si la niebla aún no existe, se conserva la anterior).
++            //    Recorrer los ~800 000 bits de toda la ventana costaba decenas de ms en cada guardado y reubicación; la niebla solo
++            //    cambia cerca del jugador, así que lo lejano conserva la que ya estaba en el almacén (como Luanti: solo se guardan los
++            //    bloques modificados).
++            final int pcxN = Mathf.clamp((int)Streamer.jugadorX / TAM_CHUNK, 0, n - 1), pcyN = Mathf.clamp((int)Streamer.jugadorY / TAM_CHUNK, 0, n - 1);
++            final int rNiebla = Ajustes.carga() + 3;
+             for(int cy = 1; cy <= n - 2; cy++){
+                 for(int cx = 1; cx <= n - 2; cx++){
+                     int[] m = null;
+-                    if(desc != null){
++                    if(desc != null && Ajustes.dentro(cx - pcxN, cy - pcyN, rNiebla)){
+                         int[] filas = new int[32];
+                         boolean alguno = false;
+                         for(int ly = 0; ly < TAM_CHUNK; ly++){
+@@ -2988,11 +3065,10 @@
+             final byte[] orbita = m.dimensional() ? Orbita.bytes() : null;
+             final byte[] estructuras = m.dimensional() ? Estructuras.bytes() : null;
+             final Fi fEstructuras = Almacen.archivoEstructuras(m);
+-            final java.util.HashMap<Fi, byte[]> regs = Regiones.serializarSucias();
+-            // Todo el acceso a disco lo hace el hilo de E/S: escritura atómica, coalescente y comprimida allí
+-            for(java.util.Map.Entry<Fi, byte[]> e : regs.entrySet()){
+-                if(e.getValue() == null) Disco.borrar(e.getKey().file());
+-                else Disco.escribir(e.getKey().file(), e.getValue(), true);
++            final java.util.HashMap<Fi, arc.func.Prov<byte[]>> regs = Regiones.serializarSucias();
++            // Todo el acceso a disco lo hace el hilo de E/S: serialización, compresión y escritura atómica y coalescente allí
++            for(java.util.Map.Entry<Fi, arc.func.Prov<byte[]>> e : regs.entrySet()){
++                Disco.escribirDiferido(e.getKey().file(), e.getValue(), true);   // si la región quedó vacía, la fuente da null y se borra el archivo
+             }
+             if(estado != null) Disco.escribir(Almacen.archivoEstado(m).file(), estado, false);
+             if(orbita != null) Disco.escribir(Almacen.archivoOrbita(m).file(), orbita, false);
+@@ -3005,10 +3081,12 @@
+ 
+         static void guardar(boolean sincrono){
+             if(actual == null || !Streamer.activo || Streamer.restaurando || rebase != null || Bases.ocupada() || Vars.world.width() < 10) return;
++            long t0 = Perfil.t();
+             double[] pos = posicionVirtual();
+             Datos d = Datos.capturar(pos[0], pos[1]);
+             capturarEnMemoria();
+             escribirAsync(d, sincrono);
++            Perfil.evento("guardar (capturar+serializar)", t0);
+         }
+ 
+         // ---------- MUNDO INFINITO: reubicar la ventana EN SITIO ----------
+@@ -3211,6 +3289,7 @@
+          * colocar desde el almacén de regiones. Solo el borde nuevo de la ventana se genera de cero (pasivamente).
+          */
+         static void rebaseEnSitio(){
++            final long tRebase = Perfil.t();
+             try{
+                 if(actual == null || !Streamer.activo){ viajando = false; Carga.ocultar(); return; }
+                 final int tam = Streamer.meta.tam, n = Streamer.nch;
+@@ -3303,15 +3382,15 @@
+                 Streamer.jugadorY -= dy;
+                 final int pcx = Mathf.clamp((int)Streamer.jugadorX / TAM_CHUNK, 0, n - 1), pcy = Mathf.clamp((int)Streamer.jugadorY / TAM_CHUNK, 0, n - 1);
+                 job.pcx = pcx; job.pcy = pcy;
+-                Integer[] orden = new Integer[n * n];
+-                for(int k = 0; k < orden.length; k++) orden[k] = k;
+-                java.util.Arrays.sort(orden, (a, b) -> {
+-                    int da = (a % n - pcx) * (a % n - pcx) + (a / n - pcy) * (a / n - pcy);
+-                    int db = (b % n - pcx) * (b % n - pcx) + (b / n - pcy) * (b / n - pcy);
+-                    return Integer.compare(da, db);
+-                });
+-                job.orden = new int[orden.length];
+-                for(int k = 0; k < orden.length; k++) job.orden[k] = orden[k];
++                // orden del más cercano al jugador al más lejano: clave = (distancia² << 20) | índice, sin boxing (n*n < 2^20)
++                long[] claves = new long[n * n];
++                for(int k = 0; k < claves.length; k++){
++                    long dxk = k % n - pcx, dyk = k / n - pcy;
++                    claves[k] = ((dxk * dxk + dyk * dyk) << 20) | k;
++                }
++                java.util.Arrays.sort(claves);
++                job.orden = new int[claves.length];
++                for(int k = 0; k < claves.length; k++) job.orden[k] = (int)(claves[k] & 0xfffffL);
+                 Streamer.datosPendientes = d;
+                 Streamer.rebaseEnSitio = true;
+                 rebase = job;
+@@ -3319,6 +3398,7 @@
+                 // 6) lo que se VE se copia ahora, en este mismo fotograma: el render nunca dibuja terreno viejo en coordenadas nuevas.
+                 //    (Los visibles salen de la caché: acaban de generarse alrededor del jugador, dentro de la ventana anterior.)
+                 comprometerVisible(job);
++                Perfil.evento("rebaseEnSitio (fotograma de reubicación)", tRebase);
+             }catch(Throwable t){
+                 Log.err("[MundoInfinito] Error al reubicar la ventana", t);
+                 Carga.ocultar();
+@@ -3346,7 +3426,10 @@
+                     for(int dx = -1; dx <= 1; dx++) encolarEntidades(j, cx + dx, cy + dy);
+                 }
+             }
+-            while(!j.pend.isEmpty()) restaurarEdificio(j.pend.pollFirst());
++            // Antes: while(!pend.isEmpty()) restaurar... = todos los edificios visibles en UN fotograma (decenas de ms con una base
++            // grande: el congelamiento al reubicar). Ahora hay un tope; el resto sigue en avanzarRebase(), que atiende 'pend' primero.
++            final long fin = System.nanoTime() + 5_000_000L;
++            while(!j.pend.isEmpty() && System.nanoTime() < fin) restaurarEdificio(j.pend.pollFirst());
+         }
+     }
+ 
+diff -ruN orig/src/mundoinfinito/Perfil.java MindustryOpenWorldTest-main/src/mundoinfinito/Perfil.java
+--- orig/src/mundoinfinito/Perfil.java	1970-01-01 00:00:00.000000000 +0000
++++ MindustryOpenWorldTest-main/src/mundoinfinito/Perfil.java	2026-10-12 02:05:05.639443099 +0000
+@@ -0,0 +1,118 @@
++package mundoinfinito;
++
++import arc.Core;
++import arc.util.Log;
++
++/**
++ * PERFILADOR DE TIRONES. El log de logcat de Android no dice NADA de lo que pasa dentro del mod (Choreographer solo avisa de
++ * tirones de más de ~0,5 s), así que aquí se mide el hilo del juego por secciones y se escribe una línea cuando algo se pasa:
++ *
++ *   [Perfil] tick 41.2 ms (fotograma 58.0 ms) | bases=33.1 aplicar=4.0 ausencia=2.5 | heap 71 MB
++ *
++ * Uso (sin asignaciones en régimen):   long t = Perfil.t();  ...trabajo...;  Perfil.fin(Perfil.S_BASES, t);
++ * Los eventos de una sola vez (reubicar, guardar, hibernar) se miden con Perfil.evento("nombre", t).
++ * Busca "[Perfil]" en el log: el orden de las secciones (de mayor a menor) indica qué causa cada congelamiento.
++ */
++final class Perfil{
++    static final int S_ESCANEO = 0, S_ESTRUCTURAS = 1, S_BASES = 2, S_AUSENCIA = 3, S_MAPA = 4, S_VENTANA = 5, S_APLICAR = 6,
++        S_PEDIR = 7, S_GUARDAR = 8, S_REBASE = 9, S_RENDER_ACTUALIZAR = 10, S_RENDER_DIBUJO = 11, S_RESTAURAR = 12;
++    private static final String[] NOMBRES = {
++        "escaneo", "estructuras", "bases", "ausencia", "minimapa", "ventana", "aplicar", "pedir", "guardar", "rebase",
++        "render-act", "render-dibujo", "restaurar"
++    };
++    private static final int N = NOMBRES.length;
++
++    /** Un tick del mod que tarde más que esto se escribe en el log. */
++    static final long UMBRAL_TICK_NS = 8_000_000L;
++    /** Un fotograma real más lento que esto (s) también se escribe, aunque el mod no sea el culpable. */
++    static final float UMBRAL_FOTOGRAMA_S = 0.045f;
++    /** Un evento puntual más lento que esto se escribe siempre. */
++    static final long UMBRAL_EVENTO_NS = 4_000_000L;
++
++    static boolean activo = true;
++
++    private static final long[] acum = new long[N];
++    private static long ultimoLog;
++    private static int cuadros;
++    // peor tick de la ventana de ~15 s, para el resumen
++    private static long peorNs;
++    private static String peorTexto = "";
++    private static int tiradas;
++
++    private Perfil(){}
++
++    static long t(){
++        return System.nanoTime();
++    }
++
++    static void fin(int seccion, long t0){
++        acum[seccion] += System.nanoTime() - t0;
++    }
++
++    /** Cierra el fotograma del mod: escribe una línea si hubo tirón y reinicia los contadores. Llamar una vez por tick. */
++    static void cierre(){
++        if(!activo){
++            java.util.Arrays.fill(acum, 0L);
++            return;
++        }
++        cuadros++;
++        long total = 0L;
++        for(int i = 0; i < N; i++) total += acum[i];
++        float dt = Core.graphics == null ? 0f : Core.graphics.getDeltaTime();
++        boolean lento = total >= UMBRAL_TICK_NS || dt >= UMBRAL_FOTOGRAMA_S;
++
++        if(lento || total > peorNs){
++            String texto = descripcion(total, dt);
++            if(total > peorNs){
++                peorNs = total;
++                peorTexto = texto;
++            }
++            long ahora = System.nanoTime();
++            // máximo ~2 líneas por segundo, salvo tirones grandes (>25 ms), que se escriben siempre
++            if(lento && (total >= 25_000_000L || ahora - ultimoLog > 500_000_000L)){
++                ultimoLog = ahora;
++                tiradas++;
++                Log.info("[Perfil] @", texto);
++            }
++        }
++        if(cuadros >= 900){
++            Log.info("[Perfil] resumen 15 s: peor tick del mod = @ | tirones escritos = @", peorTexto.isEmpty() ? "ninguno" : peorTexto, tiradas);
++            cuadros = 0;
++            peorNs = 0L;
++            peorTexto = "";
++            tiradas = 0;
++        }
++        java.util.Arrays.fill(acum, 0L);
++    }
++
++    private static String descripcion(long total, float dt){
++        StringBuilder sb = new StringBuilder(160);
++        sb.append("tick ").append(ms(total)).append(" ms (fotograma ").append(ms((long)(dt * 1_000_000_000f))).append(" ms) |");
++        // secciones de mayor a menor, solo las que pesan algo
++        boolean[] usada = new boolean[N];
++        for(int k = 0; k < 4; k++){
++            int mejor = -1;
++            for(int i = 0; i < N; i++) if(!usada[i] && acum[i] >= 500_000L && (mejor < 0 || acum[i] > acum[mejor])) mejor = i;
++            if(mejor < 0) break;
++            usada[mejor] = true;
++            sb.append(' ').append(NOMBRES[mejor]).append('=').append(ms(acum[mejor]));
++        }
++        Runtime rt = Runtime.getRuntime();
++        sb.append(" | heap ").append((rt.totalMemory() - rt.freeMemory()) >> 20).append(" MB");
++        sb.append(" | listos=").append(MundoInfinitoMod.Streamer.listos.size());
++        sb.append(" solicitados=").append(MundoInfinitoMod.Streamer.solicitados.size);
++        return sb.toString();
++    }
++
++    private static String ms(long ns){
++        long d = ns / 100_000L;   // décimas de ms
++        return (d / 10) + "." + (d % 10);
++    }
++
++    /** Evento puntual (hibernar una base, reubicar la ventana, guardar...). Se escribe si tardó más que el umbral. */
++    static void evento(String nombre, long t0){
++        if(!activo) return;
++        long dt = System.nanoTime() - t0;
++        if(dt >= UMBRAL_EVENTO_NS) Log.info("[Perfil] evento @: @ ms", nombre, ms(dt));
++    }
++}
+diff -ruN orig/src/mundoinfinito/Presupuesto.java MindustryOpenWorldTest-main/src/mundoinfinito/Presupuesto.java
+--- orig/src/mundoinfinito/Presupuesto.java	1970-01-01 00:00:00.000000000 +0000
++++ MindustryOpenWorldTest-main/src/mundoinfinito/Presupuesto.java	2026-10-12 02:05:14.207443609 +0000
+@@ -0,0 +1,45 @@
++package mundoinfinito;
++
++import arc.Core;
++
++/**
++ * PRESUPUESTO DE TIEMPO COMPARTIDO.
++ *
++ * Antes cada sistema (estructuras 1,5 ms, bases 1,5 ms, ausencia 2,5 ms, ventana hasta 2,5 ms, terreno 0,9 ms...) tenía su
++ * propio tope, y cuando coincidían (p. ej. al VOLVER a una base grande: despertar + poner al día + terreno) se SUMABAN, hasta
++ * ~9 ms por fotograma en el hilo del juego: justo el congelamiento al ir/volver a ciertos chunks.
++ *
++ * Ahora hay UN reparto por fotograma (como el límite de tiempo por paso del servidor de Luanti): cada sistema pide su porción
++ * y recibe como máximo lo que quede, con un mínimo para que NADIE se muera de hambre (el trabajo siempre avanza un poco).
++ * El reparto se encoge solo si el juego va justo de FPS y crece un poco si va sobrado.
++ */
++final class Presupuesto{
++    /** Lo mínimo que siempre se concede a un sistema aunque el reparto ya se haya gastado. */
++    static final long MINIMO_NS = 250_000L;
++
++    private static long fin;
++
++    private Presupuesto(){}
++
++    /** Total del fotograma según lo bien que vaya el juego. */
++    static long total(){
++        float dt = Core.graphics == null ? 0.016f : Core.graphics.getDeltaTime();
++        if(dt > 0.050f) return 2_000_000L;   // < 20 FPS: lo imprescindible
++        if(dt > 0.033f) return 3_000_000L;   // < 30 FPS
++        if(dt > 0.022f) return 4_000_000L;   // < 45 FPS
++        return 5_000_000L;                   // va sobrado
++    }
++
++    /** Llamar una vez al principio del tick, antes de repartir. */
++    static void abrir(){
++        fin = System.nanoTime() + total();
++    }
++
++    /** Instante límite para un sistema que quiere como máximo 'maxNs': lo que quede del reparto, nunca menos que el mínimo. */
++    static long hasta(long maxNs){
++        long ahora = System.nanoTime();
++        long resta = fin - ahora;
++        long dame = Math.min(maxNs, Math.max(resta, MINIMO_NS));
++        return ahora + dame;
++    }
++}

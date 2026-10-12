@@ -366,8 +366,10 @@ final class Mapa{
         sincronizar();
         actualizarNucleos();
         int hechos = 0;
+        // con el juego lento (< ~30 FPS) solo una fotografía por fotograma: cada una lee 1024 casillas
+        final int tope = arc.Core.graphics != null && arc.Core.graphics.getDeltaTime() > 0.033f ? 1 : 2;
         // 1) los que faltan
-        for(int i = 0; i < anillo.size && hechos < 2; i++){
+        for(int i = 0; i < anillo.size && hechos < tope; i++){
             int cx = pcx + anillo.get(i)[0], cy = pcy + anillo.get(i)[1];
             if(!Streamer.enMapa(cx, cy) || !Streamer.generados.contains(Streamer.clave(cx, cy))) continue;
             if(get(Coord.vcx(cx), Coord.vcy(cy)) != null) continue;
@@ -376,7 +378,7 @@ final class Mapa{
             hechos++;
         }
         // 2) refresco en rueda
-        for(int k = 0; k < 2 && hechos < 2; k++){
+        for(int k = 0; k < 2 && hechos < tope; k++){
             int[] d = anillo.get(cursor++ % anillo.size);
             int cx = pcx + d[0], cy = pcy + d[1];
             if(!Streamer.enMapa(cx, cy) || !Streamer.generados.contains(Streamer.clave(cx, cy))) continue;

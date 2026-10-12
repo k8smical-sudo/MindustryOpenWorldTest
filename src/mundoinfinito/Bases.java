@@ -50,6 +50,37 @@ final class Bases{
     static Dorm enCurso;
     static long ultimaDormida;
 
+    /**
+     * Hibernación POR TROZOS. Antes dormir() serializaba TODOS los edificios de la estructura y los quitaba del mundo en UN
+     * fotograma (cientos de Reg.desde + setAir: decenas de ms = el congelamiento al alejarse de una base), y cada 0,5 s se
+     * recorrían todos los edificios enemigos calculando su estructura por ruido. Ahora:
+     *   escaneo: reparte el recorrido por fotogramas (pocos edificios cada vez);
+     *   fase A:  serializa los edificios dentro del presupuesto del fotograma (el mundo NO cambia; si el jugador vuelve, se cancela);
+     *   confirmar: anota la estructura en el almacén (barato) y marca sus chunks como dormidos;
+     *   fase C:  quita los edificios del mundo dentro del presupuesto del fotograma.
+     */
+    static final class Hib{
+        long id;
+        int cx, cy, radio;
+        Seq<Building> edificios;
+        final Seq<Building> vivos = new Seq<>();
+        final Seq<Reg> regs = new Seq<>();
+        int idx, idxRetirar, espera;
+        Dorm dorm;   // != null: ya confirmada, solo falta retirarla del mundo
+    }
+    static Hib hib;
+
+    // escaneo repartido en fotogramas
+    static Seq<Building> escLista;
+    static int escI;
+    static HashMap<Long, Seq<Building>> escGrupos;
+    static HashMap<Long, int[]> escDatos;
+    static int escSd;
+    static Spawn escSp;
+    static long escFin;
+    static boolean puedeEscanear;
+    static final int[] escCen = new int[3], escEst = new int[5];
+
     private Bases(){}
 
     /** Mundo nuevo / continuar / cambio de dimensión. */
@@ -59,11 +90,23 @@ final class Bases{
         pend.clear();
         unidadesPend.clear();
         enCurso = null;
+        hib = null;
+        reiniciarEscaneo();
+        puedeEscanear = false;
+    }
+
+    private static void reiniciarEscaneo(){
+        escLista = null;
+        escGrupos = null;
+        escDatos = null;
     }
 
     /** Al mover la ventana las claves virtuales siguen valiendo: no hay nada que rehacer. */
     static void reiniciarVentana(){
         // Lo que estaba a medio despertar (cola en coordenadas virtuales) sigue siendo válido; se retoma solo.
+        // Lo que estaba a medio hibernar SIN confirmar usa coordenadas locales de la ventana vieja: se descarta (nada cambió en el mundo).
+        if(hib != null && hib.dorm == null) hib = null;
+        reiniciarEscaneo();
     }
 
     static boolean dormida(long vk){
@@ -72,7 +115,7 @@ final class Bases{
 
     /** ¿Hay estructuras despertando? Entonces no se reubica la ventana ni se guarda. */
     static boolean ocupada(){
-        return enCurso != null || !pend.isEmpty() || !unidadesPend.isEmpty();
+        return enCurso != null || !pend.isEmpty() || !unidadesPend.isEmpty() || (hib != null && hib.dorm != null);
     }
 
     // ---------------------------------------------------------------- utilidades
@@ -109,95 +152,155 @@ final class Bases{
 
     // ---------------------------------------------------------------- ciclo (cada ~0,5 s)
     static void tick(){
+        puedeEscanear = false;
         Meta m = Streamer.meta;
         if(m == null || !m.dimensional() || !Streamer.activo || Streamer.restaurando || Mundos.rebase != null || Mundos.viajando) return;
+        puedeEscanear = false;
         if(!Estructuras.cola.isEmpty() || !Estructuras.enCola.isEmpty()) return;
         despertarCercanas();
         if(enCurso != null) return;     // una cosa a la vez
-        dormirLejanas(m);
+        puedeEscanear = true;           // el escaneo y la hibernación avanzan por trozos en procesar()
     }
 
-    private static void dormirLejanas(Meta m){
-        int sd = Muestreo.semDim(m.semilla, m.dim);
-        Spawn sp = Muestreo.spawn(sd, m.dim);
-        int[] cen = new int[3], est = new int[5];
-        HashMap<Long, Seq<Building>> grupos = new HashMap<>();
-        HashMap<Long, int[]> datos = new HashMap<>();
-        for(Team eq : new Team[]{Team.crux, Team.malis, Team.derelict}){
-            for(Building b : Vars.state.teams.get(eq).buildings){
-                if(!b.isValid() || b.tile == null || b.tile.build != b) continue;
-                double vx = Coord.virtualX(b.x), vy = Coord.virtualY(b.y);
-                if(!estructuraDe(sd, sp, vx, vy, est, cen)) continue;
-                long id = Estructuras.clave(est[3], est[4], 0);
-                if(!Estructuras.colocadas.contains(id)) continue;       // aún no está terminada
-                if(cerca(est[0], est[1], 2)) continue;                  // histéresis: duerme 2 chunks más lejos de lo que despierta
-                Seq<Building> g = grupos.get(id);
-                if(g == null){ g = new Seq<>(); grupos.put(id, g); datos.put(id, new int[]{est[0], est[1], est[2]}); }
-                g.add(b);
-            }
+    /**
+     * Recorre los edificios enemigos/abandonados A TROZOS (una porción de tiempo por fotograma) y, al terminar la vuelta, empieza a
+     * hibernar la primera estructura terminada y lejana. Un ciclo completo como máximo por segundo.
+     */
+    private static void escanearLejanas(Meta m, long finNs){
+        if(escLista == null){
+            if(System.nanoTime() - escFin < 1_000_000_000L) return;
+            escLista = new Seq<>();
+            for(Team eq : new Team[]{Team.crux, Team.malis, Team.derelict}) escLista.addAll(Vars.state.teams.get(eq).buildings);
+            escI = 0;
+            escGrupos = new HashMap<>();
+            escDatos = new HashMap<>();
+            escSd = Muestreo.semDim(m.semilla, m.dim);
+            escSp = Muestreo.spawn(escSd, m.dim);
         }
+        int hechos = 0;
+        while(escI < escLista.size){
+            if((++hechos & 7) == 0 && System.nanoTime() >= finNs) return;   // sigue en el próximo fotograma
+            Building b = escLista.get(escI++);
+            if(!b.isValid() || b.tile == null || b.tile.build != b) continue;
+            double vx = Coord.virtualX(b.x), vy = Coord.virtualY(b.y);
+            if(!estructuraDe(escSd, escSp, vx, vy, escEst, escCen)) continue;
+            long id = Estructuras.clave(escEst[3], escEst[4], 0);
+            if(!Estructuras.colocadas.contains(id)) continue;       // aún no está terminada
+            if(cerca(escEst[0], escEst[1], 2)) continue;            // histéresis: duerme 2 chunks más lejos de lo que despierta
+            Seq<Building> g = escGrupos.get(id);
+            if(g == null){ g = new Seq<>(); escGrupos.put(id, g); escDatos.put(id, new int[]{escEst[0], escEst[1], escEst[2]}); }
+            g.add(b);
+        }
+        // vuelta completa
+        HashMap<Long, Seq<Building>> grupos = escGrupos;
+        HashMap<Long, int[]> datos = escDatos;
+        reiniciarEscaneo();
+        escFin = System.nanoTime();
         for(java.util.Map.Entry<Long, Seq<Building>> e : grupos.entrySet()){
             if(dormidas.containsKey(e.getKey())) continue;
             int[] c = datos.get(e.getKey());
-            dormir(e.getKey(), c[0], c[1], c[2], e.getValue());
-            return;   // una por ciclo
+            empezarHibernacion(e.getKey(), c[0], c[1], c[2], e.getValue());
+            return;   // una por vuelta
         }
     }
 
-    /** Guarda la estructura entera en el almacén y la quita del mundo. */
-    private static void dormir(long id, int cx, int cy, int radio, Seq<Building> edificios){
+    private static void empezarHibernacion(long id, int cx, int cy, int radio, Seq<Building> edificios){
+        Hib h = new Hib();
+        h.id = id; h.cx = cx; h.cy = cy; h.radio = radio;
+        h.edificios = edificios;
+        hib = h;
+    }
+
+    /** Avanza la hibernación en curso (fases A y C) dentro del presupuesto del fotograma. */
+    private static void avanzarHibernacion(long finNs){
+        Hib h = hib;
+        if(h == null) return;
         try{
-            Dorm d = new Dorm();
-            d.id = id; d.vx = cx; d.vy = cy; d.radio = radio;
-            double ahora = Mundos.reloj();
-            // 1) edificios -> chunk donde está cada uno. Antes se borra lo enemigo que ya hubiera en esos chunks (la copia de un
-            //    guardado anterior), para no duplicarlo al despertar.
-            HashSet<Long> tocados = new HashSet<>();
-            Seq<Reg> regs = new Seq<>();
-            for(Building b : edificios){
-                Reg r = Reg.desde(b, Streamer.ox, Streamer.oy);
-                regs.add(r);
-                tocados.add(claveChunk(r.x, r.y));
+            if(h.dorm == null){
+                // fase A: serializar. El mundo no cambia, así que si el jugador vuelve se cancela sin consecuencias.
+                if(cerca(h.cx, h.cy, 1) || Streamer.restaurando || Mundos.rebase != null || Mundos.viajando){ hib = null; return; }
+                int n = 0;
+                while(h.idx < h.edificios.size){
+                    if((++n & 3) == 0 && System.nanoTime() >= finNs) break;
+                    Building b = h.edificios.get(h.idx++);
+                    if(!b.isValid() || b.tile == null || b.tile.build != b) continue;
+                    h.regs.add(Reg.desde(b, Streamer.ox, Streamer.oy));
+                    h.vivos.add(b);
+                }
+                if(h.idx < h.edificios.size) return;
+                if(!confirmarHibernacion(h)){
+                    if(++h.espera > 600) hib = null;   // las regiones de disco tardan demasiado: se vuelve a intentar en otro ciclo
+                    return;
+                }
             }
-            // 2) guardias de la casa de esta base
-            Seq<Unit> guardias = new Seq<>();
-            for(Unit u : Groups.unit){
-                if(!u.isValid() || !(u.controller() instanceof Estructuras.Guardia)) continue;
-                Estructuras.Guardia g = (Estructuras.Guardia)u.controller();
-                if(Math.hypot(g.hvx - cx, g.hvy - cy) > 3.0) continue;
-                guardias.add(u);
-                tocados.add(claveChunk((int)Math.floor(Coord.virtualX(u.x)), (int)Math.floor(Coord.virtualY(u.y))));
-            }
-            for(long vk : tocados){
-                Regiones.ChunkGuardado cg = Regiones.chunk(Coord.vcxDeClave(vk), Coord.vcyDeClave(vk), true);
-                for(int i = cg.edificios.size - 1; i >= 0; i--) if(cg.edificios.get(i).equipo != Team.sharded.id) cg.edificios.remove(i);
-                for(int i = cg.unidades.size - 1; i >= 0; i--) if(cg.unidades.get(i).clase == 0) cg.unidades.remove(i);
-                cg.tick = ahora;
-            }
-            for(Reg r : regs) Regiones.chunk(Math.floorDiv(r.x, MundoInfinitoMod.TAM_CHUNK), Math.floorDiv(r.y, MundoInfinitoMod.TAM_CHUNK), true).edificios.add(r);
-            for(Unit u : guardias){
-                Estructuras.RegU ru = Estructuras.RegU.desde(u, Streamer.ox, Streamer.oy);
-                Regiones.chunk(Math.floorDiv((int)Math.floor(ru.vx), MundoInfinitoMod.TAM_CHUNK), Math.floorDiv((int)Math.floor(ru.vy), MundoInfinitoMod.TAM_CHUNK), true).unidades.add(ru);
-            }
-            // 3) marcar los chunks como dormidos ANTES de quitar nada
-            d.chunks.addAll(tocados);
-            for(long vk : d.chunks) chunksDormidos.merge(vk, 1, Integer::sum);
-            dormidas.put(id, d);
-            // 4) quitar del mundo
-            for(Unit u : guardias) u.remove();
-            Seq<Building> copia = new Seq<>(edificios);
-            for(Building b : copia){
+            // fase C: quitar del mundo, por trozos
+            int n = 0;
+            while(h.idxRetirar < h.vivos.size){
+                if((++n & 3) == 0 && System.nanoTime() >= finNs) return;
+                Building b = h.vivos.get(h.idxRetirar++);
                 if(b.tile != null && b.tile.build == b) b.tile.setAir();
             }
+            hib = null;
             ultimaDormida = System.nanoTime();
         }catch(Throwable t){
             Log.err("[MundoInfinito] No se pudo hibernar una estructura", t);
+            hib = null;
         }
+    }
+
+    /**
+     * Anota la estructura en el almacén y marca sus chunks como dormidos (barato). @return false si alguna región de disco aún no
+     * está en memoria: leerla aquí (hilo del juego) congelaría el juego, así que se pide la lectura y se reintenta en el siguiente fotograma.
+     */
+    private static boolean confirmarHibernacion(Hib h){
+        long t0 = Perfil.t();
+        HashSet<Long> tocados = new HashSet<>();
+        for(Reg r : h.regs) tocados.add(claveChunk(r.x, r.y));
+        // guardias de la casa de esta base
+        Seq<Unit> guardias = new Seq<>();
+        for(Unit u : Groups.unit){
+            if(!u.isValid() || !(u.controller() instanceof Estructuras.Guardia)) continue;
+            Estructuras.Guardia g = (Estructuras.Guardia)u.controller();
+            if(Math.hypot(g.hvx - h.cx, g.hvy - h.cy) > 3.0) continue;
+            guardias.add(u);
+            tocados.add(claveChunk((int)Math.floor(Coord.virtualX(u.x)), (int)Math.floor(Coord.virtualY(u.y))));
+        }
+        boolean listas = true;
+        for(long vk : tocados){
+            if(!Regiones.lista(Coord.vcxDeClave(vk), Coord.vcyDeClave(vk))) listas = false;   // sin cortocircuito: lanza todas las lecturas
+        }
+        if(!listas) return false;
+
+        Dorm d = new Dorm();
+        d.id = h.id; d.vx = h.cx; d.vy = h.cy; d.radio = h.radio;
+        double ahora = Mundos.reloj();
+        // 1) antes se borra lo enemigo que ya hubiera en esos chunks (la copia de un guardado anterior), para no duplicarlo al despertar
+        for(long vk : tocados){
+            Regiones.ChunkGuardado cg = Regiones.chunk(Coord.vcxDeClave(vk), Coord.vcyDeClave(vk), true);
+            for(int i = cg.edificios.size - 1; i >= 0; i--) if(cg.edificios.get(i).equipo != Team.sharded.id) cg.edificios.remove(i);
+            for(int i = cg.unidades.size - 1; i >= 0; i--) if(cg.unidades.get(i).clase == 0) cg.unidades.remove(i);
+            cg.tick = ahora;
+        }
+        for(Reg r : h.regs) Regiones.chunk(Math.floorDiv(r.x, MundoInfinitoMod.TAM_CHUNK), Math.floorDiv(r.y, MundoInfinitoMod.TAM_CHUNK), true).edificios.add(r);
+        for(Unit u : guardias){
+            Estructuras.RegU ru = Estructuras.RegU.desde(u, Streamer.ox, Streamer.oy);
+            Regiones.chunk(Math.floorDiv((int)Math.floor(ru.vx), MundoInfinitoMod.TAM_CHUNK), Math.floorDiv((int)Math.floor(ru.vy), MundoInfinitoMod.TAM_CHUNK), true).unidades.add(ru);
+        }
+        // 2) marcar los chunks como dormidos ANTES de quitar nada
+        d.chunks.addAll(tocados);
+        for(long vk : d.chunks) chunksDormidos.merge(vk, 1, Integer::sum);
+        dormidas.put(h.id, d);
+        // 3) los guardias salen ya (pocos); los edificios, por trozos en la fase C
+        for(Unit u : guardias) u.remove();
+        h.dorm = d;
+        Perfil.evento("hibernar: confirmar", t0);
+        return true;
     }
 
     private static void despertarCercanas(){
         if(enCurso != null) return;
         for(Dorm d : dormidas.values()){
+            if(hib != null && hib.dorm == d) continue;   // todavía se está retirando del mundo: primero termina de dormir
             if(!cerca(d.vx, d.vy, 0)) continue;
             if(!Estructuras.listo((int)d.vx, (int)d.vy, d.radio + 4)) continue;   // el terreno de su huella aún no está generado
             despertar(d);
@@ -223,7 +326,12 @@ final class Bases{
 
     /** Coloca las piezas pendientes dentro del presupuesto del fotograma. */
     static void procesar(long finNs){
-        if(enCurso == null) return;
+        if(enCurso == null){
+            // sin nada que despertar: hibernación y escaneo por trozos
+            if(hib != null) avanzarHibernacion(finNs);
+            else if(puedeEscanear && Streamer.meta != null) escanearLejanas(Streamer.meta, finNs);
+            return;
+        }
         while(System.nanoTime() < finNs && !pend.isEmpty()) Mundos.restaurarEdificio(pend.pollFirst());
         if(!pend.isEmpty()) return;
         // enlaces entre edificios (nodos, puentes...) ya con todo colocado

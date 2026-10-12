@@ -1,5 +1,6 @@
 package mundoinfinito;
 
+import arc.func.Prov;
 import arc.util.Log;
 
 import java.io.File;
@@ -26,7 +27,8 @@ import java.util.zip.GZIPOutputStream;
 final class Disco{
     private static final class Tarea{
         File destino;
-        byte[] datos;     // null = borrar
+        byte[] datos;     // null = borrar (salvo que haya 'fuente')
+        Prov<byte[]> fuente;   // si no es null, los datos se generan AQUÍ, en el hilo de E/S (null devuelto = borrar)
         boolean gzip;
     }
 
@@ -52,6 +54,19 @@ final class Disco{
         Tarea t = new Tarea();
         t.destino = destino;
         t.datos = datos;
+        t.gzip = gzip;
+        synchronized(lock){
+            if(escrituras.put(destino.getPath(), t) != null) coalescidos++;
+            asegurarHilo();
+            lock.notifyAll();
+        }
+    }
+
+    /** Como escribir(), pero los bytes los produce 'fuente' en el hilo de E/S: el hilo del juego solo entrega una instantánea. */
+    static void escribirDiferido(File destino, Prov<byte[]> fuente, boolean gzip){
+        Tarea t = new Tarea();
+        t.destino = destino;
+        t.fuente = fuente;
         t.gzip = gzip;
         synchronized(lock){
             if(escrituras.put(destino.getPath(), t) != null) coalescidos++;
@@ -169,10 +184,11 @@ final class Disco{
 
     private static void ejecutar(Tarea t){
         try{
-            if(t.datos == null){
+            byte[] datos = t.fuente != null ? t.fuente.get() : t.datos;
+            if(datos == null){
                 if(t.destino.exists()) t.destino.delete();
             }else{
-                escribirAtomico(t.destino, t.datos, t.gzip);
+                escribirAtomico(t.destino, datos, t.gzip);
             }
             escritos++;
         }catch(Throwable e){

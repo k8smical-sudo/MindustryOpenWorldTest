@@ -45,6 +45,10 @@ import java.util.ArrayDeque;
 final class ChunkMeshRenderer{
     /** Mallas de GPU asignadas al inicio: cada una cuesta MAX_SPRITES * 4 * 20 B ~ 480 KB. Chunks visibles simultáneos máximos. */
     static final int MALLAS = 48;
+    /** Tope al que puede crecer el pool (según la RAM de Java): con zoom alejado en el móvil se ven más de 48 chunks a la vez. */
+    private static int mallasMax = MALLAS, mallasTotal;
+    private static VertexAttribute[] atributosMalla;
+    private static short[] indicesMalla;
     static final int MAX_SPRITES = ChunkGeometryCooker.MAX_SPRITES;
     static final int CAPAS = ChunkGeometryCooker.MAX_CAPAS;
     private static final int FLOATS_SPRITE = ChunkGeometryCooker.FLOATS_SPRITE;
@@ -120,8 +124,8 @@ final class ChunkMeshRenderer{
     private static Seq<Runnable> sumergidos;
 
     private static final Blending BAJO_AGUA = new Blending(Gl.srcAlpha, Gl.oneMinusSrcAlpha, Gl.dstAlpha, Gl.oneMinusSrcAlpha);
-    private static final Runnable DIBUJAR_SUELO = () -> pasada(false);
-    private static final Runnable DIBUJAR_MUROS = () -> pasada(true);
+    private static final Runnable DIBUJAR_SUELO = () -> { long t0 = Perfil.t(); pasada(false); Perfil.fin(Perfil.S_RENDER_DIBUJO, t0); };
+    private static final Runnable DIBUJAR_MUROS = () -> { long t0 = Perfil.t(); pasada(true); Perfil.fin(Perfil.S_RENDER_DIBUJO, t0); };
 
     private ChunkMeshRenderer(){}
 
@@ -157,6 +161,9 @@ final class ChunkMeshRenderer{
             //    Los índices son los de un SpriteBatch (0,1,2, 2,3,0) y son idénticos para todas: se cargan una vez por malla.
             final VertexAttribute[] atributos = {VertexAttribute.position, VertexAttribute.color, VertexAttribute.texCoords};
             final short[] indices = new short[MAX_SPRITES * 6];
+            atributosMalla = atributos;
+            indicesMalla = indices;
+            mallasMax = Math.max(MALLAS, Math.min(96, (int)(Runtime.getRuntime().maxMemory() >> 22)));   // ~4 MB de heap por malla de margen
             for(int i = 0, v = 0; i < MAX_SPRITES; i++, v += 4){
                 int k = i * 6;
                 indices[k] = (short)v;
@@ -170,6 +177,7 @@ final class ChunkMeshRenderer{
                 Mesh m = new Mesh(false, MAX_SPRITES * 4, MAX_SPRITES * 6, atributos);   // isStatic=false: se reescribe al reciclar
                 m.setIndices(indices);
                 mallasLibres.add(m);
+                mallasTotal++;
             }
             for(int i = 0; i < MAX_VISIBLES; i++) ranurasLibres.add(new Ranura());
 
@@ -247,7 +255,9 @@ final class ChunkMeshRenderer{
         try{
             if(!vanillaApagado || fCache.get(suelo) != null) apagarVanilla();
             if(!habilitado) return;
+            final long tAct = Perfil.t();
             actualizar();
+            Perfil.fin(Perfil.S_RENDER_ACTUALIZAR, tAct);
             if(nCubiertos > 0){
                 final float z0 = Draw.z();
                 Draw.z(Layer.blockOver + 0.5f);         // sobre suelo, muros y rocas; bajo edificios, unidades y balas
@@ -364,7 +374,7 @@ final class ChunkMeshRenderer{
 
         if((cuadro % 30) == 0) reciclar();
         if((cuadro % 900) == 0){
-            Log.info("[MundoInfinito] Render chunks: @ visibles, @ dibujados, @ mallas libres, @ ranuras en uso", nVisibles, nDibujo, mallasLibres.size(), mapa.size);
+            Log.info("[MundoInfinito] Render chunks: @ visibles, @ dibujados, @ tapados en negro, @ mallas libres de @, @ ranuras en uso", nVisibles, nDibujo, nCubiertos, mallasLibres.size(), mallasTotal, mapa.size);
         }
     }
 
@@ -488,6 +498,18 @@ final class ChunkMeshRenderer{
     private static Mesh tomarMalla(){
         Mesh m = mallasLibres.poll();
         if(m != null) return m;
+        if(mallasTotal < mallasMax && atributosMalla != null){
+            // el pool se agota con el zoom alejado: crear una malla (~0,5 MB) cuesta menos que dejar chunks sin dibujar
+            try{
+                m = new Mesh(false, MAX_SPRITES * 4, MAX_SPRITES * 6, atributosMalla);
+                m.setIndices(indicesMalla);
+                mallasTotal++;
+                if(mallasTotal == MALLAS + 1 || mallasTotal == mallasMax) Log.info("[MundoInfinito] Pool de mallas ampliado a @ (máx. @)", mallasTotal, mallasMax);
+                return m;
+            }catch(Throwable t){
+                mallasMax = mallasTotal;   // sin memoria: no se intenta más
+            }
+        }
         Ranura peor = null;
         for(LongMap.Entry<Ranura> e : mapa){
             Ranura r = e.value;

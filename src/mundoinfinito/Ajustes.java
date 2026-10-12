@@ -25,13 +25,26 @@ final class Ajustes{
         return Math.max(4, MundoInfinitoMod.ventana() / MundoInfinitoMod.TAM_CHUNK / 2 - 2);
     }
 
+    /**
+     * En móvil se aplican ~120 chunks reales (radio 6) en vez de ~290 (radio 8): cada chunk son 1024 casillas escritas en el hilo
+     * del juego. Lo que se VE más allá lo dibuja el render por chunks desde la caché (no necesita casillas), como el rango de
+     * envío de Luanti frente a su rango de bloques activos. Quien ya tenga el ajuste guardado conserva su valor.
+     */
+    static int cargaPorDefecto(){
+        return Vars.mobile ? 6 : 8;
+    }
+
+    static int simPorDefecto(){
+        return Vars.mobile ? 4 : 6;
+    }
+
     static int carga(){
-        return Mathf.clamp(Core.settings.getInt(K_CARGA, Math.min(8, maxCarga())), 3, maxCarga());
+        return Mathf.clamp(Core.settings.getInt(K_CARGA, Math.min(cargaPorDefecto(), maxCarga())), 3, maxCarga());
     }
 
     /** Nunca mayor que la carga: no se puede simular lo que no está cargado. */
     static int sim(){
-        return Mathf.clamp(Core.settings.getInt(K_SIM, 6), 2, carga());
+        return Mathf.clamp(Core.settings.getInt(K_SIM, simPorDefecto()), 2, carga());
     }
 
     // ---- valores fijos (antes eran ajustes) ----
@@ -86,8 +99,8 @@ final class Ajustes{
             p.put("setting." + K_CARGA + ".name", "Distancia de chunks (carga)");
             p.put("setting." + K_SIM + ".name", "Distancia de simulación (chunks)");
             Vars.ui.settings.addCategory("OpenWorld", Icon.map, t -> {
-                t.sliderPref(K_CARGA, Math.min(8, maxCarga()), 3, maxCarga(), v -> v + " chunks (" + (v * MundoInfinitoMod.TAM_CHUNK) + " tiles, redondo)");
-                t.sliderPref(K_SIM, 6, 2, maxCarga(), v -> v + " chunks (redondo)");
+                t.sliderPref(K_CARGA, Math.min(cargaPorDefecto(), maxCarga()), 3, maxCarga(), v -> v + " chunks (" + (v * MundoInfinitoMod.TAM_CHUNK) + " tiles, redondo)");
+                t.sliderPref(K_SIM, simPorDefecto(), 2, maxCarga(), v -> v + " chunks (redondo)");
             });
         }catch(Throwable e){
             Log.err("[MundoInfinito] No se pudo crear la sección OpenWorld en Ajustes", e);

@@ -1796,21 +1796,51 @@ public class MundoInfinitoMod extends Mod{
             }
         }
 
-        static byte[] bytes(Region r){
-            if(r.chunks.isEmpty()) return null; // región vacía => se borra el archivo
+        /**
+         * Copia SUPERFICIAL (solo referencias) de un chunk guardado. Reg y RegU no se modifican una vez creados (solo se añaden o se
+         * quitan de las listas), así que el hilo de E/S puede serializarlos mientras el juego sigue mutando las listas originales.
+         */
+        static final class InstantaneaChunk{
+            int idx;
+            Reg[] edificios;
+            Estructuras.RegU[] unidades;
+            int[] niebla;
+            double tick;
+        }
+
+        /** Hilo del juego: barato (copia de referencias), sin escribir ni un byte. */
+        static java.util.ArrayList<InstantaneaChunk> instantanea(Region r){
+            java.util.ArrayList<InstantaneaChunk> lista = new java.util.ArrayList<>(r.chunks.size());
+            for(java.util.Map.Entry<Integer, ChunkGuardado> e : r.chunks.entrySet()){
+                ChunkGuardado c = e.getValue();
+                InstantaneaChunk x = new InstantaneaChunk();
+                x.idx = e.getKey();
+                x.edificios = new Reg[c.edificios.size];
+                for(int i = 0; i < x.edificios.length; i++) x.edificios[i] = c.edificios.get(i);
+                x.unidades = new Estructuras.RegU[c.unidades.size];
+                for(int i = 0; i < x.unidades.length; i++) x.unidades[i] = c.unidades.get(i);
+                x.niebla = c.niebla;   // se reemplaza entero, nunca se modifica en sitio
+                x.tick = c.tick;
+                lista.add(x);
+            }
+            return lista;
+        }
+
+        /** Serializa una instantánea (SIN comprimir: lo comprime el hilo de E/S). null = región vacía => se borra el archivo. */
+        static byte[] bytes(java.util.List<InstantaneaChunk> lista){
+            if(lista.isEmpty()) return null;
             try{
                 ByteArrayOutputStream bos = new ByteArrayOutputStream();
-                DataOutputStream out = new DataOutputStream(bos);   // sin comprimir: lo comprime el hilo de E/S
+                DataOutputStream out = new DataOutputStream(bos);
                 out.writeInt(6);
-                out.writeInt(r.chunks.size());
-                for(java.util.Map.Entry<Integer, ChunkGuardado> e : r.chunks.entrySet()){
-                    out.writeShort(e.getKey());
-                    ChunkGuardado c = e.getValue();
-                    out.writeInt(c.edificios.size);
+                out.writeInt(lista.size());
+                for(InstantaneaChunk c : lista){
+                    out.writeShort(c.idx);
+                    out.writeInt(c.edificios.length);
                     for(Reg x : c.edificios) x.escribir(out);
                     out.writeBoolean(c.niebla != null);
                     if(c.niebla != null) for(int v : c.niebla) out.writeInt(v);
-                    out.writeInt(c.unidades.size);
+                    out.writeInt(c.unidades.length);
                     for(Estructuras.RegU u : c.unidades) u.escribir(out);
                     out.writeDouble(c.tick);
                 }
@@ -1822,12 +1852,20 @@ public class MundoInfinitoMod extends Mod{
             }
         }
 
-        /** Hilo principal: serializa las regiones modificadas (rápido). La escritura a disco la hace otro hilo. */
-        static java.util.HashMap<Fi, byte[]> serializarSucias(){
-            java.util.HashMap<Fi, byte[]> r = new java.util.HashMap<>();
+        static byte[] bytes(Region r){
+            return bytes(instantanea(r));
+        }
+
+        /**
+         * Hilo principal: toma una instantánea de cada región modificada (barato). La serialización Y la escritura a disco las hace el
+         * hilo de E/S. Antes se serializaba aquí todo, en el fotograma del guardado/reubicación: decenas de ms con una base grande.
+         */
+        static java.util.HashMap<Fi, arc.func.Prov<byte[]>> serializarSucias(){
+            java.util.HashMap<Fi, arc.func.Prov<byte[]>> r = new java.util.HashMap<>();
             for(Region reg : regiones.values()){
                 if(!reg.sucia) continue;
-                r.put(archivo(reg.rx, reg.ry), bytes(reg));
+                final java.util.ArrayList<InstantaneaChunk> snap = instantanea(reg);
+                r.put(archivo(reg.rx, reg.ry), () -> bytes(snap));
                 reg.sucia = false;
             }
             return r;
@@ -2178,8 +2216,10 @@ public class MundoInfinitoMod extends Mod{
         static long presupuesto(){
             float dt = Core.graphics == null ? 0.016f : Core.graphics.getDeltaTime();
             long base = Ajustes.presupuestoNs();
-            if(dt > 0.05f) return Math.min(base, 150_000L);
-            if(dt > 0.03f) return Math.min(base, 400_000L);
+            if(dt > 0.05f) return Math.min(base, 300_000L);   // antes 150 µs: con el juego lento el terreno casi no avanzaba y se veía negro/congelado
+            if(dt > 0.03f) return Math.min(base, 550_000L);
+            // sobrado de FPS y con terreno esperando: se aprovecha (el terreno que falta es lo que más se nota)
+            if(dt < 0.0185f && !listos.isEmpty()) return base * 2L;
             return base;
         }
 
@@ -2187,6 +2227,7 @@ public class MundoInfinitoMod extends Mod{
             tickInterno();
             Mapa.vaciarColaDelJuego();   // el minimapa del juego no debe acumular los tiles que acabamos de cambiar
             Suelo.vigilarTirones();      // si hubo un tirón largo, repara la caché de suelo del renderizador
+            Perfil.cierre();             // escribe una línea [Perfil] si este fotograma se pasó de tiempo
         }
 
         static void tickInterno(){
@@ -2194,11 +2235,20 @@ public class MundoInfinitoMod extends Mod{
             if(Mundos.actual != null) Mundos.actual.reloj += Time.delta;
             Regiones.sincronizar();
 
-            if(Mundos.rebase != null){ Mundos.avanzarRebase(); Mapa.vaciarColaDelJuego(); return; }   // reubicando la ventana: el streaming espera
+            Presupuesto.abrir();   // UN reparto de tiempo por fotograma para todos los sistemas de abajo
+            if(Mundos.rebase != null){
+                long tR = Perfil.t();
+                Mundos.avanzarRebase();
+                Mapa.vaciarColaDelJuego();
+                Perfil.fin(Perfil.S_REBASE, tR);
+                return;   // reubicando la ventana: el streaming espera
+            }
 
             if(restaurando){
+                long tRes = Perfil.t();
                 long finR = System.nanoTime() + PRESUPUESTO_RESTAURAR_NS;
                 while(System.nanoTime() < finR && !colaRestaurar.isEmpty()) Mundos.restaurarEdificio(colaRestaurar.pollFirst());
+                Perfil.fin(Perfil.S_RESTAURAR, tRes);
                 if(colaRestaurar.isEmpty()){
                     restaurando = false;
                     Mundos.finalizarRestauracion();
@@ -2208,12 +2258,25 @@ public class MundoInfinitoMod extends Mod{
                 }
             }
 
-            Estructuras.procesar(System.nanoTime() + 1_500_000L);   // coloca bases y ruinas de a poco
-            Bases.procesar(System.nanoTime() + 1_500_000L);         // despierta estructuras hibernadas que el jugador volvió a acercar
-            Ausencia.tick(System.nanoTime() + 2_500_000L);          // las fábricas que estuvieron lejos se ponen al día
+            // Orden de prioridad: lo que el jugador ve (estructuras, bases) antes que lo que puede esperar (ausencia, ventana futura).
+            // Cada uno pide su máximo, pero recibe solo lo que quede del reparto del fotograma (con un mínimo para que avance siempre).
+            long tS = Perfil.t();
+            Estructuras.procesar(Presupuesto.hasta(1_500_000L));   // coloca bases y ruinas de a poco
+            Perfil.fin(Perfil.S_ESTRUCTURAS, tS);
+            tS = Perfil.t();
+            Bases.procesar(Presupuesto.hasta(1_500_000L));         // despierta/hiberna estructuras (por trozos) según la distancia al jugador
+            Perfil.fin(Perfil.S_BASES, tS);
+            tS = Perfil.t();
+            Ausencia.tick(Presupuesto.hasta(2_500_000L));          // las fábricas que estuvieron lejos se ponen al día
+            Perfil.fin(Perfil.S_AUSENCIA, tS);
+            tS = Perfil.t();
             Mapa.tick(Mathf.clamp((int)jugadorX / TAM_CHUNK, 0, nch - 1), Mathf.clamp((int)jugadorY / TAM_CHUNK, 0, nch - 1));
+            Perfil.fin(Perfil.S_MAPA, tS);
 
-            Ventana.avanzar(System.nanoTime() + Ventana.presupuesto());   // adelanta el terreno de la ventana futura, en trocitos
+            tS = Perfil.t();
+            Ventana.avanzar(Presupuesto.hasta(Ventana.presupuesto()));   // adelanta el terreno de la ventana futura, en trocitos
+            Perfil.fin(Perfil.S_VENTANA, tS);
+            tS = Perfil.t();
 
             long fin = System.nanoTime() + presupuesto();
             while(System.nanoTime() < fin){
@@ -2237,17 +2300,26 @@ public class MundoInfinitoMod extends Mod{
                 }
             }
 
+            Perfil.fin(Perfil.S_APLICAR, tS);
+
+            tS = Perfil.t();
             pedirMas();   // mantiene la tubería llena sin esperar al siguiente escaneo (antes: 5 chunks cada 0,5 s)
+            Perfil.fin(Perfil.S_PEDIR, tS);
 
             acumEscaneo += Time.delta;
             if(acumEscaneo >= 30f){
                 acumEscaneo = 0f;
+                tS = Perfil.t();
                 escanear();
+                Perfil.fin(Perfil.S_ESCANEO, tS);
             }
             acumGuardado += Time.delta;
             if(acumGuardado >= 5400f){ // ~90 s
                 acumGuardado = 0f;
+                tS = Perfil.t();
                 Mundos.guardar(false);
+                Perfil.fin(Perfil.S_GUARDAR, tS);
+                Perfil.evento("autoguardado", tS);
             }
 
             // Red de seguridad: si el jugador sigue sin unidad, reaparecerlo en su sitio (nunca en la esquina del proxy).
@@ -2956,11 +3028,16 @@ public class MundoInfinitoMod extends Mod{
                 cg.unidades.add(Estructuras.RegU.desde(u, Streamer.ox, Streamer.oy));
                 cg.tick = reloj();
             }
-            // 3) niebla explorada (si la niebla aún no existe, se conserva la anterior)
+            // 3) niebla explorada (si la niebla aún no existe, se conserva la anterior).
+            //    Recorrer los ~800 000 bits de toda la ventana costaba decenas de ms en cada guardado y reubicación; la niebla solo
+            //    cambia cerca del jugador, así que lo lejano conserva la que ya estaba en el almacén (como Luanti: solo se guardan los
+            //    bloques modificados).
+            final int pcxN = Mathf.clamp((int)Streamer.jugadorX / TAM_CHUNK, 0, n - 1), pcyN = Mathf.clamp((int)Streamer.jugadorY / TAM_CHUNK, 0, n - 1);
+            final int rNiebla = Ajustes.carga() + 3;
             for(int cy = 1; cy <= n - 2; cy++){
                 for(int cx = 1; cx <= n - 2; cx++){
                     int[] m = null;
-                    if(desc != null){
+                    if(desc != null && Ajustes.dentro(cx - pcxN, cy - pcyN, rNiebla)){
                         int[] filas = new int[32];
                         boolean alguno = false;
                         for(int ly = 0; ly < TAM_CHUNK; ly++){
@@ -2988,11 +3065,10 @@ public class MundoInfinitoMod extends Mod{
             final byte[] orbita = m.dimensional() ? Orbita.bytes() : null;
             final byte[] estructuras = m.dimensional() ? Estructuras.bytes() : null;
             final Fi fEstructuras = Almacen.archivoEstructuras(m);
-            final java.util.HashMap<Fi, byte[]> regs = Regiones.serializarSucias();
-            // Todo el acceso a disco lo hace el hilo de E/S: escritura atómica, coalescente y comprimida allí
-            for(java.util.Map.Entry<Fi, byte[]> e : regs.entrySet()){
-                if(e.getValue() == null) Disco.borrar(e.getKey().file());
-                else Disco.escribir(e.getKey().file(), e.getValue(), true);
+            final java.util.HashMap<Fi, arc.func.Prov<byte[]>> regs = Regiones.serializarSucias();
+            // Todo el acceso a disco lo hace el hilo de E/S: serialización, compresión y escritura atómica y coalescente allí
+            for(java.util.Map.Entry<Fi, arc.func.Prov<byte[]>> e : regs.entrySet()){
+                Disco.escribirDiferido(e.getKey().file(), e.getValue(), true);   // si la región quedó vacía, la fuente da null y se borra el archivo
             }
             if(estado != null) Disco.escribir(Almacen.archivoEstado(m).file(), estado, false);
             if(orbita != null) Disco.escribir(Almacen.archivoOrbita(m).file(), orbita, false);
@@ -3005,10 +3081,12 @@ public class MundoInfinitoMod extends Mod{
 
         static void guardar(boolean sincrono){
             if(actual == null || !Streamer.activo || Streamer.restaurando || rebase != null || Bases.ocupada() || Vars.world.width() < 10) return;
+            long t0 = Perfil.t();
             double[] pos = posicionVirtual();
             Datos d = Datos.capturar(pos[0], pos[1]);
             capturarEnMemoria();
             escribirAsync(d, sincrono);
+            Perfil.evento("guardar (capturar+serializar)", t0);
         }
 
         // ---------- MUNDO INFINITO: reubicar la ventana EN SITIO ----------
@@ -3211,6 +3289,7 @@ public class MundoInfinitoMod extends Mod{
          * colocar desde el almacén de regiones. Solo el borde nuevo de la ventana se genera de cero (pasivamente).
          */
         static void rebaseEnSitio(){
+            final long tRebase = Perfil.t();
             try{
                 if(actual == null || !Streamer.activo){ viajando = false; Carga.ocultar(); return; }
                 final int tam = Streamer.meta.tam, n = Streamer.nch;
@@ -3303,15 +3382,15 @@ public class MundoInfinitoMod extends Mod{
                 Streamer.jugadorY -= dy;
                 final int pcx = Mathf.clamp((int)Streamer.jugadorX / TAM_CHUNK, 0, n - 1), pcy = Mathf.clamp((int)Streamer.jugadorY / TAM_CHUNK, 0, n - 1);
                 job.pcx = pcx; job.pcy = pcy;
-                Integer[] orden = new Integer[n * n];
-                for(int k = 0; k < orden.length; k++) orden[k] = k;
-                java.util.Arrays.sort(orden, (a, b) -> {
-                    int da = (a % n - pcx) * (a % n - pcx) + (a / n - pcy) * (a / n - pcy);
-                    int db = (b % n - pcx) * (b % n - pcx) + (b / n - pcy) * (b / n - pcy);
-                    return Integer.compare(da, db);
-                });
-                job.orden = new int[orden.length];
-                for(int k = 0; k < orden.length; k++) job.orden[k] = orden[k];
+                // orden del más cercano al jugador al más lejano: clave = (distancia² << 20) | índice, sin boxing (n*n < 2^20)
+                long[] claves = new long[n * n];
+                for(int k = 0; k < claves.length; k++){
+                    long dxk = k % n - pcx, dyk = k / n - pcy;
+                    claves[k] = ((dxk * dxk + dyk * dyk) << 20) | k;
+                }
+                java.util.Arrays.sort(claves);
+                job.orden = new int[claves.length];
+                for(int k = 0; k < claves.length; k++) job.orden[k] = (int)(claves[k] & 0xfffffL);
                 Streamer.datosPendientes = d;
                 Streamer.rebaseEnSitio = true;
                 rebase = job;
@@ -3319,6 +3398,7 @@ public class MundoInfinitoMod extends Mod{
                 // 6) lo que se VE se copia ahora, en este mismo fotograma: el render nunca dibuja terreno viejo en coordenadas nuevas.
                 //    (Los visibles salen de la caché: acaban de generarse alrededor del jugador, dentro de la ventana anterior.)
                 comprometerVisible(job);
+                Perfil.evento("rebaseEnSitio (fotograma de reubicación)", tRebase);
             }catch(Throwable t){
                 Log.err("[MundoInfinito] Error al reubicar la ventana", t);
                 Carga.ocultar();
@@ -3346,7 +3426,10 @@ public class MundoInfinitoMod extends Mod{
                     for(int dx = -1; dx <= 1; dx++) encolarEntidades(j, cx + dx, cy + dy);
                 }
             }
-            while(!j.pend.isEmpty()) restaurarEdificio(j.pend.pollFirst());
+            // Antes: while(!pend.isEmpty()) restaurar... = todos los edificios visibles en UN fotograma (decenas de ms con una base
+            // grande: el congelamiento al reubicar). Ahora hay un tope; el resto sigue en avanzarRebase(), que atiende 'pend' primero.
+            final long fin = System.nanoTime() + 5_000_000L;
+            while(!j.pend.isEmpty() && System.nanoTime() < fin) restaurarEdificio(j.pend.pollFirst());
         }
     }
 

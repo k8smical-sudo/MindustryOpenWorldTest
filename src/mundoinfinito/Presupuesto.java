@@ -42,4 +42,15 @@ final class Presupuesto{
         long dame = Math.min(maxNs, Math.max(resta, MINIMO_NS));
         return ahora + dame;
     }
+
+    /**
+     * Como hasta(), pero con un PISO propio: el sistema recibe lo que quede del reparto o 'pisoNs', lo que sea mayor (sin pasar de
+     * 'maxNs'). Para trabajo que no puede quedarse sin avanzar (terreno por aplicar) pero que tampoco debe sumarse al total.
+     */
+    static long hastaConPiso(long maxNs, long pisoNs){
+        long ahora = System.nanoTime();
+        long resta = fin - ahora;
+        long dame = Math.min(maxNs, Math.max(resta, Math.max(pisoNs, MINIMO_NS)));
+        return ahora + dame;
+    }
 }

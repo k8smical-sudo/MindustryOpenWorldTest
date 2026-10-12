@@ -113,7 +113,7 @@ public class MundoInfinitoMod extends Mod{
         Events.on(StateChangeEvent.class, e -> {
             if(e.to == State.paused && Streamer.activo) Mundos.guardar(false);
         });
-        Events.on(ResetEvent.class, e -> { Streamer.activo = false; Disco.vaciar(20000); });
+        Events.on(ResetEvent.class, e -> { Streamer.activo = false; Vision.restaurar(); Disco.vaciar(20000); });
         Events.on(mindustry.game.EventType.DisposeEvent.class, e -> Disco.vaciar(20000));
     }
 
@@ -2020,6 +2020,7 @@ public class MundoInfinitoMod extends Mod{
     static final class Streamer{
         static final long PRESUPUESTO_NS = 900_000L;             // 0.9 ms por frame (se reduce solo si el FPS baja)
         static final long PRESUPUESTO_RESTAURAR_NS = 9_000_000L; // con la pantalla de carga puesta se puede gastar más
+        static final long PISO_APLICAR_NS = 450_000L;            // lo mínimo por fotograma para aplicar terreno aunque el reparto esté gastado
         static final int R_JUGADOR = 3, R_UNIDAD = 2, R_EDIFICIO = 1;
         /** Chunks "en vuelo" a la vez (cola + calculando + esperando aplicar): crece con los hilos de generación. */
         static int maxEnCola(){
@@ -2234,6 +2235,7 @@ public class MundoInfinitoMod extends Mod{
             if(!activo || !Vars.state.isPlaying()) return;
             if(Mundos.actual != null) Mundos.actual.reloj += Time.delta;
             Regiones.sincronizar();
+            Vision.tick();   // niebla activada/desactivada y radio de visión del dron, según Ajustes (cada 30 ticks)
 
             Presupuesto.abrir();   // UN reparto de tiempo por fotograma para todos los sistemas de abajo
             if(Mundos.rebase != null){
@@ -2278,7 +2280,9 @@ public class MundoInfinitoMod extends Mod{
             Perfil.fin(Perfil.S_VENTANA, tS);
             tS = Perfil.t();
 
-            long fin = System.nanoTime() + presupuesto();
+            // El terreno ahora sale del MISMO reparto del fotograma que el resto de sistemas (antes se SUMABA al total: hasta 1,8 ms
+            // extra encima de los ~5 ms ya repartidos). Mantiene un piso para que cargar nunca se quede parado.
+            long fin = Presupuesto.hastaConPiso(presupuesto(), PISO_APLICAR_NS);
             while(System.nanoTime() < fin){
                 if(actual == null){
                     actual = listos.poll();
@@ -2835,9 +2839,9 @@ public class MundoInfinitoMod extends Mod{
             r.borderDarkness = true;
             r.lighting = false;
             r.coreIncinerates = true;
-            // Niebla de campaña: lo no explorado se oculta en pantalla Y en el minimapa.
-            r.fog = true;
-            r.staticFog = true;
+            // Niebla de campaña según el ajuste del jugador (Vision la mantiene al día en vivo): lo no explorado se oculta, o se ve todo.
+            r.fog = Ajustes.niebla();
+            r.staticFog = r.fog;
             r.bannedBlocks.clear();
             if(actual != null && actual.dimensional()){
                 // Dimensión: la UI nativa de Mindustry se adapta sola al planeta (bloques por entorno, ítems ocultos del otro planeta).
@@ -3111,6 +3115,7 @@ public class MundoInfinitoMod extends Mod{
 
         static RebaseJob rebase;
         static java.lang.reflect.Field campoNiebla;
+        static float ultimoRefrescoNiebla = -1000f;
 
         /** Copia un chunk de destino desde la fotografía (solo lo que cambia: cada cambio real cuesta eventos de render). */
         static void copiarChunk(RebaseJob j, int di){
@@ -3244,8 +3249,12 @@ public class MundoInfinitoMod extends Mod{
                         return;
                     }
                 }
-                if(j.nieblaSucia){
+                // Cada refresco obliga al renderizador a recopiar TODA la niebla de la ventana a la GPU (textura entera). Antes se hacía en
+                // cada fotograma en que algún chunk traía niebla guardada: un tirón continuo durante toda la reubicación. Ahora como mucho
+                // cada ~0,5 s; el refresco final (al terminar la reubicación) deja la niebla completa.
+                if(j.nieblaSucia && Time.time - ultimoRefrescoNiebla >= 30f){
                     j.nieblaSucia = false;
+                    ultimoRefrescoNiebla = Time.time;
                     refrescarNiebla();
                 }
             }catch(Throwable t){
@@ -3258,6 +3267,7 @@ public class MundoInfinitoMod extends Mod{
         static void refrescarNiebla(){
             try{
                 if(Vars.headless || Vars.renderer == null) return;
+                if(!Vars.state.rules.fog) return;   // sin niebla no hay nada que volver a copiar a la GPU
                 if(campoNiebla == null){
                     campoNiebla = Vars.renderer.fog.getClass().getDeclaredField("lastTeam");
                     campoNiebla.setAccessible(true);

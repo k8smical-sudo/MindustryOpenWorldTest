@@ -7,16 +7,20 @@ import mindustry.Vars;
 import mindustry.gen.Icon;
 
 /**
- * AJUSTES del jugador (Ajustes -> OpenWorld). Solo quedan dos, leídos EN VIVO desde Core.settings:
+ * AJUSTES del jugador (Ajustes -> OpenWorld), leídos EN VIVO desde Core.settings:
  *
  *   distancia de carga       radio (en chunks, REDONDO) que se mantiene cargado alrededor del jugador
  *   distancia de simulación  radio (REDONDO) dentro del cual viven las unidades; más lejos duermen (ver Entidades)
+ *   niebla de guerra         activada = lo no explorado se oculta; desactivada = se ve todo lo cargado (como "fogofwar" en Mindustry v4)
+ *   visión del dron          radio (en chunks) que el dron del jugador revela a su alrededor (0 = automático: la distancia de carga)
  *
  * El resto (hilos, caché, presupuesto por frame, reubicación circular/anticipada, modo estricto) ya no es configurable: los
  * métodos se conservan con valores fijos para que el resto del mod compile sin tocarlo, y el render por chunks no los necesita.
  */
 final class Ajustes{
-    static final String K_CARGA = "ow-carga", K_SIM = "ow-sim";
+    static final String K_CARGA = "ow-carga", K_SIM = "ow-sim", K_NIEBLA = "ow-niebla", K_VISION = "ow-vision";
+    /** Con visión automática el dron nunca revela más de esto (la niebla se actualiza por cada casilla que se mueve el dron). */
+    static final int VISION_AUTO_MAX = 12;
 
     private Ajustes(){}
 
@@ -45,6 +49,27 @@ final class Ajustes{
     /** Nunca mayor que la carga: no se puede simular lo que no está cargado. */
     static int sim(){
         return Mathf.clamp(Core.settings.getInt(K_SIM, simPorDefecto()), 2, carga());
+    }
+
+    /** ¿Niebla de guerra activa? Por defecto sí (igual que el ajuste "fogofwar" de Mindustry v4). */
+    static boolean niebla(){
+        return Core.settings.getBool(K_NIEBLA, true);
+    }
+
+    /**
+     * Radio (en chunks) que revela el dron del jugador. 0 en el ajuste = automático: sigue a la distancia de carga (con tope).
+     * Nunca mayor que la carga: más allá no hay terreno aplicado que revelar (misma regla que la distancia de simulación).
+     */
+    static int visionChunks(){
+        int v = Core.settings.getInt(K_VISION, 0);
+        int max = carga();
+        if(v <= 0) return Mathf.clamp(max, 1, VISION_AUTO_MAX);
+        return Mathf.clamp(v, 1, max);
+    }
+
+    /** Lo mismo en tiles (lo que espera UnitType.fogRadius). */
+    static float visionTiles(){
+        return visionChunks() * (float)MundoInfinitoMod.TAM_CHUNK;
     }
 
     // ---- valores fijos (antes eran ajustes) ----
@@ -98,9 +123,13 @@ final class Ajustes{
             var p = Core.bundle.getProperties();
             p.put("setting." + K_CARGA + ".name", "Distancia de chunks (carga)");
             p.put("setting." + K_SIM + ".name", "Distancia de simulación (chunks)");
+            p.put("setting." + K_NIEBLA + ".name", "Niebla de guerra (ocultar lo no explorado)");
+            p.put("setting." + K_VISION + ".name", "Visión del dron (chunks que revela)");
             Vars.ui.settings.addCategory("OpenWorld", Icon.map, t -> {
                 t.sliderPref(K_CARGA, Math.min(cargaPorDefecto(), maxCarga()), 3, maxCarga(), v -> v + " chunks (" + (v * MundoInfinitoMod.TAM_CHUNK) + " tiles, redondo)");
                 t.sliderPref(K_SIM, simPorDefecto(), 2, maxCarga(), v -> v + " chunks (redondo)");
+                t.checkPref(K_NIEBLA, true);
+                t.sliderPref(K_VISION, 0, 0, maxCarga(), v -> v <= 0 ? "Automática (según la distancia de carga)" : v + " chunks (" + (v * MundoInfinitoMod.TAM_CHUNK) + " tiles)");
             });
         }catch(Throwable e){
             Log.err("[MundoInfinito] No se pudo crear la sección OpenWorld en Ajustes", e);

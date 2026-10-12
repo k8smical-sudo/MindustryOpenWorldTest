@@ -105,7 +105,8 @@ final class Ausencia{
                     continue;
                 }
                 p.resta -= PASO;
-                if((cursor & 63) == 63 && System.nanoTime() >= finNs){ cursor++; break; }
+                // se mira el reloj cada 8 edificios (antes cada 64): una fábrica pesada ya no puede pasarse varios ms del reparto
+                if((cursor & 7) == 7 && System.nanoTime() >= finNs){ cursor++; break; }
             }
             if(cursor >= n){
                 // ronda completa: avanza el reloj de los temporizadores, la red eléctrica y el contador de lo simulado

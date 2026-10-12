@@ -303,9 +303,22 @@ final class Bases{
             if(hib != null && hib.dorm == d) continue;   // todavía se está retirando del mundo: primero termina de dormir
             if(!cerca(d.vx, d.vy, 0)) continue;
             if(!Estructuras.listo((int)d.vx, (int)d.vy, d.radio + 4)) continue;   // el terreno de su huella aún no está generado
+            // despertar() lee los chunks guardados de la base con Regiones.chunk(), que LEE EL ARCHIVO en este hilo (gzip + análisis de
+            // cientos de edificios) si la región ya se descartó de RAM (Regiones.evictar) mientras el jugador estaba lejos: ese era el
+            // congelamiento al VOLVER a una base. Ahora se pide su lectura en el hilo de E/S y se espera a tenerla en memoria.
+            if(!regionesListas(d)) continue;
             despertar(d);
             return;
         }
+    }
+
+    /** ¿Están en memoria todas las regiones de disco de los chunks de esta base? Si no, lanza su lectura (sin cortocircuito). */
+    private static boolean regionesListas(Dorm d){
+        boolean listas = true;
+        for(long vk : d.chunks){
+            if(!Regiones.lista(Coord.vcxDeClave(vk), Coord.vcyDeClave(vk))) listas = false;
+        }
+        return listas;
     }
 
     private static void despertar(Dorm d){

@@ -55,7 +55,14 @@ final class ChunkMeshRenderer{
     private static final float CH = Coord.CHUNK * 8f;       // lado de un chunk en unidades de mundo (256)
 
     private static final int LIBRE = 0, SIN_DATOS = 1, COCINANDO = 2, LISTA = 3;
-    private static final int MAX_COCCIONES_FRAME = 4, MAX_SUBIDAS_FRAME = 2, MAX_TERRENO_FRAME = 8;
+    private static final int MAX_COCCIONES_FRAME = 4, MAX_SUBIDAS_FRAME = 4, MAX_TERRENO_FRAME = 8;
+    /**
+     * Tiempo máximo por fotograma subiendo mallas a la GPU (siempre se permite al menos UNA, para que cargar avance). Como el
+     * presupuesto de mallas de Luanti: lo que no cabe en el fotograma sigue en la cola de salida y se sube en el siguiente.
+     */
+    private static final long SUBIDA_NS = 1_200_000L, SUBIDA_LENTO_NS = 500_000L;
+    /** Una ranura sin verse tanto tiempo (~60 s) se libera aunque sobren ranuras; antes, ~1,5 s (volver a una zona obligaba a recocinarla). */
+    private static final int OLVIDO_FRAMES = 3600;
     private static final int MAX_VISIBLES = 512;
 
     private static final String VERT =
@@ -337,6 +344,9 @@ final class ChunkMeshRenderer{
                 r.clave = k;
                 mapa.put(k, r);
             }
+            // ¿vuelve a verse un chunk que se conservó fuera de pantalla? Entonces se revisa YA (no en su turno de 1 de cada 16
+            // fotogramas): su malla cocinada sirve tal cual salvo que haya cambiado la oscuridad o hayan llegado vecinos.
+            final boolean regreso = r.ultimoVisto < cuadro - 1;
             r.ultimoVisto = cuadro;
             r.vcx = vcx;
             r.vcy = vcy;
@@ -345,7 +355,7 @@ final class ChunkMeshRenderer{
             visibles[nVisibles++] = r;
             if(r.estado == LIBRE || r.estado == SIN_DATOS){
                 intentarCocinar(r, mid, vcx, vcy);
-            }else if(r.estado == LISTA && !r.recocinando && ((cuadro + (int)(k & 15)) & 15) == 0){
+            }else if(r.estado == LISTA && !r.recocinando && (regreso || ((cuadro + (int)(k & 15)) & 15) == 0)){
                 revisarObsoleto(r, mid, vcx, vcy);
             }
         }
@@ -460,8 +470,11 @@ final class ChunkMeshRenderer{
     // ================================================================== subida a la GPU (hilo principal, con presupuesto)
     private static void subirListos(int mid){
         int subidas = 0;
+        final long t0 = System.nanoTime();
+        final long limite = Core.graphics != null && Core.graphics.getDeltaTime() > 0.033f ? SUBIDA_LENTO_NS : SUBIDA_NS;
         Cocinado co;
-        while(subidas < MAX_SUBIDAS_FRAME && (co = ChunkGeometryCooker.recoger()) != null){
+        // siempre sube al menos una (si hay); las siguientes solo mientras quede tiempo del fotograma
+        while(subidas < MAX_SUBIDAS_FRAME && (subidas == 0 || System.nanoTime() - t0 < limite) && (co = ChunkGeometryCooker.recoger()) != null){
             final Ranura r = mapa.get(co.clave, null);
             if(r == null || co.mundo != mid){
                 ChunkGeometryCooker.liberar(co);
@@ -524,11 +537,18 @@ final class ChunkMeshRenderer{
         return m;
     }
 
-    /** Cada 30 fotogramas: los chunks que llevan ~1,5 s sin verse devuelven su malla y su ranura al pool. */
+    /**
+     * Cada 30 fotogramas. Los chunks que salen de pantalla CONSERVAN su malla ya cocinada y subida: si el jugador vuelve, se dibujan
+     * al instante en vez de recocinarse y resubirse todos a la vez (el trabajo en ráfaga al regresar a una zona ya visitada).
+     * Las mallas no se pierden por eso: cuando el pool se agota, tomarMalla() desaloja la del chunk invisible menos reciente
+     * (LRU). Aquí solo se liberan RANURAS: las muy viejas (OLVIDO_FRAMES) o, si quedan pocas libres, las que llevan ~1,5 s sin verse.
+     */
     private static void reciclar(){
+        final boolean faltanRanuras = ranurasLibres.size() < MAX_VISIBLES / 4;
+        final int umbral = faltanRanuras ? cuadro - 90 : cuadro - OLVIDO_FRAMES;
         int n = 0;
         for(LongMap.Entry<Ranura> e : mapa){
-            if(e.value.ultimoVisto < cuadro - 90 && n < porBorrar.length) porBorrar[n++] = e.key;
+            if(e.value.ultimoVisto < umbral && n < porBorrar.length) porBorrar[n++] = e.key;
         }
         for(int i = 0; i < n; i++){
             Ranura r = mapa.remove(porBorrar[i]);

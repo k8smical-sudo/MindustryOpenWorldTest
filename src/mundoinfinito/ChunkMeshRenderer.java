@@ -117,7 +117,14 @@ final class ChunkMeshRenderer{
     private static final Ranura[] visibles = new Ranura[MAX_VISIBLES];
     private static final Ranura[] dibujo = new Ranura[MAX_VISIBLES];
     private static final Ranura[] cubiertos = new Ranura[MAX_VISIBLES];
-    private static int nVisibles, nDibujo, nCubiertos, cuadro, mundoVisto = Integer.MIN_VALUE;
+    /**
+     * Chunks dentro de la ventana de tiles con la malla LISTA pero con las casillas aún sin escribir (Streamer.generados no los tiene).
+     * Antes se tapaban en negro hasta que sus casillas se aplicaban (~0,9 ms por fotograma): al moverse, el borde de la pantalla
+     * parpadeaba en negro aunque el terreno ya estuviera calculado y cocinado. Ahora se dibujan con su propia malla POR ENCIMA de lo
+     * que haya en las casillas (restos de rocas de la ventana anterior), así el terreno visible no depende de las casillas.
+     */
+    private static final Ranura[] sobrepuestos = new Ranura[MAX_VISIBLES];
+    private static int nVisibles, nDibujo, nCubiertos, nSobrepuestos, cuadro, mundoVisto = Integer.MIN_VALUE;
     private static int cocciones, terreno;
     private static final int[] lcx = new int[MAX_VISIBLES], lcy = new int[MAX_VISIBLES];
     private static final float[] ldist = new float[MAX_VISIBLES];
@@ -133,6 +140,13 @@ final class ChunkMeshRenderer{
     private static final Blending BAJO_AGUA = new Blending(Gl.srcAlpha, Gl.oneMinusSrcAlpha, Gl.dstAlpha, Gl.oneMinusSrcAlpha);
     private static final Runnable DIBUJAR_SUELO = () -> { long t0 = Perfil.t(); pasada(false); Perfil.fin(Perfil.S_RENDER_DIBUJO, t0); };
     private static final Runnable DIBUJAR_MUROS = () -> { long t0 = Perfil.t(); pasada(true); Perfil.fin(Perfil.S_RENDER_DIBUJO, t0); };
+    /** Suelo y muros de los chunks 'sobrepuestos', a la altura de la capa de cubierta (sobre rocas/props, bajo unidades y balas). */
+    private static final Runnable DIBUJAR_SOBREPUESTOS = () -> {
+        long t0 = Perfil.t();
+        pasada(false, sobrepuestos, nSobrepuestos, false);
+        pasada(true, sobrepuestos, nSobrepuestos, false);
+        Perfil.fin(Perfil.S_RENDER_DIBUJO, t0);
+    };
 
     private ChunkMeshRenderer(){}
 
@@ -245,6 +259,7 @@ final class ChunkMeshRenderer{
         vanillaApagado = false;
         vaciarTodo();
         nCubiertos = 0;
+        nSobrepuestos = 0;
         try{
             if(Vars.world != null && Vars.world.tiles != null) suelo.reload();
         }catch(Throwable t){
@@ -276,6 +291,7 @@ final class ChunkMeshRenderer{
                 Draw.color();
                 Draw.z(z0);
             }
+            if(nSobrepuestos > 0) Draw.draw(Layer.blockOver + 0.5f, DIBUJAR_SOBREPUESTOS);   // misma altura que la cubierta negra
             Draw.draw(Layer.floor, DIBUJAR_SUELO);                  // misma capa y orden que Renderer.draw()
             Draw.draw(Layer.block - 0.09f, DIBUJAR_MUROS);
         }catch(Throwable t){
@@ -311,8 +327,12 @@ final class ChunkMeshRenderer{
         final float camL = cam.position.x - hw, camR = cam.position.x + hw, camB = cam.position.y - hh, camT = cam.position.y + hh;
 
         // ---- zona de cocinado = viewport + 1 chunk de margen (el cocinado tarda 1-2 fotogramas: así no hay huecos al borde) ----
-        final int x0 = Math.floorDiv((int)Math.floor(camL - CH), (int)CH), x1 = Math.floorDiv((int)Math.floor(camR + CH), (int)CH);
-        final int y0 = Math.floorDiv((int)Math.floor(camB - CH), (int)CH), y1 = Math.floorDiv((int)Math.floor(camT + CH), (int)CH);
+        // + 1 chunk MÁS por el lado hacia el que se mueve la cámara: cocinar tarda (terreno + vecinos + cocción + subida) y a velocidad
+        // el borde de la pantalla alcanzaba a los chunks antes de que tuvieran malla.
+        final float dX = InfiniteCameraHandler.dirX, dY = InfiniteCameraHandler.dirY;
+        final int aX0 = dX < -0.3f ? 1 : 0, aX1 = dX > 0.3f ? 1 : 0, aY0 = dY < -0.3f ? 1 : 0, aY1 = dY > 0.3f ? 1 : 0;
+        final int x0 = Math.floorDiv((int)Math.floor(camL - CH), (int)CH) - aX0, x1 = Math.floorDiv((int)Math.floor(camR + CH), (int)CH) + aX1;
+        final int y0 = Math.floorDiv((int)Math.floor(camB - CH), (int)CH) - aY0, y1 = Math.floorDiv((int)Math.floor(camT + CH), (int)CH) + aY1;
         int n = 0;
         final float mx = cam.position.x, my = cam.position.y;
         for(int cy = y0; cy <= y1 && n < MAX_VISIBLES; cy++){
@@ -371,6 +391,7 @@ final class ChunkMeshRenderer{
         // ven rocas, sombras ni edificios sueltos de casillas viejas o de la reubicación. Fuera de la ventana basta con la malla.
         nDibujo = 0;
         nCubiertos = 0;
+        nSobrepuestos = 0;
         for(int i = 0; i < nVisibles; i++){
             final Ranura r = visibles[i];
             if(r.offX + CH - 4f < camL || r.offX - 4f > camR || r.offY + CH - 4f < camB || r.offY - 4f > camT) continue;
@@ -379,12 +400,13 @@ final class ChunkMeshRenderer{
             final boolean enVentana = Streamer.enMapa(lx, ly);
             final boolean aplicado = !enVentana || Streamer.generados.contains(Streamer.clave(lx, ly));
             if(listo && aplicado) dibujo[nDibujo++] = r;
-            else if(enVentana) cubiertos[nCubiertos++] = r;
+            else if(listo) sobrepuestos[nSobrepuestos++] = r;   // malla lista, casillas sin escribir: se ve su malla, sin negro
+            else if(enVentana) cubiertos[nCubiertos++] = r;     // sin malla todavía: negro (es lo único que puede quedar)
         }
 
         if((cuadro % 30) == 0) reciclar();
         if((cuadro % 900) == 0){
-            Log.info("[MundoInfinito] Render chunks: @ visibles, @ dibujados, @ tapados en negro, @ mallas libres de @, @ ranuras en uso", nVisibles, nDibujo, nCubiertos, mallasLibres.size(), mallasTotal, mapa.size);
+            Log.info("[MundoInfinito] Render chunks: @ visibles, @ dibujados, @ sobre casillas sin aplicar, @ en negro (sin malla), @ mallas libres de @, @ ranuras en uso", nVisibles, nDibujo, nSobrepuestos, nCubiertos, mallasLibres.size(), mallasTotal, mapa.size);
         }
     }
 
@@ -431,7 +453,10 @@ final class ChunkMeshRenderer{
         boolean obsoleto = oscuroDeseado(vcx, vcy) != r.oscuro;
         if(!obsoleto && r.faltantes != 0){
             for(int i = 0; i < 8 && !obsoleto; i++){
-                if((r.faltantes & (1 << i)) != 0 && CacheChunks.tiene(mid, Coord.claveVirtual(vcx + NDX[i], vcy + NDY[i]))) obsoleto = true;
+                if((r.faltantes & (1 << i)) == 0) continue;
+                final long kv = Coord.claveVirtual(vcx + NDX[i], vcy + NDY[i]);
+                if(CacheChunks.tiene(mid, kv)) obsoleto = true;
+                else if(terreno < MAX_TERRENO_FRAME && pedirTerreno(kv)) terreno++;   // antes nadie lo pedía: el chunk quedaba tapado
             }
         }
         if(obsoleto && ChunkGeometryCooker.solicitar(r.clave, mid, oscuroDeseado(vcx, vcy))){
@@ -572,8 +597,13 @@ final class ChunkMeshRenderer{
 
     /** muros = false: todas las capas de suelo (en el orden de CacheLayer.all); true: la capa de muros. */
     private static void pasada(boolean muros){
-        final boolean agua = !muros && sumergidos != null && sumergidos.size > 0;
-        if(nDibujo == 0 && !agua) return;
+        pasada(muros, dibujo, nDibujo, true);
+    }
+
+    /** principal = la pasada normal del suelo (la única que ejecuta y vacía la lista de edificios sumergidos). */
+    private static void pasada(boolean muros, Ranura[] lista, int cuenta, boolean principal){
+        final boolean agua = principal && !muros && sumergidos != null && sumergidos.size > 0;
+        if(cuenta == 0 && !agua) return;
         Draw.flush();                                   // sprites pendientes del batch de Arc antes de tocar el estado GL
         final CacheLayer[] capas = CacheLayer.all;
         for(int c = 0; c < capas.length; c++){
@@ -582,14 +612,14 @@ final class ChunkMeshRenderer{
             final int id = cl.id;
             if(id >= CAPAS) continue;
             boolean hay = false;
-            for(int i = 0; i < nDibujo && !hay; i++) hay = dibujo[i].cuenta[id] > 0;
-            final boolean sub = cl.liquid && sumergidos != null && sumergidos.size > 0;
+            for(int i = 0; i < cuenta && !hay; i++) hay = lista[i].cuenta[id] > 0;
+            final boolean sub = principal && cl.liquid && sumergidos != null && sumergidos.size > 0;
             if(!hay && !sub) continue;
 
             cl.begin();                                 // capas de líquido: abre el framebuffer del shader de agua/alquitrán...
             enlazar();
-            for(int i = 0; i < nDibujo; i++){
-                final Ranura r = dibujo[i];
+            for(int i = 0; i < cuenta; i++){
+                final Ranura r = lista[i];
                 final int cnt = r.cuenta[id];
                 if(cnt <= 0) continue;
                 shader.setUniformf("u_off", r.offX, r.offY);

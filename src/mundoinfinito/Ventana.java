@@ -45,6 +45,8 @@ final class Ventana{
     static int dcx, dcy;                 // desplazamiento en chunks (nuevo - viejo)
     static int epocaPlan;
     static boolean[] staged, descartado; // por chunk local DESTINO: terreno nuevo ya escrito / no se puede adelantar
+    /** Por chunk local DESTINO: ya se comprobó que no tiene edificios (revisarlo cuesta 1024 lecturas de casilla: se hace UNA vez por plan). */
+    static boolean[] limpio;
     static int nStaged;
     private static long[] orden = new long[1024];
     private static int nOrden, inicio, framesPeligro;
@@ -62,6 +64,7 @@ final class Ventana{
         if(staged != null){
             java.util.Arrays.fill(staged, false);
             java.util.Arrays.fill(descartado, false);
+            java.util.Arrays.fill(limpio, false);
         }
         reparar.clear();
     }
@@ -174,9 +177,11 @@ final class Ventana{
         if(staged == null || staged.length != n * n){
             staged = new boolean[n * n];
             descartado = new boolean[n * n];
+            limpio = new boolean[n * n];
         }else{
             java.util.Arrays.fill(staged, false);
             java.util.Arrays.fill(descartado, false);
+            java.util.Arrays.fill(limpio, false);
         }
         nStaged = 0;
         framesPeligro = 0;
@@ -295,14 +300,20 @@ final class Ventana{
             int cx = k % n, cy = k / n;
             if(!seguro(cx, cy)){ avanza = false; continue; }
             if(Streamer.actual != null && Streamer.actual.cx == cx && Streamer.actual.cy == cy){ avanza = false; continue; }
-            if(tieneEdificios(cx, cy)){
-                // bajo un edificio no se puede igualar el muro: ese chunk se copia al reubicar, ya sin el edificio
-                descartado[k] = true;
-                if(avanza) inicio = i + 1;
-                continue;
-            }
+            // Primero lo BARATO (¿está el terreno en caché?) y solo entonces lo caro (1024 lecturas de casilla en busca de edificios).
+            // Antes se escaneaba cada chunk candidato en cada fotograma aunque su terreno ni siquiera estuviera listo: hasta 160 chunks
+            // x 1024 casillas por fotograma mientras te acercabas al borde = «se recalcula un área cuadrada».
             long vk = Coord.claveVirtual(vcx0 + cx, vcy0 + cy);
             if(!CacheChunks.tiene(mid, vk)){ pedirTerreno(vk); avanza = false; continue; }
+            if(!limpio[k]){
+                if(tieneEdificios(cx, cy)){
+                    // bajo un edificio no se puede igualar el muro: ese chunk se copia al reubicar, ya sin el edificio
+                    descartado[k] = true;
+                    if(avanza) inicio = i + 1;
+                    continue;
+                }
+                limpio[k] = true;
+            }
             ChunkData cd = CacheChunks.copiar(mid, vk, cx, cy, Streamer.epoca);
             if(cd == null){ avanza = false; continue; }
             if(!Entidades.despejar(cx, cy)){ cd.liberar(); avanza = false; continue; }

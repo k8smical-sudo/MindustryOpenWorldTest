@@ -2433,6 +2433,8 @@ public class MundoInfinitoMod extends Mod{
          * Cerca del borde de la ventana, el terreno que quedará dentro tras reubicarla todavía es "virtual": se calcula ya, en
          * segundo plano y solo a la caché, para que al reubicar se copie en vez de calcularse (y no se vea terreno sin cargar).
          */
+        static final int PRECARGA_COLA_MAX = 48, PRECARGA_POR_ESCANEO = 16;
+
         static void precargarFuera(int pcx, int pcy){
             if(CacheChunks.maxChunks() <= 0) return;
             int dBorde = Math.min(Math.min(pcx, pcy), Math.min(nch - 1 - pcx, nch - 1 - pcy));
@@ -2440,10 +2442,13 @@ public class MundoInfinitoMod extends Mod{
             final int r = Math.max(Ajustes.carga(), rVista) + 2, mid = CacheChunks.mundo();
             final int vpx = Coord.vcx(pcx), vpy = Coord.vcy(pcy);
             synchronized(cola){
-                if(colaBaja.size() > 96) return;
+                // Ráfaga acotada: antes hasta 64 chunks nuevos por escaneo (cada 0,5 s) = un cuadrado entero de terreno a generar en los
+                // hilos de fondo, que en un móvil compite con el hilo de render por los mismos núcleos y memoria. Ahora gotea: el escaneo
+                // siguiente pide los siguientes, de dentro hacia fuera, y lo que ya está en caché se salta.
+                if(colaBaja.size() > PRECARGA_COLA_MAX) return;
                 int nuevos = 0;
-                for(int ring = 0; ring <= r && nuevos < 64; ring++){        // de dentro hacia fuera
-                    for(int dy = -ring; dy <= ring && nuevos < 64; dy++){
+                for(int ring = 0; ring <= r && nuevos < PRECARGA_POR_ESCANEO; ring++){        // de dentro hacia fuera
+                    for(int dy = -ring; dy <= ring && nuevos < PRECARGA_POR_ESCANEO; dy++){
                         for(int dx = -ring; dx <= ring; dx++){
                             if(Math.max(Math.abs(dx), Math.abs(dy)) != ring || !Ajustes.dentro(dx, dy, r)) continue;
                             int lcx = pcx + dx, lcy = pcy + dy;
@@ -3113,6 +3118,17 @@ public class MundoInfinitoMod extends Mod{
             boolean nieblaSucia;
         }
 
+        /**
+         * NÚCLEO que se escribe en el MISMO fotograma de la reubicación (radio en chunks alrededor del jugador: 1 = 3x3, lo que hace falta para
+         * que el jugador tenga suelo firme y para restaurar edificios, que exigen el chunk y sus 8 vecinos). Antes era rVista+1: el disco
+         * ENTERO que se ve en pantalla, y rVista crece con el zoom-out (hasta ~10 => ~380 chunks => ~390 000 casillas con eventos en un
+         * fotograma = la caída a 0 fps). El terreno que se VE no depende de las casillas (lo dibuja ChunkMeshRenderer desde CacheChunks);
+         * el resto del disco visible se aplica a continuación por trozos de tiempo (avanzarRebase), del más cercano al más lejano.
+         */
+        static final int R_NUCLEO_REBASE = 1;
+        /** Tope de tiempo del commit síncrono. Siempre se escribe al menos el chunk del jugador; si se agota, el resto sigue por trozos. */
+        static final long COMMIT_MAX_NS = 6_000_000L;
+
         static RebaseJob rebase;
         static java.lang.reflect.Field campoNiebla;
         static float ultimoRefrescoNiebla = -1000f;
@@ -3230,7 +3246,9 @@ public class MundoInfinitoMod extends Mod{
             RebaseJob j = rebase;
             if(j == null) return;
             try{
-                long fin = System.nanoTime() + 3_000_000L;   // lo visible ya se hizo al reubicar: el resto va de a poco, sin tirones
+                // El núcleo ya se hizo al reubicar: el resto va de a poco. La porción sale del reparto del fotograma (Presupuesto.abrir()
+                // ya se llamó en Streamer.tickInterno): con el juego justo de FPS se encoge sola, en vez de 3 ms fijos siempre.
+                long fin = Presupuesto.hasta(3_000_000L);
                 while(System.nanoTime() < fin){
                     if(!j.pend.isEmpty()){
                         restaurarEdificio(j.pend.pollFirst());
@@ -3323,7 +3341,7 @@ public class MundoInfinitoMod extends Mod{
                 int npcx = Mathf.clamp((int)njx / TAM_CHUNK, 0, n - 1), npcy = Mathf.clamp((int)njy / TAM_CHUNK, 0, n - 1);
                 final boolean circ = Ajustes.rebaseCircular();
                 final int rd = Math.max(Ajustes.carga(), Streamer.rVista) + 2;
-                final int rc = Streamer.rVista + 1;   // lo que se ve en pantalla (+1): se copia en ESTE mismo fotograma
+                final int rc = Math.min(Streamer.rVista + 1, R_NUCLEO_REBASE);   // solo el núcleo se copia en ESTE fotograma; lo demás, por trozos
                 boolean[] enDisco = new boolean[n * n], visible = new boolean[n * n];
                 for(int k = 0; k < enDisco.length; k++){
                     enDisco[k] = !circ || Ajustes.dentro(k % n - npcx, k / n - npcy, rd);
@@ -3426,19 +3444,26 @@ public class MundoInfinitoMod extends Mod{
             for(mindustry.gen.Entityc e : quitar) e.remove();
         }
 
-        /** Copia de golpe los chunks visibles (un prefijo de 'orden', que va del más cercano al más lejano) y restaura sus edificios. */
+        /**
+         * Copia el NÚCLEO (un prefijo de 'orden', que va del más cercano al más lejano) y restaura sus edificios, con tope de tiempo:
+         * el chunk del jugador siempre se escribe; los demás solo mientras quede tiempo (COMMIT_MAX_NS). Lo que no entre sigue en
+         * avanzarRebase(), en el mismo orden, por trozos de fotograma. Antes: while(visible) copiarChunk(...) sin tope.
+         */
         static void comprometerVisible(RebaseJob j){
+            final long inicio = System.nanoTime();
+            int hechos = 0;
             while(j.idx < j.orden.length && j.visible[j.orden[j.idx]]){
+                if(hechos > 0 && System.nanoTime() - inicio > COMMIT_MAX_NS) break;
                 int di = j.orden[j.idx++];
                 copiarChunk(j, di);
+                hechos++;
                 int cx = di % j.n, cy = di / j.n;
                 for(int dy = -1; dy <= 1; dy++){
                     for(int dx = -1; dx <= 1; dx++) encolarEntidades(j, cx + dx, cy + dy);
                 }
             }
-            // Antes: while(!pend.isEmpty()) restaurar... = todos los edificios visibles en UN fotograma (decenas de ms con una base
-            // grande: el congelamiento al reubicar). Ahora hay un tope; el resto sigue en avanzarRebase(), que atiende 'pend' primero.
-            final long fin = System.nanoTime() + 5_000_000L;
+            // Los edificios del núcleo: con tope (antes todos los visibles en UN fotograma). El resto sigue en avanzarRebase(), que atiende 'pend' primero.
+            final long fin = System.nanoTime() + 3_000_000L;
             while(!j.pend.isEmpty() && System.nanoTime() < fin) restaurarEdificio(j.pend.pollFirst());
         }
     }

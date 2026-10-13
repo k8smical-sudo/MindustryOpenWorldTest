@@ -88,10 +88,34 @@ final class Estructuras{
             py = j * c + margen + (int)(Muestreo.rnd(i, j, Muestreo.sem(s, 9805)) * rango);
             if(Math.hypot(px, py) < DIST_MIN) return T_NADA;
         }
+        // Regla "en la oscuridad no hay nada": una estructura cuyo centro está enterrado en roca gruesa abriría un bolsillo
+        // inalcanzable por tierra, con guardias atrapados, y costaría generarla, restaurarla y simularla para nada. No se genera.
+        if(!forzada && enterrada(s, sp, i, j, px, py)) return T_NADA;
         cen[0] = px;
         cen[1] = py;
         cen[2] = radio;
         return t;
+    }
+
+    /** Veredicto exacto por celda (la sonda cuesta decenas de muestras y tipo() se llama muchas veces por celda). */
+    private static final java.util.HashMap<Long, Boolean> enterradas = new java.util.HashMap<>();
+    private static int enterradasSem;
+
+    static boolean enterrada(int s, Spawn sp, int i, int j, int px, int py){
+        final long k = ((long)i << 32) | (j & 0xFFFFFFFFL);
+        synchronized(enterradas){
+            if(enterradasSem != s || enterradas.size() > 8192){
+                enterradas.clear();
+                enterradasSem = s;
+            }
+            Boolean b = enterradas.get(k);
+            if(b != null) return b;
+        }
+        final boolean r = Muestreo.enterrado(s, px, py, sp, 9);   // es pura: dos hilos calculando lo mismo dan lo mismo
+        synchronized(enterradas){
+            enterradas.put(k, r);
+        }
+        return r;
     }
 
     /** Desplazamiento (dx, dy) de la zona de núcleo de una ruina respecto a su centro: uno de 4 lados. */
@@ -412,6 +436,7 @@ final class Estructuras{
                 int px = i * 96 + 12 + (int)(Muestreo.rnd(i, j, Muestreo.sem(sd, 9821)) * 72f);
                 int py = j * 96 + 12 + (int)(Muestreo.rnd(i, j, Muestreo.sem(sd, 9822)) * 72f);
                 if(Math.hypot(px, py) < 90.0) continue;
+                if(Muestreo.solidaAprox(sd, px, py, sp)) continue;   // nunca dentro de la roca: quedaría atrapado
                 long id = clave(i, j, 1);
                 if(colocadas.contains(id) || enCola.contains(id) || !listo(px, py, 6)) continue;
                 Trabajo tr = new Trabajo();

@@ -414,7 +414,7 @@ final class ChunkGeometryCooker{
         int mascara = 0;
         final boolean oscuro = o.oscuro;
         final int limite = oscuro ? 4 : 5;      // con oscuridad horneada la luz llega a 0 en profundidad 4
-        boolean hayMuros = false;
+        boolean hayMuros = false, visible = false;
         for(int ly = 0; ly < TAM; ly++){
             for(int lx = 0; lx < TAM; lx++){
                 int p = (ly + PAD) * ANCHO + lx + PAD, d = 0;
@@ -436,8 +436,16 @@ final class ChunkGeometryCooker{
                     }
                     if(d < limite) hayMuros = true;
                 }
+                if(d < limite) visible = true;      // casilla abierta o muro de borde: algo se dibuja
                 s.prof[ly * TAM + lx] = (byte)d;
             }
+        }
+        if(!visible){
+            // Interior macizo de roca: ninguna casilla es visible (los muros profundos y el suelo bajo ellos no se dibujan, y los
+            // bordes de capa quedarían bajo el muro). No emite ni un sprite: se evita recorrer todas las capas y, en el renderizador,
+            // gastar una malla de GPU en un chunk vacío.
+            o.faltantes = faltantes;
+            return true;
         }
         // capas presentes: las de los pisos del chunk y de 1 casilla alrededor (sus bordes se pintan aquí), más los muros
         for(int py = PAD - 1; py <= PAD + TAM; py++){

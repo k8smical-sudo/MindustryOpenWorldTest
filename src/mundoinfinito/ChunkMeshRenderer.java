@@ -94,6 +94,8 @@ final class ChunkMeshRenderer{
         int vcx, vcy;
         int estado, ultimoVisto, proximo, faltantes;
         boolean oscuro, recocinando;
+        /** LISTA y sin geometría (interior macizo de roca): no ocupa malla de GPU. */
+        boolean vacia;
         Mesh malla;
         float offX, offY;       // posición del chunk en el mundo de juego (unidades), recalculada cada fotograma
         final int[] ini = new int[CAPAS], cuenta = new int[CAPAS];
@@ -101,6 +103,7 @@ final class ChunkMeshRenderer{
         void reiniciar(){
             estado = LIBRE;
             malla = null;
+            vacia = false;
             recocinando = false;
             faltantes = 0;
             proximo = 0;
@@ -395,7 +398,7 @@ final class ChunkMeshRenderer{
         for(int i = 0; i < nVisibles; i++){
             final Ranura r = visibles[i];
             if(r.offX + CH - 4f < camL || r.offX - 4f > camR || r.offY + CH - 4f < camB || r.offY - 4f > camT) continue;
-            final boolean listo = r.estado == LISTA && r.malla != null && r.faltantes == 0;
+            final boolean listo = r.estado == LISTA && (r.malla != null || r.vacia) && r.faltantes == 0;
             final int lx = Coord.cxLocal(r.vcx), ly = Coord.cyLocal(r.vcy);
             final boolean enVentana = Streamer.enMapa(lx, ly);
             final boolean aplicado = !enVentana || Streamer.generados.contains(Streamer.clave(lx, ly));
@@ -512,6 +515,17 @@ final class ChunkMeshRenderer{
                 ChunkGeometryCooker.liberar(co);
                 continue;
             }
+            if(co.nSprites == 0){
+                // chunk macizo: nada que dibujar. No toma malla (y devuelve la que tuviera de una versión anterior no vacía).
+                if(r.malla != null){ mallasLibres.add(r.malla); r.malla = null; }
+                java.util.Arrays.fill(r.cuenta, 0);
+                r.oscuro = co.oscuro;
+                r.faltantes = co.faltantes;
+                r.vacia = true;
+                r.estado = LISTA;
+                ChunkGeometryCooker.liberar(co);
+                continue;                                  // no cuenta como subida: no toca la GPU
+            }
             Mesh m = r.malla != null ? r.malla : tomarMalla();
             if(m == null){                              // sin mallas libres ni desalojables: se reintenta luego
                 if(r.estado != LISTA) r.estado = SIN_DATOS;
@@ -526,6 +540,7 @@ final class ChunkMeshRenderer{
             r.oscuro = co.oscuro;
             r.faltantes = co.faltantes;
             r.malla = m;
+            r.vacia = false;
             r.estado = LISTA;
             ChunkGeometryCooker.liberar(co);
             subidas++;

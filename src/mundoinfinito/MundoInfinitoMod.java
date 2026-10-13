@@ -1174,6 +1174,20 @@ public class MundoInfinitoMod extends Mod{
             return dep / 1000 == D_GRAFITO && muroGrafito((int)tmp[2], tmp[0], tmp[1], s, x, y);
         }
 
+        /**
+         * ¿Está (x, y) ENTERRADO en roca gruesa? Sondea una malla de puntos (cada 3 casillas) en [-r, r] alrededor: si TODOS son pared
+         * ahí no cabe nada útil, ni se ve (la oscuridad de los muros llega a 4 casillas de profundidad). Pura: solo depende de
+         * (s, x, y, sp), así que da lo mismo desde cualquier hilo y en cualquier momento.
+         */
+        static boolean enterrado(int s, int x, int y, Spawn sp, int r){
+            for(int dy = -r; dy <= r; dy += 3){
+                for(int dx = -r; dx <= r; dx += 3){
+                    if(!solidaAprox(s, x + dx, y + dy, sp)) return false;
+                }
+            }
+            return true;
+        }
+
         static boolean expuesto(int s, int x, int y, Spawn sp){
             for(int d = 0; d < 4; d++){
                 int dx = DX4[d], dy = DY4[d], lx = -dy, ly = dx;

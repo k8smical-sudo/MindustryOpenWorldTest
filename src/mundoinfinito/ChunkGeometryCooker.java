@@ -14,6 +14,7 @@ import mindustry.world.blocks.TileBitmask;
 import mindustry.world.blocks.environment.Floor;
 import mindustry.world.blocks.environment.OverlayFloor;
 import mindustry.world.blocks.environment.StaticWall;
+import mindustry.world.blocks.environment.SteamVent;
 import mundoinfinito.MundoInfinitoMod.ChunkData;
 
 import java.util.Arrays;
@@ -85,6 +86,7 @@ final class ChunkGeometryCooker{
         final byte[] tipo;
         final byte[] capa;                              // id de CacheLayer del piso
         final int[] grupo;                              // blendGroup.id
+        final int[] padre;                              // respiraderos (SteamVent): id del piso padre sobre el que se dibujan; 0 = no es respiradero
         final int[] autoVars;                           // variantes de autotile
         final boolean[] bordeEntra, bordeSale;
         final float[][] vuv;                            // [id] -> 4 floats (u,v,u2,v2) por variante
@@ -99,6 +101,7 @@ final class ChunkGeometryCooker{
             tipo = new byte[n];
             capa = new byte[n];
             grupo = new int[n];
+            padre = new int[n];
             autoVars = new int[n];
             bordeEntra = new boolean[n];
             bordeSale = new boolean[n];
@@ -151,6 +154,12 @@ final class ChunkGeometryCooker{
                 t.bordeEntra[id] = f.drawEdgeIn;
                 t.bordeSale[id] = f.drawEdgeOut;
                 t.vuv[id] = variantes(b, tex, err);
+                if(b instanceof SteamVent){
+                    // el respiradero NO es un piso de 1 casilla: sus variantes son sprites de 3x3. Se dibuja el piso padre en cada casilla
+                    // y UN solo sprite grande encima de cada bloque completo de 3x3 (igual que SteamVent.drawMain)
+                    Block pa = ((SteamVent)b).parent;
+                    if(pa instanceof Floor && pa.id > 0 && pa.id < n) t.padre[id] = pa.id;
+                }
                 if(f.autotile && !overlay) autotile(t, id, b.name, f.autotileVariants, f.autotileMidVariants, tex, err);
                 if(f.blendGroup == f){
                     // bordes: "<piso>-edge" partido en 3x3, igual que Floor.load()
@@ -500,6 +509,18 @@ final class ChunkGeometryCooker{
         return true;
     }
 
+    /** ¿La casilla actual es la esquina de arriba-derecha de un bloque completo de 3x3 del mismo piso? (PAD = 4 cubre los 2 de margen) */
+    private static boolean ventanaCompleta(Scratch s){
+        final int p = s.p;
+        final short f = s.piso[p];
+        for(int dy = 0; dy < 3; dy++){
+            for(int dx = 0; dx < 3; dx++){
+                if(s.piso[p - dy * ANCHO - dx] != f) return false;
+            }
+        }
+        return true;
+    }
+
     private static boolean accesible(Scratch s){
         final int p = s.p;
         return s.sol[p + 1] == 0 || s.sol[p - 1] == 0 || s.sol[p + ANCHO] == 0 || s.sol[p - ANCHO] == 0;
@@ -507,6 +528,11 @@ final class ChunkGeometryCooker{
 
     // ------------------------------------------------------------------ un sprite = 4 vértices (x, y, color, u, v)
     private static void quad(Scratch s, float[] uv, int off, float color, float grow){
+        quadEn(s, uv, off, color, s.lx * 8f, s.ly * 8f, 4f + grow);
+    }
+
+    /** Sprite cuadrado de semilado 'mitad' centrado en (cx, cy) locales al chunk (los respiraderos miden 3x3 casillas = mitad 12). */
+    private static void quadEn(Scratch s, float[] uv, int off, float color, float cx, float cy, float mitad){
         final Cocinado o = s.o;
         if(o.nSprites >= MAX_SPRITES) return;
         final int need = (o.nSprites + 1) * FLOATS_SPRITE;
@@ -515,8 +541,7 @@ final class ChunkGeometryCooker{
         }
         final float[] d = o.datos;
         int i = o.nSprites * FLOATS_SPRITE;
-        final float cx = s.lx * 8f, cy = s.ly * 8f;
-        final float x0 = cx - 4f - grow, y0 = cy - 4f - grow, x1 = cx + 4f + grow, y1 = cy + 4f + grow;
+        final float x0 = cx - mitad, y0 = cy - mitad, x1 = cx + mitad, y1 = cy + mitad;
         final float u = uv[off], v = uv[off + 1], u2 = uv[off + 2], v2 = uv[off + 3];
         // mismo orden y mismas UVs que FloorRenderBatch.draw(): abajo-izq, arriba-izq, arriba-der, abajo-der
         d[i] = x0;      d[i + 1] = y0;  d[i + 2] = color;   d[i + 3] = u;   d[i + 4] = v2;
@@ -529,7 +554,9 @@ final class ChunkGeometryCooker{
     // ------------------------------------------------------------------ pisos (Floor.drawBase)
     private static void dibujarPiso(Scratch s){
         final Tabla t = s.t;
-        final int fid = s.fid;
+        final int fidReal = s.fid;
+        // un respiradero dibuja primero SU PISO PADRE (con autotile y variantes del padre) y luego el sprite 3x3
+        final int fid = fidReal < t.n && t.padre[fidReal] != 0 ? t.padre[fidReal] : fidReal;
         final float[] vuv = t.vuv[fid];
         if(vuv == null) return;
         final float[] auv = t.auv[fid];
@@ -552,6 +579,12 @@ final class ChunkGeometryCooker{
             }
         }else{
             quad(s, vuv, 4 * azar(s.vx, s.vy, 11, vuv.length / 4), BLANCO, 0f);
+        }
+        if(fid != fidReal){
+            // SteamVent.drawMain: el sprite se dibuja solo si las 9 casillas (esta y las 8 de abajo-izquierda) son del mismo respiradero, y se
+            // emite en la casilla de ARRIBA-DERECHA del bloque (la última en orden de dibujo), centrado en la casilla central.
+            final float[] vv = t.vuv[fidReal];
+            if(vv != null && ventanaCompleta(s)) quadEn(s, vv, 4 * azar(s.vx, s.vy, 29, vv.length / 4), BLANCO, (s.lx - 1) * 8f, (s.ly - 1) * 8f, 12f);
         }
         if(t.bordeEntra[fid]) bordes(s, true, t.capa[fid]);
         // drawOverlay: la mena de suelo va encima del piso, en la misma capa

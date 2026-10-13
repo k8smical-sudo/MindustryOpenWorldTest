@@ -385,6 +385,17 @@ public class MundoInfinitoMod extends Mod{
             {P_TW, P_DTW, P_DARKSAND, P_SPORE, P_MOSS, P_SPORE, P_ICESNOW, P_SNOW, P_ICE, P_ICE, P_ICE, P_ICE, P_ICE},
             {P_DSW, P_DARKSAND, P_SNOW, P_ICE, P_ICESNOW, P_SNOW, P_SNOW, P_SNOW, P_ICE, P_ICE, P_ICE, P_ICE, P_ICE}
         };
+        // ---- Biomas de arranque (pares {dominante, secundario}): combinaciones que en la campaña SÍ conviven, para que el spawn no sea siempre igual ----
+        static final int[][] BIO_S = {
+            {P_SAND, P_DARKSAND}, {P_DARKSAND, P_BASALT}, {P_STONE, P_BASALT}, {P_STONE, P_SAND}, {P_MOSS, P_SPORE},
+            {P_SNOW, P_ICESNOW}, {P_ICESNOW, P_ICE}, {P_SALT, P_SAND}, {P_DARKSAND, P_MOSS}, {P_BASALT, P_STONE}
+        };
+        static final int[][] BIO_E = {
+            {P_REGO, P_YELLOW}, {P_RHYO, P_ROUGH}, {P_YELLOW, P_REGO}, {P_CARBON, P_RHYO}, {P_BERYL, P_ARKYIC}, {P_RED, P_DENSERED}, {P_REGO, P_RHYO}
+        };
+        // Los 3 respiraderos de un pozo de respiraderos: desplazamientos ENTEROS del centro (bloques de 3x3 separados, nunca solapados)
+        static final int[][] VENTS_POZO = {{0, 0}, {4, 1}, {-3, -3}};
+
         // Terreno base de Erekir (campaña): regolito domina, luego yellowStone, riolita y carbón.
         static final int[] TERRENO_E = {P_REGO, P_REGO, P_REGO, P_REGO, P_YELLOW, P_RHYO, P_RHYO, P_CARBON};
 
@@ -517,6 +528,14 @@ public class MundoInfinitoMod extends Mod{
             int celdaE;              // lado de la celda de estructuras (160..256): cada mundo tiene su propio ritmo
             float probE;             // probabilidad base de que una celda tenga una estructura
             int rx, ry;              // ruina garantizada (siempre hay un portal a una distancia razonable)
+            // ---- arquetipo de arranque: cada semilla elige la forma del claro, un bioma local propio y cómo se reparten los recursos ----
+            int arq;                 // disposición de los recursos: 0 anillo, 1 abanico, 2 dos lados, 3 eje, 4 compacto
+            boolean ere0;            // el origen es de tipo Erekir (solo importa en mundos mezclados)
+            float razonClaro = 1f;   // razón entre ejes del claro inicial (< 1 = alargado)
+            float cClaro = 1f, sClaro = 0f;   // coseno y seno de la orientación del claro
+            int bioA = -1, bioB = -1;         // pisos del bioma de arranque (-1 = el bioma natural del origen)
+            float bioMezcla = 0.5f;           // fracción de bioA dentro de la zona (el resto es bioB)
+            float radioBio;                   // radio medio de la zona con bioma propio
         }
 
         static volatile Spawn cacheSpawn;
@@ -673,6 +692,22 @@ public class MundoInfinitoMod extends Mod{
             sp.domX = (rnd(3, 3, sem(s, 9003)) - 0.5) * 6000.0;
             sp.domY = (rnd(4, 4, sem(s, 9004)) - 0.5) * 6000.0;
 
+            // Claro inicial: ya no es siempre un círculo; puede ser alargado y orientado al azar
+            sp.razonClaro = 0.70f + 0.30f * rnd(31, 1, sem(s, 9060));
+            float rotClaro = rnd(31, 2, sem(s, 9061)) * 3.1415927f;
+            sp.cClaro = (float)Math.cos(rotClaro);
+            sp.sClaro = (float)Math.sin(rotClaro);
+            // Bioma de arranque: casi siempre uno propio (de los que la campaña mezcla), a veces el natural del origen
+            sp.ere0 = esE(s, 0.0, 0.0, sp);
+            if(rnd(31, 4, sem(s, 9065)) < 0.80f){
+                int[][] lista = sp.ere0 ? BIO_E : BIO_S;
+                int[] b = lista[Math.min(lista.length - 1, (int)(rnd(31, 5, sem(s, 9066)) * lista.length))];
+                sp.bioA = b[0];
+                sp.bioB = b[1];
+                sp.bioMezcla = 0.50f + 0.40f * rnd(31, 6, sem(s, 9067));
+                sp.radioBio = 46f + 44f * rnd(31, 3, sem(s, 9062));
+            }
+
             // Ritmo de estructuras de ESTE mundo: cada cuántos tiles aparece algo y con qué frecuencia
             sp.celdaE = 160 + 16 * (int)(rnd(11, 11, sem(s, 9040)) * 7f);
             sp.probE = 0.16f + 0.26f * rnd(12, 12, sem(s, 9041));
@@ -736,13 +771,25 @@ public class MundoInfinitoMod extends Mod{
             }
             int n = cosas.size;
             float a0 = rnd(7, 7, sem(s, 9031)) * 6.2831853f;
-            float[] px = new float[n], py = new float[n], pr = new float[n], hl = new float[n], hw = new float[n], cv = new float[n];
+            // disposición: anillo (clásica), abanico (todo hacia un lado), dos lados opuestos, eje (una línea a cada lado) o compacto
+            sp.arq = Math.min(4, (int)(rnd(21, 21, sem(s, 9050)) * 5f));
+            float escD = sp.arq == 4 ? 0.80f : 0.88f + 0.27f * rnd(21, 22, sem(s, 9051));
+            float minD = sp.radioLibre * 1.2f + 5f;   // nunca dentro del claro inicial
+            float[] px = new float[n], py = new float[n], pr = new float[n], hl = new float[n], hw = new float[n], cv = new float[n], rm = new float[n];
             int[] morfs = new int[n];
             float[] par = new float[3];
             for(int k = 0; k < n; k++){
                 float[] c = cosas.get(k);
-                float ang = a0 + (k + (rnd(k, 8, sem(s, 9032)) - 0.5f) * 0.7f) * (6.2831853f / n);
-                float d = c[2] + rnd(k, 9, sem(s, 9033)) * (c[3] - c[2]);
+                float jit = rnd(k, 8, sem(s, 9032)) - 0.5f;
+                float ang;
+                switch(sp.arq){
+                    case 1: ang = a0 + (n > 1 ? (k / (float)(n - 1) - 0.5f) * 3.6f : 0f) + jit * 0.35f; break;
+                    case 2: ang = a0 + (k % 2 == 0 ? 0f : 3.1415927f) + ((k / 2) / (float)Math.max(1, n / 2) - 0.5f) * 2.3f + jit * 0.3f; break;
+                    case 3: ang = a0 + (k % 2 == 0 ? 0f : 3.1415927f) + jit * 1.1f; break;
+                    default: ang = a0 + (k + jit * 0.7f) * (6.2831853f / n);
+                }
+                float d = Math.max(minD, (c[2] + rnd(k, 9, sem(s, 9033)) * (c[3] - c[2])) * escD);
+                rm[k] = c[3] * escD * 1.2f + 10f;   // tope de lo que el anti-solape puede alejarlo: lo esencial nunca se va lejos
                 int tipo = (int)c[1];
                 if(c[0] == 0){
                     int morf;
@@ -775,6 +822,14 @@ public class MundoInfinitoMod extends Mod{
                         float rj = (float)Math.sqrt(px[j] * px[j] + py[j] * py[j]);
                         if(rj < 1f) continue;
                         float k2 = (rj + (need - dd) + 1f) / rj;
+                        if(rj * k2 > rm[j]){
+                            // ya no se aleja más: se gira alrededor del spawn para buscar hueco (así no queda tapada por otra veta)
+                            float cr = 0.8776f, sr = 0.4794f;   // 0,5 rad
+                            float nx = px[j] * cr - py[j] * sr;
+                            py[j] = px[j] * sr + py[j] * cr;
+                            px[j] = nx;
+                            continue;
+                        }
                         px[j] *= k2;
                         py[j] *= k2;
                     }
@@ -837,14 +892,17 @@ public class MundoInfinitoMod extends Mod{
                     float cx0 = (i + 0.5f) * CELDA_MENA, cy0 = (j + 0.5f) * CELDA_MENA;
                     if(r0 > PROB_MENA * (0.30f + 1.50f * fbm(sem(s, 7001), 380f, 2, cx0, cy0))) continue;   // zonas ricas / pobres
                     float dsp = (float)Math.hypot(cx0, cy0);
+                    // provincias minerales: cada tipo de mena es más o menos común según la región (celdas de 480 tiles), así hay zonas
+                    // ricas en cobre, cinturones de carbón, etc., en vez de la misma mezcla uniforme en todas partes
+                    final int pvi = Math.floorDiv((int)cx0, 480), pvj = Math.floorDiv((int)cy0, 480);
                     float tot = 0f;
-                    for(float[] g : tabla) if(dsp >= g[1]) tot += g[2];
+                    for(float[] g : tabla) if(dsp >= g[1]) tot += g[2] * (0.30f + 1.55f * rnd(pvi, pvj, sem(s, 7100 + (int)g[0])));
                     if(tot <= 0f) continue;
                     float pick = rnd(i, j, sem(s, 7003)) * tot, acc = 0f;
                     int tipo = (int)tabla[0][0];
                     for(float[] g : tabla){
                         if(dsp < g[1]) continue;
-                        acc += g[2];
+                        acc += g[2] * (0.30f + 1.55f * rnd(pvi, pvj, sem(s, 7100 + (int)g[0])));
                         if(pick < acc){ tipo = (int)g[0]; break; }
                     }
                     int morf = elegirMorf(rnd(i, j, sem(s, 7004)));
@@ -921,6 +979,75 @@ public class MundoInfinitoMod extends Mod{
             return 0;
         }
 
+        static final long SIN_VENT = Long.MIN_VALUE;
+
+        /**
+         * ¿(x, y) cae dentro del bloque 3x3 de un respiradero de cráter? @return el centro empaquetado (x en los 32 bits altos, y en los bajos)
+         * o SIN_VENT. Los centros salen de una celda de 72 casillas y están a >= 28 de distancia: los bloques nunca se tocan.
+         */
+        static long ventCentro(int s, int x, int y){
+            int ci = Math.floorDiv(x, 72), cj = Math.floorDiv(y, 72);
+            for(int di = -1; di <= 1; di++){
+                for(int dj = -1; dj <= 1; dj++){
+                    int i = ci + di, j = cj + dj;
+                    if(rnd(i, j, sem(s, 6001)) > 0.30f) continue;
+                    int px = i * 72 + 14 + (int)(rnd(i, j, sem(s, 6002)) * 44f), py = j * 72 + 14 + (int)(rnd(i, j, sem(s, 6003)) * 44f);
+                    if(Math.abs(x - px) <= 1 && Math.abs(y - py) <= 1) return ((long)px << 32) | (py & 0xffffffffL);
+                }
+            }
+            return SIN_VENT;
+        }
+
+        /**
+         * Piso de respiradero que le toca a TODAS las casillas del bloque 3x3 centrado en (px, py), o -1 si ahí no puede haber uno.
+         * Se decide una sola vez con el centro (antes cada casilla elegía el suyo y el bloque salía partido: sin respiradero o con varios).
+         */
+        static int ventPisoCentro(int s, int px, int py, Spawn sp){
+            float dist = (float)Math.sqrt((double)px * px + (double)py * py);
+            if(dist < Math.max(40f, sp.radioLibre * 1.8f)) return -1;
+            if(!esE(s, px, py, sp)) return -1;
+            if(sp.dim >= 0){
+                // una estructura (base, ruina) puede tapar parte del bloque: entonces no hay respiradero (un 3x3 a medias no sirve)
+                float[] tmp = new float[14];
+                for(int dy = -2; dy <= 2; dy++){
+                    for(int dx = -2; dx <= 2; dx++){
+                        if(Estructuras.huella(s, sp, px + dx, py + dy, tmp) > 0) return -1;
+                    }
+                }
+            }
+            double wx = px + (fbm(sem(s, 50), 90f, 3, px, py) - 0.5) * 70.0;
+            double wy = py + (fbm(sem(s, 51), 90f, 3, px + 500.0, py + 500.0) - 0.5) * 70.0;
+            int p = pisoBase(s, px, py, dist, wx, wy, true, sp);
+            switch(p){
+                // solo sobre suelos "lisos" de Erekir; en cristal, hielo rojo o líquidos un respiradero no pega con el bioma
+                case P_RHYO: case P_ROUGH: case P_BERYL: case P_ARKYIC: case P_YELLOW: case P_REGO: case P_RED: case P_DENSERED: case P_CARBON:
+                    return ventDe(p);
+                default:
+                    return -1;
+            }
+        }
+
+        /** Piso base del bioma (con el bioma de arranque aplicado cerca del origen). Única fuente de verdad: muestrear() y los respiraderos la comparten. */
+        static int pisoBase(int s, int x, int y, float dist, double wx, double wy, boolean ere, Spawn sp){
+            int p = ere ? pisoErekir(s, x, y, dist, wx, wy) : pisoSerpulo(s, x, y, dist, wx, wy);
+            if(sp.bioA >= 0 && ere == sp.ere0 && seco(p) && p != P_HOT && p != P_MAGMA
+                && dist < sp.radioBio * (0.75f + 0.5f * fbm(sem(s, 9063), 40f, 2, x, y))){
+                p = fbm(sem(s, 9064), 26f, 3, x, y) < sp.bioMezcla ? sp.bioA : sp.bioB;
+                p = variante(s, x, y, p, ere);
+            }
+            return p;
+        }
+
+        /** Los cráteres de impacto de Serpulo solo existen en suelos secos de roca, arena o musgo (no en nieve, hielo ni agua). */
+        static boolean craterBioma(int p){
+            return p == P_SAND || p == P_DARKSAND || p == P_SALT || p == P_STONE || p == P_BASALT || p == P_MOSS || p == P_SPORE;
+        }
+
+        /** Piso seco que sustituye a un líquido dentro del claro inicial, acorde al líquido que había. */
+        static int secoDe(int p){
+            return (p == P_DSW || p == P_DTW || p == P_DEEPT || p == P_TW || p == P_TAR) ? P_DARKSAND : P_SAND;
+        }
+
         /** Cráter con respiradero (Erekir): @return 0 nada, 1 interior, 2 centro (respiradero 3x3). */
         static int craterVent(int s, int x, int y, float dist){
             if(dist < 40f) return 0;
@@ -948,17 +1075,14 @@ public class MundoInfinitoMod extends Mod{
                 switch(p){
                     case P_STONE:
                         if(a > 0.63f) return P_BASALT;
-                        if(Math.abs(a - 0.5f) < 0.016f) return P_DARKSAND;
                         if(b < 0.28f) return P_SAND;
                         break;
                     case P_SAND:
                         if(a > 0.62f) return P_DARKSAND;
-                        if(Math.abs(a - 0.5f) < 0.014f) return P_STONE;
                         if(b > 0.71f) return P_SALT;
                         break;
                     case P_DARKSAND:
                         if(a > 0.64f) return P_SAND;
-                        if(Math.abs(b - 0.5f) < 0.015f) return P_STONE;
                         if(a < 0.29f) return P_BASALT;
                         break;
                     case P_SALT:
@@ -990,10 +1114,8 @@ public class MundoInfinitoMod extends Mod{
                 switch(p){
                     case P_REGO:
                         if(a > 0.64f) return P_YELLOW;
-                        if(Math.abs(a - 0.5f) < 0.015f) return P_RHYO;
                         break;
                     case P_RHYO:
-                        if(Math.abs(b - 0.5f) < 0.014f) return P_REGO;
                         if(a < 0.28f) return P_CARBON;
                         break;
                     case P_YELLOW:
@@ -1214,11 +1336,14 @@ public class MundoInfinitoMod extends Mod{
             double wy = y + (fbm(sem(s, 51), 90f, 3, x + 500.0, y + 500.0) - 0.5) * 70.0;
 
             boolean ere = esE(s, x, y, sp);
-            int p = ere ? pisoErekir(s, x, y, dist, wx, wy) : pisoSerpulo(s, x, y, dist, wx, wy);
-            boolean spawn = dist < sp.radioLibre * (0.80f + 0.50f * fbm(sem(s, 9006), 14f, 2, x, y));
+            int p = pisoBase(s, x, y, dist, wx, wy, ere, sp);
+            // claro inicial: elipse orientada (no siempre un círculo) con borde irregular
+            float ecx = (float)(dx0 * sp.cClaro + dy0 * sp.sClaro), ecy = (float)(-dx0 * sp.sClaro + dy0 * sp.cClaro) / sp.razonClaro;
+            float dClaro = (float)Math.sqrt(ecx * ecx + ecy * ecy);
+            boolean spawn = dClaro < sp.radioLibre * (0.80f + 0.50f * fbm(sem(s, 9006), 14f, 2, x, y));
             if(spawn){
                 // el spawn conserva el bioma que le toque; solo se quita lo peligroso o intransitable
-                if(liquido(p)) p = ere ? P_REGO : P_SAND;
+                if(liquido(p)) p = ere ? P_REGO : secoDe(p);
                 if(p == P_MAGMA || p == P_SLAG || p == P_TAR || p == P_HOT) p = ere ? P_YELLOW : P_BASALT;
             }
 
@@ -1229,6 +1354,13 @@ public class MundoInfinitoMod extends Mod{
                 if(hue == 2) p = P_COREZONE;
             }
 
+            // --- respiradero de cráter: el bloque 3x3 entero toma el mismo piso (decidido con su centro) ---
+            int ventP = -1;
+            if(hue == 0){
+                long vc = ventCentro(s, x, y);
+                if(vc != SIN_VENT) ventP = ventPisoCentro(s, (int)(vc >> 32), (int)vc, sp);
+            }
+
             // --- pozos garantizados cerca del spawn (elípticos, orientados al azar) ---
             int pzPiso = -1;
             boolean pzLibre = false;
@@ -1237,6 +1369,16 @@ public class MundoInfinitoMod extends Mod{
                 for(int k = 0; k < poz.length; k += STRIDE_POZ){
                     float ddx = (float)(dx0 - poz[k + 1]), ddy = (float)(dy0 - poz[k + 2]), r = poz[k + 3];
                     if(ddx * ddx + ddy * ddy > r * r * 3.4f) continue;
+                    if((int)poz[k] == 3){
+                        // pozo de respiraderos: 3 bloques de 3x3 EXACTOS sobre casillas enteras (antes se comparaban floats contra un centro
+                        // fraccionario y salían bloques de 3x3, 3x4 o 4x4: un sprite por cada 3x3 completo = grietas repetidas)
+                        int bx = Math.round(poz[k + 1]), by = Math.round(poz[k + 2]);
+                        boolean ev = false;
+                        for(int[] o : VENTS_POZO){
+                            if(Math.abs(x - (bx + o[0])) <= 1 && Math.abs(y - (by + o[1])) <= 1){ ev = true; break; }
+                        }
+                        if(ev){ pzPiso = P_VRHYO; pzLibre = true; break; }
+                    }
                     float rot = poz[k + 4], razon = poz[k + 5];
                     float c = (float)Math.cos(rot), sn = (float)Math.sin(rot);
                     float ea = ddx * c + ddy * sn, eb = (-ddx * sn + ddy * c) / razon;
@@ -1248,14 +1390,7 @@ public class MundoInfinitoMod extends Mod{
                         case 0: pzPiso = d < 0.55f ? P_WATER : (d < 0.8f ? P_SANDW : P_SAND); break;
                         case 1: pzPiso = d < 0.62f ? P_TAR : P_DARKSAND; break;
                         case 2: pzPiso = d < 0.30f ? P_MAGMA : (d < 0.62f ? P_HOT : P_BASALT); break;
-                        case 3: {
-                            pzPiso = P_RCRATER;
-                            float[][] vents = {{0f, 0f}, {4f, 1f}, {-3f, -3f}};
-                            for(float[] o : vents){
-                                if(Math.abs(ddx - o[0]) <= 1.5f && Math.abs(ddy - o[1]) <= 1.5f) pzPiso = P_VRHYO;
-                            }
-                            break;
-                        }
+                        case 3: pzPiso = P_RCRATER; break;   // los 3 respiraderos se colocan arriba, con casillas enteras
                         case 4: pzPiso = d < 0.6f ? P_ARKYCITE : P_ARKYIC; break;
                         default: pzPiso = d < 0.55f ? P_SLAG : P_RCRATER;
                     }
@@ -1268,12 +1403,15 @@ public class MundoInfinitoMod extends Mod{
 
             // --- cráteres ---
             boolean enCrater = false;
-            if(enPozo || pzLibre){
+            if(ventP >= 0){
+                p = ventP;                  // bloque 3x3 de respiradero completo, sin muros, menas ni rocas encima
+                enCrater = true;
+            }else if(enPozo || pzLibre){
                 enCrater = true;
             }else if(hue > 0){
                 enCrater = false;
             }else if(!ere){
-                int c = crater(s, x, y, dist);
+                int c = craterBioma(p) ? crater(s, x, y, dist) : 0;
                 if(c == 2){
                     if(seco(p)) p = P_BASALT;
                     enCrater = true;
@@ -1288,7 +1426,7 @@ public class MundoInfinitoMod extends Mod{
             }else{
                 int c = craterVent(s, x, y, dist);
                 if(c == 2){
-                    if(seco(p)) p = ventDe(p);
+                    if(seco(p)) p = cratereDe(p);   // el centro 3x3 sin respiradero válido queda como suelo de cráter
                     enCrater = true;
                 }else if(c == 1){
                     if(seco(p)) p = cratereDe(p);
@@ -1299,7 +1437,7 @@ public class MundoInfinitoMod extends Mod{
             boolean liq = liquido(p);
 
             // --- vetas de menas ---
-            int dep = (enPozo || pzLibre || hue > 0 || enCrater && mena != 0) ? -1 : enDeposito(s, x, y, sp, aux, ere, dist);
+            int dep = (enPozo || pzLibre || hue > 0 || ventP >= 0 || enCrater && mena != 0) ? -1 : enDeposito(s, x, y, sp, aux, ere, dist);
             boolean inicial = dep >= 0 && (aux[4] == 1f || aux[4] == 3f);
             if(liq){
                 // las vetas INICIALES siempre quedan en seco; las demás no aparecen bajo el agua
@@ -1360,7 +1498,7 @@ public class MundoInfinitoMod extends Mod{
             }
 
             // --- decoración / props ---
-            if(muro == 0 && mena == 0 && !liq && !spawn && !enPozo && !pzLibre && hue == 0){
+            if(muro == 0 && mena == 0 && !liq && !spawn && !enPozo && !pzLibre && hue == 0 && ventP < 0){
                 if((p == P_CRYST || p == P_CRYSTF) && rnd(x, y, sem(s, 5201)) < 0.012f){
                     prop = p == P_CRYSTF ? 3 : 2;
                 }else if(rnd(x, y, sem(s, 5202)) < 0.011f){

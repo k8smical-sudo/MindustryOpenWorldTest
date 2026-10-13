@@ -397,7 +397,8 @@ final class ChunkMeshRenderer{
         nSobrepuestos = 0;
         for(int i = 0; i < nVisibles; i++){
             final Ranura r = visibles[i];
-            if(r.offX + CH - 4f < camL || r.offX - 4f > camR || r.offY + CH - 4f < camB || r.offY - 4f > camT) continue;
+            // -20f abajo/izquierda: el sprite 3x3 de un respiradero se emite en su casilla de arriba-derecha y asoma hasta 2 casillas por ese lado
+            if(r.offX + CH - 4f < camL || r.offX - 20f > camR || r.offY + CH - 4f < camB || r.offY - 20f > camT) continue;
             final boolean listo = r.estado == LISTA && (r.malla != null || r.vacia) && r.faltantes == 0;
             final int lx = Coord.cxLocal(r.vcx), ly = Coord.cyLocal(r.vcy);
             final boolean enVentana = Streamer.enMapa(lx, ly);

@@ -120,6 +120,9 @@ final class ChunkMeshRenderer{
     private static final Ranura[] visibles = new Ranura[MAX_VISIBLES];
     private static final Ranura[] dibujo = new Ranura[MAX_VISIBLES];
     private static final Ranura[] cubiertos = new Ranura[MAX_VISIBLES];
+    /** Chunks del viewport que quedan FUERA del alcance del jugador (ver 'alcance'): se tapan con negro, no se cocinan ni se dibujan. */
+    private static final float[] negX = new float[MAX_VISIBLES], negY = new float[MAX_VISIBLES];
+    private static int nNegros;
     /**
      * Chunks dentro de la ventana de tiles con la malla LISTA pero con las casillas aún sin escribir (Streamer.generados no los tiene).
      * Antes se tapaban en negro hasta que sus casillas se aplicaban (~0,9 ms por fotograma): al moverse, el borde de la pantalla
@@ -283,7 +286,7 @@ final class ChunkMeshRenderer{
             final long tAct = Perfil.t();
             actualizar();
             Perfil.fin(Perfil.S_RENDER_ACTUALIZAR, tAct);
-            if(nCubiertos > 0){
+            if(nCubiertos > 0 || nNegros > 0){
                 final float z0 = Draw.z();
                 Draw.z(Layer.blockOver + 0.5f);         // sobre suelo, muros y rocas; bajo edificios, unidades y balas
                 Draw.color(0f, 0f, 0f, 1f);
@@ -291,6 +294,7 @@ final class ChunkMeshRenderer{
                     final Ranura r = cubiertos[i];
                     Fill.crect(r.offX - 4.5f, r.offY - 4.5f, CH + 1f, CH + 1f);   // 0,5 de solape: sin costuras
                 }
+                for(int i = 0; i < nNegros; i++) Fill.crect(negX[i] - 4.5f, negY[i] - 4.5f, CH + 1f, CH + 1f);   // fuera de alcance
                 Draw.color();
                 Draw.z(z0);
             }
@@ -332,6 +336,9 @@ final class ChunkMeshRenderer{
         // ---- zona de cocinado = viewport + 1 chunk de margen (el cocinado tarda 1-2 fotogramas: así no hay huecos al borde) ----
         // + 1 chunk MÁS por el lado hacia el que se mueve la cámara: cocinar tarda (terreno + vecinos + cocción + subida) y a velocidad
         // el borde de la pantalla alcanzaba a los chunks antes de que tuvieran malla.
+        nNegros = 0;
+        final int pcx = Math.floorDiv((int)Streamer.jugadorX, Coord.CHUNK), pcy = Math.floorDiv((int)Streamer.jugadorY, Coord.CHUNK);
+        final int radioCarga = Ajustes.carga();
         final float dX = InfiniteCameraHandler.dirX, dY = InfiniteCameraHandler.dirY;
         final int aX0 = dX < -0.3f ? 1 : 0, aX1 = dX > 0.3f ? 1 : 0, aY0 = dY < -0.3f ? 1 : 0, aY1 = dY > 0.3f ? 1 : 0;
         final int x0 = Math.floorDiv((int)Math.floor(camL - CH), (int)CH) - aX0, x1 = Math.floorDiv((int)Math.floor(camR + CH), (int)CH) + aX1;
@@ -358,6 +365,16 @@ final class ChunkMeshRenderer{
         nVisibles = 0;
         for(int i = 0; i < n; i++){
             final int vcx = Coord.vcx(lcx[i]), vcy = Coord.vcy(lcy[i]);
+            if(!alcance(lcx[i], lcy[i], pcx, pcy, radioCarga, 1)){
+                // fuera de alcance (ni el anillo de cocinado): ni terreno, ni malla, ni ranura. Solo se tapa con negro si se ve.
+                final float ox = lcx[i] * CH, oy = lcy[i] * CH;
+                if(nNegros < MAX_VISIBLES && !(ox + CH - 4f < camL || ox - 20f > camR || oy + CH - 4f < camB || oy - 20f > camT)){
+                    negX[nNegros] = ox;
+                    negY[nNegros] = oy;
+                    nNegros++;
+                }
+                continue;
+            }
             final long k = Coord.claveVirtual(vcx, vcy);
             Ranura r = mapa.get(k, null);
             if(r == null){
@@ -399,8 +416,16 @@ final class ChunkMeshRenderer{
             final Ranura r = visibles[i];
             // -20f abajo/izquierda: el sprite 3x3 de un respiradero se emite en su casilla de arriba-derecha y asoma hasta 2 casillas por ese lado
             if(r.offX + CH - 4f < camL || r.offX - 20f > camR || r.offY + CH - 4f < camB || r.offY - 20f > camT) continue;
-            final boolean listo = r.estado == LISTA && (r.malla != null || r.vacia) && r.faltantes == 0;
             final int lx = Coord.cxLocal(r.vcx), ly = Coord.cyLocal(r.vcy);
+            if(!alcance(lx, ly, pcx, pcy, radioCarga, 0)){      // cocinado pero fuera del disco: NO se dibuja (negro)
+                if(nNegros < MAX_VISIBLES){
+                    negX[nNegros] = r.offX;
+                    negY[nNegros] = r.offY;
+                    nNegros++;
+                }
+                continue;
+            }
+            final boolean listo = r.estado == LISTA && (r.malla != null || r.vacia) && r.faltantes == 0;
             final boolean enVentana = Streamer.enMapa(lx, ly);
             final boolean aplicado = !enVentana || Streamer.generados.contains(Streamer.clave(lx, ly));
             if(listo && aplicado) dibujo[nDibujo++] = r;
@@ -413,6 +438,22 @@ final class ChunkMeshRenderer{
             Log.info("[MundoInfinito] Render chunks: @ visibles, @ dibujados, @ sobre casillas sin aplicar, @ en negro (sin malla), @ mallas libres de @, @ ranuras en uso", nVisibles, nDibujo, nSobrepuestos, nCubiertos, mallasLibres.size(), mallasTotal, mapa.size);
         }
     }
+
+    /**
+     * ALCANCE del jugador: un chunk solo se cocina/dibuja si está dentro del disco REDONDO de "Distancia de chunks" (Ajustes.carga)
+     * alrededor del jugador, o si ya fue explorado (tiene fotografía en el minimapa: Mapa.get). Antes el renderizador por chunks
+     * miraba solo el viewport de la cámara: con el zoom al máximo dibujaba todo lo que cabía en pantalla, con la niebla y la distancia
+     * ignoradas, y el borde de lo visible era el de la ventana de tiles (que solo se mueve al reubicarla). 'margen' amplía el disco
+     * (cocinar un anillo más que lo que se dibuja evita que los chunks "salten" al entrar en el alcance).
+     * lx, ly = chunk LOCAL; pcx, pcy = chunk local del jugador.
+     */
+    private static boolean alcance(int lx, int ly, int pcx, int pcy, int radio, int margen){
+        if(Ajustes.dentro(lx - pcx, ly - pcy, radio + margen)) return true;
+        return EXPLORADO_VISIBLE && Mapa.get(Coord.vcx(lx), Coord.vcy(ly)) != null;
+    }
+
+    /** true: lo ya explorado (con fotografía en el minimapa) sigue viéndose aunque quede fuera del disco de carga. false: solo el disco. */
+    private static final boolean EXPLORADO_VISIBLE = true;
 
     /** ¿El chunk está "de verdad" en la ventana de tiles? Entonces el juego ya aplica su propia oscuridad y no se hornea. */
     private static boolean oscuroDeseado(int vcx, int vcy){
@@ -473,11 +514,13 @@ final class ChunkMeshRenderer{
         final float x0 = InfiniteCameraHandler.predX0, x1 = InfiniteCameraHandler.predX1;
         final float y0 = InfiniteCameraHandler.predY0, y1 = InfiniteCameraHandler.predY1;
         if(x1 <= x0 || y1 <= y0) return;
+        final int ppx = Math.floorDiv((int)Streamer.jugadorX, Coord.CHUNK), ppy = Math.floorDiv((int)Streamer.jugadorY, Coord.CHUNK), rpre = Ajustes.carga();
         final int cx0 = Math.floorDiv((int)Math.floor(x0), (int)CH), cx1 = Math.floorDiv((int)Math.floor(x1), (int)CH);
         final int cy0 = Math.floorDiv((int)Math.floor(y0), (int)CH), cy1 = Math.floorDiv((int)Math.floor(y1), (int)CH);
         for(int cy = cy0; cy <= cy1; cy++){
             for(int cx = cx0; cx <= cx1; cx++){
                 if(terreno >= MAX_TERRENO_FRAME) return;
+                if(!alcance(cx, cy, ppx, ppy, rpre, 2)) continue;   // no se precarga lo que no se va a mostrar
                 long k = Coord.claveVirtual(Coord.vcx(cx), Coord.vcy(cy));
                 if(!CacheChunks.tiene(mid, k) && pedirTerreno(k)) terreno++;
             }

@@ -127,8 +127,8 @@ final class Motor{
         e.nReq = i;
         e.nUni = 0;
         for(int u = 0; u < Vista.n; u++){
-            e.uni[e.nUni++] = Vista.ucx[u];
-            e.uni[e.nUni++] = Vista.ucy[u];
+            e.uni[e.nUni++] = Coord.cxLocal(Vista.uvx[u]);
+            e.uni[e.nUni++] = Coord.cyLocal(Vista.uvy[u]);
         }
         synchronized(lock){
             if(pendiente != null) reciclada = pendiente;

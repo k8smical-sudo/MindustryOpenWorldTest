@@ -63,7 +63,7 @@ final class ChunkMeshRenderer{
     private static final long SUBIDA_NS = 1_200_000L, SUBIDA_LENTO_NS = 500_000L;
     /** Una ranura sin verse tanto tiempo (~60 s) se libera aunque sobren ranuras; antes, ~1,5 s (volver a una zona obligaba a recocinarla). */
     private static final int OLVIDO_FRAMES = 3600;
-    private static final int MAX_VISIBLES = 512;
+    private static final int MAX_VISIBLES = 1024, MAX_NEGROS = 2048;   // 512 se agotaba con carga 12 (~530 chunks): los que no cabían desaparecían y volvían al azar
 
     private static final String VERT =
         "attribute vec2 a_position;\n" +
@@ -121,7 +121,7 @@ final class ChunkMeshRenderer{
     private static final Ranura[] dibujo = new Ranura[MAX_VISIBLES];
     private static final Ranura[] cubiertos = new Ranura[MAX_VISIBLES];
     /** Chunks del viewport que quedan FUERA del alcance del jugador (ver 'alcance'): se tapan con negro, no se cocinan ni se dibujan. */
-    private static final float[] negX = new float[MAX_VISIBLES], negY = new float[MAX_VISIBLES];
+    private static final float[] negX = new float[MAX_NEGROS], negY = new float[MAX_NEGROS];
     private static int nNegros;
     /**
      * Chunks dentro de la ventana de tiles con la malla LISTA pero con las casillas aún sin escribir (Streamer.generados no los tiene).
@@ -190,7 +190,7 @@ final class ChunkMeshRenderer{
             final short[] indices = new short[MAX_SPRITES * 6];
             atributosMalla = atributos;
             indicesMalla = indices;
-            mallasMax = Math.max(MALLAS, Math.min(96, (int)(Runtime.getRuntime().maxMemory() >> 22)));   // ~4 MB de heap por malla de margen
+            mallasMax = Math.max(MALLAS, Math.min(192, (int)(Runtime.getRuntime().maxMemory() >> 21)));   // ~2 MB de heap por malla de margen (antes 4 MB y tope 96: se desalojaban chunks que seguían en el disco)
             for(int i = 0, v = 0; i < MAX_SPRITES; i++, v += 4){
                 int k = i * 6;
                 indices[k] = (short)v;
@@ -337,7 +337,7 @@ final class ChunkMeshRenderer{
         // + 1 chunk MÁS por el lado hacia el que se mueve la cámara: cocinar tarda (terreno + vecinos + cocción + subida) y a velocidad
         // el borde de la pantalla alcanzaba a los chunks antes de que tuvieran malla.
         nNegros = 0;
-        final int pcx = Math.floorDiv((int)Streamer.jugadorX, Coord.CHUNK), pcy = Math.floorDiv((int)Streamer.jugadorY, Coord.CHUNK);
+        final int pcx = Vista.pcx(), pcy = Vista.pcy();   // EN VIVO: tras reubicar la ventana, jugadorX tarda hasta 0,5 s en actualizarse y desplazaba todo el disco
         final int radioCarga = Ajustes.carga();
         final float dX = InfiniteCameraHandler.dirX, dY = InfiniteCameraHandler.dirY;
         final int aX0 = dX < -0.3f ? 1 : 0, aX1 = dX > 0.3f ? 1 : 0, aY0 = dY < -0.3f ? 1 : 0, aY1 = dY > 0.3f ? 1 : 0;
@@ -349,7 +349,17 @@ final class ChunkMeshRenderer{
             for(int cx = x0; cx <= x1 && n < MAX_VISIBLES; cx++){
                 // solo importan los chunks en alcance (se cocinan/dibujan) o dentro de la ventana de tiles (hay que taparlos). El resto
                 // no tiene nada que dibujar: antes ocupaban los 512 huecos al alejar el zoom y recortaban la vista en un rectángulo.
-                if(!Streamer.enMapa(cx, cy) && !alcance(cx, cy, pcx, pcy, radioCarga, 1)) continue;
+                if(!alcance(cx, cy, pcx, pcy, radioCarga, 1)){
+                    if(Streamer.enMapa(cx, cy) && nNegros < MAX_NEGROS){
+                        final float ox = cx * CH, oy = cy * CH;
+                        if(!(ox + CH - 4f < camL || ox - 20f > camR || oy + CH - 4f < camB || oy - 20f > camT)){
+                            negX[nNegros] = ox;
+                            negY[nNegros] = oy;
+                            nNegros++;
+                        }
+                    }
+                    continue;
+                }
                 float dx = (cx + 0.5f) * CH - mx, dy = (cy + 0.5f) * CH - my, d = dx * dx + dy * dy;
                 int j = n++;
                 while(j > 0 && ldist[j - 1] > d){        // inserción: los chunks más cercanos a la cámara van primero
@@ -371,7 +381,7 @@ final class ChunkMeshRenderer{
             if(!alcance(lcx[i], lcy[i], pcx, pcy, radioCarga, 1)){
                 // fuera de alcance (ni el anillo de cocinado): ni terreno, ni malla, ni ranura. Solo se tapa con negro si se ve.
                 final float ox = lcx[i] * CH, oy = lcy[i] * CH;
-                if(Streamer.enMapa(lcx[i], lcy[i]) && nNegros < MAX_VISIBLES && !(ox + CH - 4f < camL || ox - 20f > camR || oy + CH - 4f < camB || oy - 20f > camT)){
+                if(Streamer.enMapa(lcx[i], lcy[i]) && nNegros < MAX_NEGROS && !(ox + CH - 4f < camL || ox - 20f > camR || oy + CH - 4f < camB || oy - 20f > camT)){
                     negX[nNegros] = ox;
                     negY[nNegros] = oy;
                     nNegros++;
@@ -421,7 +431,7 @@ final class ChunkMeshRenderer{
             if(r.offX + CH - 4f < camL || r.offX - 20f > camR || r.offY + CH - 4f < camB || r.offY - 20f > camT) continue;
             final int lx = Coord.cxLocal(r.vcx), ly = Coord.cyLocal(r.vcy);
             if(!alcance(lx, ly, pcx, pcy, radioCarga, 0)){      // cocinado pero fuera del disco: NO se dibuja (negro si es de la ventana)
-                if(Streamer.enMapa(lx, ly) && nNegros < MAX_VISIBLES){
+                if(Streamer.enMapa(lx, ly) && nNegros < MAX_NEGROS){
                     negX[nNegros] = r.offX;
                     negY[nNegros] = r.offY;
                     nNegros++;
@@ -522,7 +532,7 @@ final class ChunkMeshRenderer{
         final float x0 = InfiniteCameraHandler.predX0, x1 = InfiniteCameraHandler.predX1;
         final float y0 = InfiniteCameraHandler.predY0, y1 = InfiniteCameraHandler.predY1;
         if(x1 <= x0 || y1 <= y0) return;
-        final int ppx = Math.floorDiv((int)Streamer.jugadorX, Coord.CHUNK), ppy = Math.floorDiv((int)Streamer.jugadorY, Coord.CHUNK), rpre = Ajustes.carga();
+        final int ppx = Vista.pcx(), ppy = Vista.pcy(), rpre = Ajustes.carga();
         final int cx0 = Math.floorDiv((int)Math.floor(x0), (int)CH), cx1 = Math.floorDiv((int)Math.floor(x1), (int)CH);
         final int cy0 = Math.floorDiv((int)Math.floor(y0), (int)CH), cy1 = Math.floorDiv((int)Math.floor(y1), (int)CH);
         for(int cy = cy0; cy <= cy1; cy++){

@@ -347,6 +347,9 @@ final class ChunkMeshRenderer{
         final float mx = cam.position.x, my = cam.position.y;
         for(int cy = y0; cy <= y1 && n < MAX_VISIBLES; cy++){
             for(int cx = x0; cx <= x1 && n < MAX_VISIBLES; cx++){
+                // solo importan los chunks en alcance (se cocinan/dibujan) o dentro de la ventana de tiles (hay que taparlos). El resto
+                // no tiene nada que dibujar: antes ocupaban los 512 huecos al alejar el zoom y recortaban la vista en un rectángulo.
+                if(!Streamer.enMapa(cx, cy) && !alcance(cx, cy, pcx, pcy, radioCarga, 1)) continue;
                 float dx = (cx + 0.5f) * CH - mx, dy = (cy + 0.5f) * CH - my, d = dx * dx + dy * dy;
                 int j = n++;
                 while(j > 0 && ldist[j - 1] > d){        // inserción: los chunks más cercanos a la cámara van primero
@@ -368,7 +371,7 @@ final class ChunkMeshRenderer{
             if(!alcance(lcx[i], lcy[i], pcx, pcy, radioCarga, 1)){
                 // fuera de alcance (ni el anillo de cocinado): ni terreno, ni malla, ni ranura. Solo se tapa con negro si se ve.
                 final float ox = lcx[i] * CH, oy = lcy[i] * CH;
-                if(nNegros < MAX_VISIBLES && !(ox + CH - 4f < camL || ox - 20f > camR || oy + CH - 4f < camB || oy - 20f > camT)){
+                if(Streamer.enMapa(lcx[i], lcy[i]) && nNegros < MAX_VISIBLES && !(ox + CH - 4f < camL || ox - 20f > camR || oy + CH - 4f < camB || oy - 20f > camT)){
                     negX[nNegros] = ox;
                     negY[nNegros] = oy;
                     nNegros++;
@@ -417,8 +420,8 @@ final class ChunkMeshRenderer{
             // -20f abajo/izquierda: el sprite 3x3 de un respiradero se emite en su casilla de arriba-derecha y asoma hasta 2 casillas por ese lado
             if(r.offX + CH - 4f < camL || r.offX - 20f > camR || r.offY + CH - 4f < camB || r.offY - 20f > camT) continue;
             final int lx = Coord.cxLocal(r.vcx), ly = Coord.cyLocal(r.vcy);
-            if(!alcance(lx, ly, pcx, pcy, radioCarga, 0)){      // cocinado pero fuera del disco: NO se dibuja (negro)
-                if(nNegros < MAX_VISIBLES){
+            if(!alcance(lx, ly, pcx, pcy, radioCarga, 0)){      // cocinado pero fuera del disco: NO se dibuja (negro si es de la ventana)
+                if(Streamer.enMapa(lx, ly) && nNegros < MAX_VISIBLES){
                     negX[nNegros] = r.offX;
                     negY[nNegros] = r.offY;
                     nNegros++;
@@ -448,12 +451,17 @@ final class ChunkMeshRenderer{
      * lx, ly = chunk LOCAL; pcx, pcy = chunk local del jugador.
      */
     private static boolean alcance(int lx, int ly, int pcx, int pcy, int radio, int margen){
-        if(Ajustes.dentro(lx - pcx, ly - pcy, radio + margen)) return true;
+        // La vista es el disco REDONDO del jugador + el entorno de sus unidades aliadas (Vista); nunca la cámara ni lo explorado.
+        if(Vista.dentro(lx, ly, pcx, pcy, radio, margen)) return true;
         return EXPLORADO_VISIBLE && Mapa.get(Coord.vcx(lx), Coord.vcy(ly)) != null;
     }
 
-    /** true: lo ya explorado (con fotografía en el minimapa) sigue viéndose aunque quede fuera del disco de carga. false: solo el disco. */
-    private static final boolean EXPLORADO_VISIBLE = true;
+    /**
+     * false: lo ya explorado NO se sigue dibujando fuera de la vista (antes true: las fotografías de partidas antiguas eran
+     * cuadrados y su unión se veía como un rectángulo con escalones en vez del disco de "Distancia de chunks"). El minimapa
+     * sigue recordando lo explorado: eso es solo memoria del mapa, no terreno cargado.
+     */
+    private static final boolean EXPLORADO_VISIBLE = false;
 
     /** ¿El chunk está "de verdad" en la ventana de tiles? Entonces el juego ya aplica su propia oscuridad y no se hornea. */
     private static boolean oscuroDeseado(int vcx, int vcy){

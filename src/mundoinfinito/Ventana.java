@@ -225,7 +225,9 @@ final class Ventana{
         if(Core.camera != null){
             camx = Core.camera.position.x / (8f * TAM);
             camy = Core.camera.position.y / (8f * TAM);
-            rC = (float)Math.hypot(Core.camera.width, Core.camera.height) / 2f / (8f * TAM) + 2f + vel;
+            // la cámara ya no carga nada: su zona solo importa hasta donde llega el disco del jugador (con el zoom alejado, rC
+            // crecía sin límite y 'seguro' nunca se cumplía: la ventana futura no avanzaba y reubicar volvía a ser un tirón)
+            rC = Math.min((float)Math.hypot(Core.camera.width, Core.camera.height) / 2f / (8f * TAM) + 2f + vel, rJ);
         }else{
             camx = jx;
             camy = jy;
@@ -318,6 +320,7 @@ final class Ventana{
             if(cd == null){ avanza = false; continue; }
             if(!Entidades.despejar(cx, cy)){ cd.liberar(); avanza = false; continue; }
             Streamer.aplicarTramo(cd, 0, TAM * TAM);
+            Entidades.rescatar(cx, cy);
             cd.liberar();
             staged[k] = true;
             nStaged++;

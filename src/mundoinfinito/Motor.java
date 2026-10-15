@@ -12,13 +12,12 @@ import arc.util.Log;
  * ajustes) con solicitar() y recoge el último plan terminado con recoger(). Nunca espera: si el motor aún calcula, el juego
  * sigue con el plan anterior. Así planificar (ordenar cientos de chunks) ya no cuesta nada en el fotograma.
  *
- *   nivel 0  lo que el jugador pisa y (si no es estricto) lo que ve en pantalla       (urgente)
+ *   nivel 0  lo que el jugador pisa y el entorno de cada unidad aliada                  (urgente)
  *   nivel 1  un cono hacia donde se mueve; cuanto más rápido, más lejos llega         (anticipación)
  *   nivel 2  un DISCO alrededor del jugador, de radio = "distancia de carga" de Ajustes (reserva)
  *   nivel 3  chunks con edificios guardados, que deben existir bajo ellos             (último)
  *
- * La unidad que CONTROLA el jugador y la CÁMARA no tienen tope: lo que pisa y lo que se ve se carga siempre, en orden de
- * cercanía, de forma progresiva. La distancia de carga de Ajustes solo gobierna la reserva (el disco de alrededor).
+ * La CÁMARA no carga nada: la región viva es el disco REDONDO del jugador (Ajustes.carga) más un disco pequeño por unidad aliada.
  *
  * Además del orden de chunks, el plan trae las REGIONES de disco que va a necesitar, para que el juego las lea antes en
  * segundo plano y nunca tenga que leer un archivo en el hilo principal.
@@ -49,11 +48,13 @@ final class Motor{
     }
 
     private static final class Entrada{
-        int n, pcx, pcy, camX, camY, rVista, carga, vcx0, vcy0, epoca;
+        int n, pcx, pcy, carga, vcx0, vcy0, epoca;
         boolean estricto;
         float px, py, vx, vy;
         int[] req = new int[64];
         int nReq;
+        int[] uni = new int[2 * Vista.MAX];   // chunks locales de unidades aliadas: (cx, cy) alternados
+        int nUni;
     }
 
     private final Object lock = new Object();
@@ -100,11 +101,12 @@ final class Motor{
     }
 
     /**
-     * Entrega una foto al motor (no espera). n = chunks por lado de la ventana; (pcx, pcy) chunk del jugador; (camX, camY) chunk de
-     * la cámara y rVista su radio; (vcx0, vcy0) chunk virtual de la esquina de la ventana; epoca = la del Streamer (un plan de
-     * otra época se descarta); requeridos = chunks con edificios guardados (claves locales).
+     * Entrega una foto al motor (no espera). n = chunks por lado de la ventana; (pcx, pcy) chunk del jugador; carga = radio del disco
+     * del jugador; (vcx0, vcy0) chunk virtual de la esquina de la ventana; epoca = la del Streamer (un plan de otra época se
+     * descarta); requeridos = chunks con edificios guardados (claves locales). La CÁMARA ya no interviene: solo el jugador y las
+     * unidades aliadas (Vista) deciden qué se carga.
      */
-    void solicitar(int n, int pcx, int pcy, int camX, int camY, int rVista, int carga, boolean estricto,
+    void solicitar(int n, int pcx, int pcy, int carga, boolean estricto,
                    int vcx0, int vcy0, int epoca, IntSet requeridos){
         Entrada e;
         synchronized(lock){
@@ -112,7 +114,7 @@ final class Motor{
             reciclada = null;
         }
         if(e == null) e = new Entrada();
-        e.n = n; e.pcx = pcx; e.pcy = pcy; e.camX = camX; e.camY = camY; e.rVista = rVista; e.carga = carga;
+        e.n = n; e.pcx = pcx; e.pcy = pcy; e.carga = carga;
         e.estricto = estricto; e.vcx0 = vcx0; e.vcy0 = vcy0; e.epoca = epoca;
         e.px = px; e.py = py; e.vx = vx; e.vy = vy;
         int sz = requeridos == null ? 0 : requeridos.size;
@@ -123,6 +125,11 @@ final class Motor{
             while(it.hasNext) e.req[i++] = it.next();
         }
         e.nReq = i;
+        e.nUni = 0;
+        for(int u = 0; u < Vista.n; u++){
+            e.uni[e.nUni++] = Vista.ucx[u];
+            e.uni[e.nUni++] = Vista.ucy[u];
+        }
         synchronized(lock){
             if(pendiente != null) reciclada = pendiente;
             pendiente = e;
@@ -237,8 +244,8 @@ final class Motor{
         final int n = e.n, carga = e.carga;
         // nivel 0: bajo el jugador y lo que se ve (discos)
         disco(p, n, e.pcx, e.pcy, R_BASE, 0f, 1f);
-        // la CÁMARA siempre carga lo que ve (sin tope, como Minecraft): lo más cercano a la unidad primero, hacia fuera
-        disco(p, n, e.camX, e.camY, e.rVista, 0.5f, 0.05f);
+        // cada UNIDAD ALIADA mantiene cargado su entorno (así nunca pisa terreno sin cargar). La cámara ya NO carga nada.
+        for(int u = 0; u < e.nUni; u += 2) disco(p, n, e.uni[u], e.uni[u + 1], Vista.R_UNIDAD, 100f, 1f);
         // nivel 1: cono hacia donde se mueve, recortado por el disco de carga
         if(velocidad(e.vx, e.vy) > UMBRAL_MOVIMIENTO){
             float len = (float)Math.hypot(e.vx, e.vy), dirx = e.vx / len, diry = e.vy / len;

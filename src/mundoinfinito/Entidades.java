@@ -58,6 +58,39 @@ final class Entidades{
         return true;
     }
 
+    /**
+     * Tras (re)escribir terreno en el chunk LOCAL (cx, cy): toda unidad que no vuela y quedó sobre una casilla que no puede pisar
+     * (muro, roca, edificio sólido) se aparta a la casilla libre más cercana. Mindustry mata al instante a la unidad de tierra que
+     * está sobre una casilla sólida (UnitComp.update): es lo que hacía "explotar" a las entidades cerca de paredes e instalaciones
+     * cuando el terreno nuevo les caía encima. Las que pueden despegar (canBoost) las deja: despegan solas.
+     */
+    static void rescatar(int cx, int cy){
+        final int tam = MundoInfinitoMod.TAM_CHUNK;
+        for(Unit u : Groups.unit){
+            if(u == null || !u.isValid() || u.type == null || u.isFlying() || u.type.canBoost) continue;
+            final int tx = u.tileX(), ty = u.tileY();
+            if(Math.floorDiv(tx, tam) != cx || Math.floorDiv(ty, tam) != cy) continue;
+            if(u.canPass(tx, ty)) continue;
+            mindustry.world.Tile libre = null;
+            for(int rad = 1; rad <= 12 && libre == null; rad++){
+                for(int dy = -rad; dy <= rad && libre == null; dy++){
+                    for(int dx = -rad; dx <= rad; dx++){
+                        if(Math.max(Math.abs(dx), Math.abs(dy)) != rad) continue;
+                        // solo casillas ya escritas (generadas) o de este mismo chunk, y que la unidad pueda pisar
+                        final int x = tx + dx, y = ty + dy;
+                        if(!Streamer.enMapa(Math.floorDiv(x, tam), Math.floorDiv(y, tam))) continue;
+                        mindustry.world.Tile c = Vars.world.tile(x, y);
+                        if(c != null && u.canPass(x, y)){ libre = c; break; }
+                    }
+                }
+            }
+            if(libre != null){
+                u.set(libre.worldx(), libre.worldy());
+                u.vel.setZero();
+            }
+        }
+    }
+
     /** Antes de mover la ventana: todas las aliadas (menos la que controla el jugador) pasan al almacén. */
     static void hibernarTodas(){
         Seq<Unit> lista = new Seq<>();

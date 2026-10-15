@@ -1,0 +1,265 @@
+diff -ru /home/claude/orig_mundoinfinito/ChunkMeshRenderer.java ./ChunkMeshRenderer.java
+--- /home/claude/orig_mundoinfinito/ChunkMeshRenderer.java	2026-10-15 14:31:25.262745434 +0000
++++ ./ChunkMeshRenderer.java	2026-10-15 14:31:43.924899452 +0000
+@@ -347,6 +347,9 @@
+         final float mx = cam.position.x, my = cam.position.y;
+         for(int cy = y0; cy <= y1 && n < MAX_VISIBLES; cy++){
+             for(int cx = x0; cx <= x1 && n < MAX_VISIBLES; cx++){
++                // solo importan los chunks en alcance (se cocinan/dibujan) o dentro de la ventana de tiles (hay que taparlos). El resto
++                // no tiene nada que dibujar: antes ocupaban los 512 huecos al alejar el zoom y recortaban la vista en un rectángulo.
++                if(!Streamer.enMapa(cx, cy) && !alcance(cx, cy, pcx, pcy, radioCarga, 1)) continue;
+                 float dx = (cx + 0.5f) * CH - mx, dy = (cy + 0.5f) * CH - my, d = dx * dx + dy * dy;
+                 int j = n++;
+                 while(j > 0 && ldist[j - 1] > d){        // inserción: los chunks más cercanos a la cámara van primero
+@@ -368,7 +371,7 @@
+             if(!alcance(lcx[i], lcy[i], pcx, pcy, radioCarga, 1)){
+                 // fuera de alcance (ni el anillo de cocinado): ni terreno, ni malla, ni ranura. Solo se tapa con negro si se ve.
+                 final float ox = lcx[i] * CH, oy = lcy[i] * CH;
+-                if(nNegros < MAX_VISIBLES && !(ox + CH - 4f < camL || ox - 20f > camR || oy + CH - 4f < camB || oy - 20f > camT)){
++                if(Streamer.enMapa(lcx[i], lcy[i]) && nNegros < MAX_VISIBLES && !(ox + CH - 4f < camL || ox - 20f > camR || oy + CH - 4f < camB || oy - 20f > camT)){
+                     negX[nNegros] = ox;
+                     negY[nNegros] = oy;
+                     nNegros++;
+@@ -417,8 +420,8 @@
+             // -20f abajo/izquierda: el sprite 3x3 de un respiradero se emite en su casilla de arriba-derecha y asoma hasta 2 casillas por ese lado
+             if(r.offX + CH - 4f < camL || r.offX - 20f > camR || r.offY + CH - 4f < camB || r.offY - 20f > camT) continue;
+             final int lx = Coord.cxLocal(r.vcx), ly = Coord.cyLocal(r.vcy);
+-            if(!alcance(lx, ly, pcx, pcy, radioCarga, 0)){      // cocinado pero fuera del disco: NO se dibuja (negro)
+-                if(nNegros < MAX_VISIBLES){
++            if(!alcance(lx, ly, pcx, pcy, radioCarga, 0)){      // cocinado pero fuera del disco: NO se dibuja (negro si es de la ventana)
++                if(Streamer.enMapa(lx, ly) && nNegros < MAX_VISIBLES){
+                     negX[nNegros] = r.offX;
+                     negY[nNegros] = r.offY;
+                     nNegros++;
+@@ -448,12 +451,17 @@
+      * lx, ly = chunk LOCAL; pcx, pcy = chunk local del jugador.
+      */
+     private static boolean alcance(int lx, int ly, int pcx, int pcy, int radio, int margen){
+-        if(Ajustes.dentro(lx - pcx, ly - pcy, radio + margen)) return true;
++        // La vista es el disco REDONDO del jugador + el entorno de sus unidades aliadas (Vista); nunca la cámara ni lo explorado.
++        if(Vista.dentro(lx, ly, pcx, pcy, radio, margen)) return true;
+         return EXPLORADO_VISIBLE && Mapa.get(Coord.vcx(lx), Coord.vcy(ly)) != null;
+     }
+ 
+-    /** true: lo ya explorado (con fotografía en el minimapa) sigue viéndose aunque quede fuera del disco de carga. false: solo el disco. */
+-    private static final boolean EXPLORADO_VISIBLE = true;
++    /**
++     * false: lo ya explorado NO se sigue dibujando fuera de la vista (antes true: las fotografías de partidas antiguas eran
++     * cuadrados y su unión se veía como un rectángulo con escalones en vez del disco de "Distancia de chunks"). El minimapa
++     * sigue recordando lo explorado: eso es solo memoria del mapa, no terreno cargado.
++     */
++    private static final boolean EXPLORADO_VISIBLE = false;
+ 
+     /** ¿El chunk está "de verdad" en la ventana de tiles? Entonces el juego ya aplica su propia oscuridad y no se hornea. */
+     private static boolean oscuroDeseado(int vcx, int vcy){
+diff -ru /home/claude/orig_mundoinfinito/Entidades.java ./Entidades.java
+--- /home/claude/orig_mundoinfinito/Entidades.java	2026-10-15 14:31:25.262807712 +0000
++++ ./Entidades.java	2026-10-15 14:31:43.923541448 +0000
+@@ -58,6 +58,39 @@
+         return true;
+     }
+ 
++    /**
++     * Tras (re)escribir terreno en el chunk LOCAL (cx, cy): toda unidad que no vuela y quedó sobre una casilla que no puede pisar
++     * (muro, roca, edificio sólido) se aparta a la casilla libre más cercana. Mindustry mata al instante a la unidad de tierra que
++     * está sobre una casilla sólida (UnitComp.update): es lo que hacía "explotar" a las entidades cerca de paredes e instalaciones
++     * cuando el terreno nuevo les caía encima. Las que pueden despegar (canBoost) las deja: despegan solas.
++     */
++    static void rescatar(int cx, int cy){
++        final int tam = MundoInfinitoMod.TAM_CHUNK;
++        for(Unit u : Groups.unit){
++            if(u == null || !u.isValid() || u.type == null || u.isFlying() || u.type.canBoost) continue;
++            final int tx = u.tileX(), ty = u.tileY();
++            if(Math.floorDiv(tx, tam) != cx || Math.floorDiv(ty, tam) != cy) continue;
++            if(u.canPass(tx, ty)) continue;
++            mindustry.world.Tile libre = null;
++            for(int rad = 1; rad <= 12 && libre == null; rad++){
++                for(int dy = -rad; dy <= rad && libre == null; dy++){
++                    for(int dx = -rad; dx <= rad; dx++){
++                        if(Math.max(Math.abs(dx), Math.abs(dy)) != rad) continue;
++                        // solo casillas ya escritas (generadas) o de este mismo chunk, y que la unidad pueda pisar
++                        final int x = tx + dx, y = ty + dy;
++                        if(!Streamer.enMapa(Math.floorDiv(x, tam), Math.floorDiv(y, tam))) continue;
++                        mindustry.world.Tile c = Vars.world.tile(x, y);
++                        if(c != null && u.canPass(x, y)){ libre = c; break; }
++                    }
++                }
++            }
++            if(libre != null){
++                u.set(libre.worldx(), libre.worldy());
++                u.vel.setZero();
++            }
++        }
++    }
++
+     /** Antes de mover la ventana: todas las aliadas (menos la que controla el jugador) pasan al almacén. */
+     static void hibernarTodas(){
+         Seq<Unit> lista = new Seq<>();
+diff -ru /home/claude/orig_mundoinfinito/Motor.java ./Motor.java
+--- /home/claude/orig_mundoinfinito/Motor.java	2026-10-15 14:31:25.262908451 +0000
++++ ./Motor.java	2026-10-15 14:31:25.322202059 +0000
+@@ -12,13 +12,12 @@
+  * ajustes) con solicitar() y recoge el último plan terminado con recoger(). Nunca espera: si el motor aún calcula, el juego
+  * sigue con el plan anterior. Así planificar (ordenar cientos de chunks) ya no cuesta nada en el fotograma.
+  *
+- *   nivel 0  lo que el jugador pisa y (si no es estricto) lo que ve en pantalla       (urgente)
++ *   nivel 0  lo que el jugador pisa y el entorno de cada unidad aliada                  (urgente)
+  *   nivel 1  un cono hacia donde se mueve; cuanto más rápido, más lejos llega         (anticipación)
+  *   nivel 2  un DISCO alrededor del jugador, de radio = "distancia de carga" de Ajustes (reserva)
+  *   nivel 3  chunks con edificios guardados, que deben existir bajo ellos             (último)
+  *
+- * La unidad que CONTROLA el jugador y la CÁMARA no tienen tope: lo que pisa y lo que se ve se carga siempre, en orden de
+- * cercanía, de forma progresiva. La distancia de carga de Ajustes solo gobierna la reserva (el disco de alrededor).
++ * La CÁMARA no carga nada: la región viva es el disco REDONDO del jugador (Ajustes.carga) más un disco pequeño por unidad aliada.
+  *
+  * Además del orden de chunks, el plan trae las REGIONES de disco que va a necesitar, para que el juego las lea antes en
+  * segundo plano y nunca tenga que leer un archivo en el hilo principal.
+@@ -49,11 +48,13 @@
+     }
+ 
+     private static final class Entrada{
+-        int n, pcx, pcy, camX, camY, rVista, carga, vcx0, vcy0, epoca;
++        int n, pcx, pcy, carga, vcx0, vcy0, epoca;
+         boolean estricto;
+         float px, py, vx, vy;
+         int[] req = new int[64];
+         int nReq;
++        int[] uni = new int[2 * Vista.MAX];   // chunks locales de unidades aliadas: (cx, cy) alternados
++        int nUni;
+     }
+ 
+     private final Object lock = new Object();
+@@ -100,11 +101,12 @@
+     }
+ 
+     /**
+-     * Entrega una foto al motor (no espera). n = chunks por lado de la ventana; (pcx, pcy) chunk del jugador; (camX, camY) chunk de
+-     * la cámara y rVista su radio; (vcx0, vcy0) chunk virtual de la esquina de la ventana; epoca = la del Streamer (un plan de
+-     * otra época se descarta); requeridos = chunks con edificios guardados (claves locales).
++     * Entrega una foto al motor (no espera). n = chunks por lado de la ventana; (pcx, pcy) chunk del jugador; carga = radio del disco
++     * del jugador; (vcx0, vcy0) chunk virtual de la esquina de la ventana; epoca = la del Streamer (un plan de otra época se
++     * descarta); requeridos = chunks con edificios guardados (claves locales). La CÁMARA ya no interviene: solo el jugador y las
++     * unidades aliadas (Vista) deciden qué se carga.
+      */
+-    void solicitar(int n, int pcx, int pcy, int camX, int camY, int rVista, int carga, boolean estricto,
++    void solicitar(int n, int pcx, int pcy, int carga, boolean estricto,
+                    int vcx0, int vcy0, int epoca, IntSet requeridos){
+         Entrada e;
+         synchronized(lock){
+@@ -112,7 +114,7 @@
+             reciclada = null;
+         }
+         if(e == null) e = new Entrada();
+-        e.n = n; e.pcx = pcx; e.pcy = pcy; e.camX = camX; e.camY = camY; e.rVista = rVista; e.carga = carga;
++        e.n = n; e.pcx = pcx; e.pcy = pcy; e.carga = carga;
+         e.estricto = estricto; e.vcx0 = vcx0; e.vcy0 = vcy0; e.epoca = epoca;
+         e.px = px; e.py = py; e.vx = vx; e.vy = vy;
+         int sz = requeridos == null ? 0 : requeridos.size;
+@@ -123,6 +125,11 @@
+             while(it.hasNext) e.req[i++] = it.next();
+         }
+         e.nReq = i;
++        e.nUni = 0;
++        for(int u = 0; u < Vista.n; u++){
++            e.uni[e.nUni++] = Vista.ucx[u];
++            e.uni[e.nUni++] = Vista.ucy[u];
++        }
+         synchronized(lock){
+             if(pendiente != null) reciclada = pendiente;
+             pendiente = e;
+@@ -237,8 +244,8 @@
+         final int n = e.n, carga = e.carga;
+         // nivel 0: bajo el jugador y lo que se ve (discos)
+         disco(p, n, e.pcx, e.pcy, R_BASE, 0f, 1f);
+-        // la CÁMARA siempre carga lo que ve (sin tope, como Minecraft): lo más cercano a la unidad primero, hacia fuera
+-        disco(p, n, e.camX, e.camY, e.rVista, 0.5f, 0.05f);
++        // cada UNIDAD ALIADA mantiene cargado su entorno (así nunca pisa terreno sin cargar). La cámara ya NO carga nada.
++        for(int u = 0; u < e.nUni; u += 2) disco(p, n, e.uni[u], e.uni[u + 1], Vista.R_UNIDAD, 100f, 1f);
+         // nivel 1: cono hacia donde se mueve, recortado por el disco de carga
+         if(velocidad(e.vx, e.vy) > UMBRAL_MOVIMIENTO){
+             float len = (float)Math.hypot(e.vx, e.vy), dirx = e.vx / len, diry = e.vy / len;
+diff -ru /home/claude/orig_mundoinfinito/MundoInfinitoMod.java ./MundoInfinitoMod.java
+--- /home/claude/orig_mundoinfinito/MundoInfinitoMod.java	2026-10-15 14:31:25.262928091 +0000
++++ ./MundoInfinitoMod.java	2026-10-15 14:31:43.922374633 +0000
+@@ -2230,6 +2230,7 @@
+             motor.claves.clear();
+             motor.olvidar();
+             Ventana.reiniciar();
++            Vista.limpiar();
+             cursorPlan = 0;
+             synchronized(cola){ cola.clear(); colaBaja.clear(); pendBaja.clear(); }
+             CacheChunks.configurar(m.semilla, m.dimGen());
+@@ -2449,6 +2450,7 @@
+                     paso = 0;
+                 }
+                 aplicarTramo(actual, paso, paso + TRAMO);
++                Entidades.rescatar(actual.cx, actual.cy);   // una unidad de tierra bajo un muro recién escrito muere: se aparta antes de su update
+                 paso += TRAMO;
+                 if(paso >= TAM_CHUNK * TAM_CHUNK){
+                     terminarChunk(actual);
+@@ -2504,7 +2506,7 @@
+         static final IntSet deseados = new IntSet(), vistos = new IntSet(), vistosB = new IntSet();
+         static final Motor motor = new Motor();
+         static float ultimoEscaneo = 0f;
+-        static int rVista = 4;   // radio (en chunks) de lo que se ve en pantalla: lo usan el motor y las entidades
++        static int rVista = 4;   // radio (en chunks) del disco del jugador (NO de la cámara): lo usan la reubicación y las entidades
+         static final IntSeq faltanK = new IntSeq();
+         static final FloatSeq faltanS = new FloatSeq();
+ 
+@@ -2524,21 +2526,16 @@
+             // La reubicación se prepara ANTES (Ventana) y solo se compromete al llegar al margen.
+             if(Ventana.vigilar(pcx, pcy)) return;
+ 
+-            int cenX = pcx, cenY = pcy;
+-            if(Core.camera != null){
+-                cenX = Mathf.clamp((int)(Core.camera.position.x / 8f) / TAM_CHUNK, 0, nch - 1);
+-                cenY = Mathf.clamp((int)(Core.camera.position.y / 8f) / TAM_CHUNK, 0, nch - 1);
+-                // radio según lo que se ve en pantalla (con zoom alejado hacen falta más chunks)
+-                float mitad = Math.max(Core.camera.width, Core.camera.height) / 2f / 8f;
+-                rVista = Mathf.clamp((int)Math.ceil(mitad / TAM_CHUNK) + 1, 2, Math.max(7, nch / 2 - MARGEN_REBASE));   // sin tope fijo: la cámara carga todo lo que ve
+-            }
++            // La CÁMARA ya no decide qué se carga: 'rVista' (radio de lo visible) es el disco de carga del jugador.
++            rVista = Mathf.clamp(Ajustes.carga(), 2, Math.max(7, nch / 2 - MARGEN_REBASE));
++            Vista.actualizar(pcx, pcy);   // chunks de las unidades aliadas: su entorno también se mantiene cargado
+ 
+             // MOTOR DE CHUNKS: decide qué hace falta y en qué orden según el JUGADOR y hacia dónde se dirige.
+             // Ni las unidades ni los edificios piden terreno por su cuenta (antes se recorrían todos cada vez).
+             motor.actualizar(jugadorX, jugadorY, Math.max(1f, Time.time - ultimoEscaneo));
+             ultimoEscaneo = Time.time;
+             // MOTOR ASÍNCRONO: el plan se calcula en su propio hilo; aquí solo se le entrega la foto del momento
+-            motor.solicitar(nch, pcx, pcy, cenX, cenY, rVista, Ajustes.carga(), Ajustes.estricto(),
++            motor.solicitar(nch, pcx, pcy, Ajustes.carga(), Ajustes.estricto(),
+                 ox / TAM_CHUNK, oy / TAM_CHUNK, epoca, requeridos);
+ 
+             Entidades.tick(pcx, pcy);     // las unidades aliadas lejanas duermen; las cercanas despiertan
+@@ -3328,6 +3325,7 @@
+                 Streamer.generados.add(Streamer.clave(cx0, cy0));   // su terreno ya está: solo falta la niebla y los edificios
+             }else if(cd != null){
+                 Streamer.aplicarTramo(cd, 0, TAM_CHUNK * TAM_CHUNK);   // solo escribe lo que cambia
++                Entidades.rescatar(cx0, cy0);
+                 cd.liberar();
+                 Streamer.generados.add(Streamer.clave(cx0, cy0));
+             }else{
+diff -ru /home/claude/orig_mundoinfinito/Ventana.java ./Ventana.java
+--- /home/claude/orig_mundoinfinito/Ventana.java	2026-10-15 14:31:25.263106243 +0000
++++ ./Ventana.java	2026-10-15 14:31:43.923264277 +0000
+@@ -225,7 +225,9 @@
+         if(Core.camera != null){
+             camx = Core.camera.position.x / (8f * TAM);
+             camy = Core.camera.position.y / (8f * TAM);
+-            rC = (float)Math.hypot(Core.camera.width, Core.camera.height) / 2f / (8f * TAM) + 2f + vel;
++            // la cámara ya no carga nada: su zona solo importa hasta donde llega el disco del jugador (con el zoom alejado, rC
++            // crecía sin límite y 'seguro' nunca se cumplía: la ventana futura no avanzaba y reubicar volvía a ser un tirón)
++            rC = Math.min((float)Math.hypot(Core.camera.width, Core.camera.height) / 2f / (8f * TAM) + 2f + vel, rJ);
+         }else{
+             camx = jx;
+             camy = jy;
+@@ -318,6 +320,7 @@
+             if(cd == null){ avanza = false; continue; }
+             if(!Entidades.despejar(cx, cy)){ cd.liberar(); avanza = false; continue; }
+             Streamer.aplicarTramo(cd, 0, TAM * TAM);
++            Entidades.rescatar(cx, cy);
+             cd.liberar();
+             staged[k] = true;
+             nStaged++;
+Only in .: Vista.java

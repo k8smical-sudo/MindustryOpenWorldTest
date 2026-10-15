@@ -2230,6 +2230,7 @@ public class MundoInfinitoMod extends Mod{
             motor.claves.clear();
             motor.olvidar();
             Ventana.reiniciar();
+            Vista.limpiar();
             cursorPlan = 0;
             synchronized(cola){ cola.clear(); colaBaja.clear(); pendBaja.clear(); }
             CacheChunks.configurar(m.semilla, m.dimGen());
@@ -2449,6 +2450,7 @@ public class MundoInfinitoMod extends Mod{
                     paso = 0;
                 }
                 aplicarTramo(actual, paso, paso + TRAMO);
+                Entidades.rescatar(actual.cx, actual.cy);   // una unidad de tierra bajo un muro recién escrito muere: se aparta antes de su update
                 paso += TRAMO;
                 if(paso >= TAM_CHUNK * TAM_CHUNK){
                     terminarChunk(actual);
@@ -2504,7 +2506,7 @@ public class MundoInfinitoMod extends Mod{
         static final IntSet deseados = new IntSet(), vistos = new IntSet(), vistosB = new IntSet();
         static final Motor motor = new Motor();
         static float ultimoEscaneo = 0f;
-        static int rVista = 4;   // radio (en chunks) de lo que se ve en pantalla: lo usan el motor y las entidades
+        static int rVista = 4;   // radio (en chunks) del disco del jugador (NO de la cámara): lo usan la reubicación y las entidades
         static final IntSeq faltanK = new IntSeq();
         static final FloatSeq faltanS = new FloatSeq();
 
@@ -2524,21 +2526,16 @@ public class MundoInfinitoMod extends Mod{
             // La reubicación se prepara ANTES (Ventana) y solo se compromete al llegar al margen.
             if(Ventana.vigilar(pcx, pcy)) return;
 
-            int cenX = pcx, cenY = pcy;
-            if(Core.camera != null){
-                cenX = Mathf.clamp((int)(Core.camera.position.x / 8f) / TAM_CHUNK, 0, nch - 1);
-                cenY = Mathf.clamp((int)(Core.camera.position.y / 8f) / TAM_CHUNK, 0, nch - 1);
-                // radio según lo que se ve en pantalla (con zoom alejado hacen falta más chunks)
-                float mitad = Math.max(Core.camera.width, Core.camera.height) / 2f / 8f;
-                rVista = Mathf.clamp((int)Math.ceil(mitad / TAM_CHUNK) + 1, 2, Math.max(7, nch / 2 - MARGEN_REBASE));   // sin tope fijo: la cámara carga todo lo que ve
-            }
+            // La CÁMARA ya no decide qué se carga: 'rVista' (radio de lo visible) es el disco de carga del jugador.
+            rVista = Mathf.clamp(Ajustes.carga(), 2, Math.max(7, nch / 2 - MARGEN_REBASE));
+            Vista.actualizar(pcx, pcy);   // chunks de las unidades aliadas: su entorno también se mantiene cargado
 
             // MOTOR DE CHUNKS: decide qué hace falta y en qué orden según el JUGADOR y hacia dónde se dirige.
             // Ni las unidades ni los edificios piden terreno por su cuenta (antes se recorrían todos cada vez).
             motor.actualizar(jugadorX, jugadorY, Math.max(1f, Time.time - ultimoEscaneo));
             ultimoEscaneo = Time.time;
             // MOTOR ASÍNCRONO: el plan se calcula en su propio hilo; aquí solo se le entrega la foto del momento
-            motor.solicitar(nch, pcx, pcy, cenX, cenY, rVista, Ajustes.carga(), Ajustes.estricto(),
+            motor.solicitar(nch, pcx, pcy, Ajustes.carga(), Ajustes.estricto(),
                 ox / TAM_CHUNK, oy / TAM_CHUNK, epoca, requeridos);
 
             Entidades.tick(pcx, pcy);     // las unidades aliadas lejanas duermen; las cercanas despiertan
@@ -3328,6 +3325,7 @@ public class MundoInfinitoMod extends Mod{
                 Streamer.generados.add(Streamer.clave(cx0, cy0));   // su terreno ya está: solo falta la niebla y los edificios
             }else if(cd != null){
                 Streamer.aplicarTramo(cd, 0, TAM_CHUNK * TAM_CHUNK);   // solo escribe lo que cambia
+                Entidades.rescatar(cx0, cy0);
                 cd.liberar();
                 Streamer.generados.add(Streamer.clave(cx0, cy0));
             }else{

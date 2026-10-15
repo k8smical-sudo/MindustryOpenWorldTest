@@ -1,0 +1,189 @@
+diff -ruN orig/MindustryOpenWorldTest-main/src/mundoinfinito/ChunkMeshRenderer.java mow/MindustryOpenWorldTest-main/src/mundoinfinito/ChunkMeshRenderer.java
+--- orig/MindustryOpenWorldTest-main/src/mundoinfinito/ChunkMeshRenderer.java	2026-10-13 21:12:53.000000000 +0000
++++ mow/MindustryOpenWorldTest-main/src/mundoinfinito/ChunkMeshRenderer.java	2026-10-15 05:35:07.892778460 +0000
+@@ -378,7 +378,7 @@
+             visibles[nVisibles++] = r;
+             if(r.estado == LIBRE || r.estado == SIN_DATOS){
+                 intentarCocinar(r, mid, vcx, vcy);
+-            }else if(r.estado == LISTA && !r.recocinando && (regreso || ((cuadro + (int)(k & 15)) & 15) == 0)){
++            }else if(r.estado == LISTA && !r.recocinando && (regreso || r.oscuro != oscuroDeseado(vcx, vcy) || ((cuadro + (int)(k & 15)) & 15) == 0)){
+                 revisarObsoleto(r, mid, vcx, vcy);
+             }
+         }
+@@ -399,7 +399,7 @@
+             final Ranura r = visibles[i];
+             // -20f abajo/izquierda: el sprite 3x3 de un respiradero se emite en su casilla de arriba-derecha y asoma hasta 2 casillas por ese lado
+             if(r.offX + CH - 4f < camL || r.offX - 20f > camR || r.offY + CH - 4f < camB || r.offY - 20f > camT) continue;
+-            final boolean listo = r.estado == LISTA && (r.malla != null || r.vacia) && r.faltantes == 0;
++            final boolean listo = r.estado == LISTA && (r.malla != null || r.vacia);   // con vecinos ausentes se dibuja igual (bordes replicados) y se recocina al llegar: negro era peor
+             final int lx = Coord.cxLocal(r.vcx), ly = Coord.cyLocal(r.vcy);
+             final boolean enVentana = Streamer.enMapa(lx, ly);
+             final boolean aplicado = !enVentana || Streamer.generados.contains(Streamer.clave(lx, ly));
+@@ -429,8 +429,10 @@
+     private static void intentarCocinar(Ranura r, int mid, int vcx, int vcy){
+         if(cuadro < r.proximo) return;
+         boolean completo = true;
++        boolean propio = true;
+         if(!CacheChunks.tiene(mid, r.clave)){
+             completo = false;
++            propio = false;
+             if(terreno < MAX_TERRENO_FRAME && pedirTerreno(r.clave)) terreno++;
+         }
+         for(int i = 0; i < 8; i++){
+@@ -440,7 +442,10 @@
+                 if(terreno < MAX_TERRENO_FRAME && pedirTerreno(k)) terreno++;
+             }
+         }
+-        if(completo){
++        final Camera cm = Core.camera;
++        final boolean enPantalla = cm != null && r.offX + CH > cm.position.x - cm.width * 0.5f && r.offX < cm.position.x + cm.width * 0.5f
++            && r.offY + CH > cm.position.y - cm.height * 0.5f && r.offY < cm.position.y + cm.height * 0.5f;
++        if(completo || (propio && enPantalla)){   // en pantalla: cocinar ya con bordes replicados (faltantes los recocina) en vez de dejar negro
+             if(cocciones < MAX_COCCIONES_FRAME && ChunkGeometryCooker.solicitar(r.clave, mid, oscuroDeseado(vcx, vcy))){
+                 r.estado = COCINANDO;
+                 cocciones++;
+@@ -586,7 +591,7 @@
+      */
+     private static void reciclar(){
+         final boolean faltanRanuras = ranurasLibres.size() < MAX_VISIBLES / 4;
+-        final int umbral = faltanRanuras ? cuadro - 90 : cuadro - OLVIDO_FRAMES;
++        final int umbral = faltanRanuras ? cuadro - 300 : cuadro - OLVIDO_FRAMES;
+         int n = 0;
+         for(LongMap.Entry<Ranura> e : mapa){
+             if(e.value.ultimoVisto < umbral && n < porBorrar.length) porBorrar[n++] = e.key;
+diff -ruN orig/MindustryOpenWorldTest-main/src/mundoinfinito/Entidades.java mow/MindustryOpenWorldTest-main/src/mundoinfinito/Entidades.java
+--- orig/MindustryOpenWorldTest-main/src/mundoinfinito/Entidades.java	2026-10-13 21:12:53.000000000 +0000
++++ mow/MindustryOpenWorldTest-main/src/mundoinfinito/Entidades.java	2026-10-15 05:35:07.892426243 +0000
+@@ -73,27 +73,17 @@
+             double lx = r.vx - Coord.origenX(), ly = r.vy - Coord.origenY();
+             if(lx < 1 || ly < 1 || lx > Streamer.meta.tam - 1 || ly > Streamer.meta.tam - 1) return false;
+             float wx = (float)(lx * 8.0), wy = (float)(ly * 8.0);
+-            if(!t.flying && !t.allowLegStep){
+-                // una unidad terrestre que cae sobre una casilla sólida muere al instante (aunque tenga la vida completa):
+-                // se busca la casilla libre más cercana; si el terreno aún no está listo, sigue durmiendo
++            Unit u = t.spawn(Team.get(r.equipo), wx, wy);
++            if(!t.flying && !t.canBoost){
++                // mismo criterio que el motor para ESTE tipo (sólido, naval fuera del agua, etc.); si no cabe, se busca hueco
+                 mindustry.world.Tile ti = Vars.world.tileWorld(wx, wy);
+-                if(ti == null || ti.solid()){
+-                    mindustry.world.Tile libre = null;
+-                    for(int rad = 1; rad <= 8 && libre == null; rad++){
+-                        for(int dy = -rad; dy <= rad && libre == null; dy++){
+-                            for(int dx = -rad; dx <= rad; dx++){
+-                                if(Math.max(Math.abs(dx), Math.abs(dy)) != rad) continue;
+-                                mindustry.world.Tile c = Vars.world.tile((int)(wx / 8f) + dx, (int)(wy / 8f) + dy);
+-                                if(c != null && !c.solid()){ libre = c; break; }
+-                            }
+-                        }
+-                    }
+-                    if(libre == null) return false;
+-                    wx = libre.worldx();
+-                    wy = libre.worldy();
++                if(ti == null){ u.remove(); return false; }   // terreno aún no listo: sigue durmiendo
++                if(!Rescate.apto(u, ti)){
++                    mindustry.world.Tile libre = Rescate.libre(u, ti.x, ti.y, 8);
++                    if(libre == null){ u.remove(); return false; }
++                    u.set(libre.worldx(), libre.worldy());
+                 }
+             }
+-            Unit u = t.spawn(Team.get(r.equipo), wx, wy);
+             u.health = Math.max(1f, r.vida);
+             u.shield = r.escudo;
+             u.rotation = r.rot;
+diff -ruN orig/MindustryOpenWorldTest-main/src/mundoinfinito/MundoInfinitoMod.java mow/MindustryOpenWorldTest-main/src/mundoinfinito/MundoInfinitoMod.java
+--- orig/MindustryOpenWorldTest-main/src/mundoinfinito/MundoInfinitoMod.java	2026-10-13 21:12:53.000000000 +0000
++++ mow/MindustryOpenWorldTest-main/src/mundoinfinito/MundoInfinitoMod.java	2026-10-15 05:35:07.891847137 +0000
+@@ -105,6 +105,7 @@
+         Events.on(ClientLoadEvent.class, e -> Time.runTask(10f, () -> { MenuUI.inyectarBoton(); Hud.crear(); MapaVista.crear(); Ajustes.registrar(); }));
+ 
+         // Bucle de streaming: se ejecuta cada frame (presupuesto de tiempo propio).
++        Events.run(Trigger.update, Rescate::tick);   // ANTES del streaming y de Groups.update: saca unidades de casillas sólidas
+         Events.run(Trigger.update, Streamer::tick);
+         // Drones de carga orbital: puro dato, avanza aunque el jugador esté en la otra dimensión.
+         Events.run(Trigger.update, Orbita::tick);
+@@ -2993,6 +2994,7 @@
+             r.canGameOver = false;
+             r.defaultTeam = Team.sharded;
+             r.limitMapArea = false;
++            r.disableUnitCap = true;   // todos los mundos: el tope sale de los núcleos CARGADOS y lejos de la base valía 0 (las unidades morían al despertar)
+             r.borderDarkness = true;
+             r.lighting = false;
+             r.coreIncinerates = true;
+@@ -3011,7 +3013,6 @@
+                 // Todo se puede construir: sin árbol tecnológico ni bloques baneados.
+                 // Los equipos enemigos juegan "con trampa": sus torretas siempre tienen munición y sus bloques no piden energía.
+                 // Sin límite de unidades: el tope sale de los núcleos CARGADOS y, al alejarse de la base, valía 0 (morían al crearse).
+-                r.disableUnitCap = true;
+                 for(Team et : new Team[]{Team.crux, Team.malis}){
+                     Rules.TeamRule tr = r.teams.get(et);
+                     tr.cheat = true;
+diff -ruN orig/MindustryOpenWorldTest-main/src/mundoinfinito/Rescate.java mow/MindustryOpenWorldTest-main/src/mundoinfinito/Rescate.java
+--- orig/MindustryOpenWorldTest-main/src/mundoinfinito/Rescate.java	1970-01-01 00:00:00.000000000 +0000
++++ mow/MindustryOpenWorldTest-main/src/mundoinfinito/Rescate.java	2026-10-15 05:35:07.840383544 +0000
+@@ -0,0 +1,66 @@
++package mundoinfinito;
++
++import arc.util.Log;
++import mindustry.Vars;
++import mindustry.entities.EntityCollisions;
++import mindustry.gen.Groups;
++import mindustry.gen.Unit;
++import mindustry.type.UnitType;
++import mindustry.world.Tile;
++import mundoinfinito.MundoInfinitoMod.Streamer;
++
++/**
++ * RED DE SEGURIDAD CONTRA CASILLAS SÓLIDAS. El mod escribe terreno (muros), edificios restaurados y estructuras con
++ * Tile.setBlock sobre casillas donde puede haber unidades vivas; el motor mata a toda unidad que queda dentro de una casilla
++ * sólida para ella (UnitComp.update). Aquí, ANTES de que el motor lo haga (Trigger.update corre antes de Groups.update), se
++ * detecta y se saca a la unidad a la casilla libre más cercana. Cuesta una consulta de casilla por unidad cada 2 ticks.
++ */
++final class Rescate{
++    private static int reloj;
++    private Rescate(){}
++
++    /** ¿Puede esta unidad estar en la casilla? Mismo criterio que usa el motor (EntityCollisions.SolidPred de cada tipo). */
++    static boolean apto(Unit u, Tile t){
++        if(t == null) return false;
++        if(u.type.flying || u.type.canBoost) return true;
++        EntityCollisions.SolidPred s = u.solidity();
++        return s == null || !s.solid(t.x, t.y);
++    }
++
++    /** Casilla libre más cercana a (tx, ty) en anillos crecientes, o null. */
++    static Tile libre(Unit u, int tx, int ty, int maxRadio){
++        for(int r = 1; r <= maxRadio; r++){
++            Tile mejor = null;
++            float md = Float.MAX_VALUE;
++            for(int dy = -r; dy <= r; dy++){
++                for(int dx = -r; dx <= r; dx++){
++                    if(Math.max(Math.abs(dx), Math.abs(dy)) != r) continue;
++                    Tile c = Vars.world.tile(tx + dx, ty + dy);
++                    if(c == null || !apto(u, c)) continue;
++                    float d = dx * dx + dy * dy;
++                    if(d < md){ md = d; mejor = c; }
++                }
++            }
++            if(mejor != null) return mejor;
++        }
++        return null;
++    }
++
++    static void tick(){
++        if(!Streamer.activo || Vars.state == null || !Vars.state.isPlaying()) return;
++        if((++reloj & 1) != 0) return;
++        for(Unit u : Groups.unit){
++            if(u == null || u.dead || u.type == null || u.isPlayer() || u.type.flying || u.type.canBoost) continue;
++            try{
++                Tile t = u.tileOn();
++                if(t == null || apto(u, t)) continue;
++                Tile l = libre(u, t.x, t.y, 12);
++                if(l == null) continue;          // sin hueco cerca: se deja al motor (o a Entidades) decidir
++                u.set(l.worldx(), l.worldy());
++                u.vel.setZero();
++            }catch(Throwable e){
++                Log.warn("[MundoInfinito] Rescate falló: @", e.toString());
++            }
++        }
++    }
++}

@@ -51,6 +51,40 @@ diff -ruN orig/MindustryOpenWorldTest-main/src/mundoinfinito/ChunkMeshRenderer.j
          int n = 0;
          for(LongMap.Entry<Ranura> e : mapa){
              if(e.value.ultimoVisto < umbral && n < porBorrar.length) porBorrar[n++] = e.key;
+diff -ruN orig/MindustryOpenWorldTest-main/src/mundoinfinito/Efectos.java mow/MindustryOpenWorldTest-main/src/mundoinfinito/Efectos.java
+--- orig/MindustryOpenWorldTest-main/src/mundoinfinito/Efectos.java	1970-01-01 00:00:00.000000000 +0000
++++ mow/MindustryOpenWorldTest-main/src/mundoinfinito/Efectos.java	2026-10-15 05:57:23.606172020 +0000
+@@ -0,0 +1,30 @@
++package mundoinfinito;
++
++import mindustry.Vars;
++import mindustry.gen.Groups;
++import mundoinfinito.MundoInfinitoMod.Streamer;
++
++/**
++ * EFECTOS HUÉRFANOS. Tras reubicar la ventana, los chunks fuera del círculo de recarga conservan a propósito las casillas de la
++ * posición anterior (copiarChunk). Esas casillas siguen siendo suelo "real" para el juego, así que los respiraderos y demás pisos
++ * con efecto (Floor.renderUpdate) siguen emitiendo en su sitio viejo: se ven efectos donde el terreno dibujado no tiene nada.
++ * Un efecto cuya casilla está dentro de la ventana pero en un chunk SIN terreno aplicado no corresponde a nada visible: se quita.
++ * (Todo chunk cercano está aplicado; los efectos de unidades/balas viven en chunks aplicados.)
++ */
++final class Efectos{
++    private static int reloj;
++    private Efectos(){}
++
++    static void tick(){
++        if(!Streamer.activo || Streamer.meta == null || Vars.state == null || !Vars.state.isPlaying()) return;
++        if((++reloj & 3) != 0 || Streamer.nch <= 0) return;
++        if(MundoInfinitoMod.Mundos.rebase != null || MundoInfinitoMod.Mundos.viajando) return;
++        final int tam = MundoInfinitoMod.TAM_CHUNK;
++        for(int i = Groups.effect.size() - 1; i >= 0; i--){
++            var e = Groups.effect.index(i);
++            int cx = Math.floorDiv((int)(e.x / 8f), tam), cy = Math.floorDiv((int)(e.y / 8f), tam);
++            if(!Streamer.enMapa(cx, cy)) continue;                       // fuera de la ventana: no hay casillas viejas
++            if(!Streamer.generados.contains(Streamer.clave(cx, cy))) e.remove();
++        }
++    }
++}
 diff -ruN orig/MindustryOpenWorldTest-main/src/mundoinfinito/Entidades.java mow/MindustryOpenWorldTest-main/src/mundoinfinito/Entidades.java
 --- orig/MindustryOpenWorldTest-main/src/mundoinfinito/Entidades.java	2026-10-13 21:12:53.000000000 +0000
 +++ mow/MindustryOpenWorldTest-main/src/mundoinfinito/Entidades.java	2026-10-15 05:35:07.892426243 +0000
@@ -90,18 +124,148 @@ diff -ruN orig/MindustryOpenWorldTest-main/src/mundoinfinito/Entidades.java mow/
              u.health = Math.max(1f, r.vida);
              u.shield = r.escudo;
              u.rotation = r.rot;
+diff -ruN orig/MindustryOpenWorldTest-main/src/mundoinfinito/Motor.java mow/MindustryOpenWorldTest-main/src/mundoinfinito/Motor.java
+--- orig/MindustryOpenWorldTest-main/src/mundoinfinito/Motor.java	2026-10-13 21:12:53.000000000 +0000
++++ mow/MindustryOpenWorldTest-main/src/mundoinfinito/Motor.java	2026-10-15 05:57:23.711177018 +0000
+@@ -50,6 +50,7 @@
+ 
+     private static final class Entrada{
+         int n, pcx, pcy, camX, camY, rVista, carga, vcx0, vcy0, epoca;
++        float camFx, camFy;                      // cámara en chunks FRACCIONARIOS
+         boolean estricto;
+         float px, py, vx, vy;
+         int[] req = new int[64];
+@@ -106,12 +107,19 @@
+      */
+     void solicitar(int n, int pcx, int pcy, int camX, int camY, int rVista, int carga, boolean estricto,
+                    int vcx0, int vcy0, int epoca, IntSet requeridos){
++        solicitar(n, pcx, pcy, camX, camY, camX + 0.5f, camY + 0.5f, rVista, carga, estricto, vcx0, vcy0, epoca, requeridos);
++    }
++
++    /** Igual, con la cámara en chunks fraccionarios (camFx, camFy): el disco de lo que se ve se desliza con ella. */
++    void solicitar(int n, int pcx, int pcy, int camX, int camY, float camFx, float camFy, int rVista, int carga, boolean estricto,
++                   int vcx0, int vcy0, int epoca, IntSet requeridos){
+         Entrada e;
+         synchronized(lock){
+             e = reciclada;
+             reciclada = null;
+         }
+         if(e == null) e = new Entrada();
++        e.camFx = camFx; e.camFy = camFy;
+         e.n = n; e.pcx = pcx; e.pcy = pcy; e.camX = camX; e.camY = camY; e.rVista = rVista; e.carga = carga;
+         e.estricto = estricto; e.vcx0 = vcx0; e.vcy0 = vcy0; e.epoca = epoca;
+         e.px = px; e.py = py; e.vx = vx; e.vy = vy;
+@@ -216,6 +224,18 @@
+         }
+     }
+ 
++    /** Disco centrado en una posición FRACCIONARIA (en chunks): pertenencia y prioridad cambian de forma continua con el movimiento. */
++    private static void discoF(Plan p, int n, float fx, float fy, int r, float base, float peso){
++        int c0x = (int)Math.floor(fx), c0y = (int)Math.floor(fy);
++        for(int cy = c0y - r - 1; cy <= c0y + r + 1; cy++){
++            for(int cx = c0x - r - 1; cx <= c0x + r + 1; cx++){
++                float dx = cx + 0.5f - fx, dy = cy + 0.5f - fy;
++                if(dx * dx + dy * dy > r * r + r) continue;
++                poner(p, n, cx, cy, base + (float)Math.hypot(dx, dy) * peso);
++            }
++        }
++    }
++
+     /** Como disco(), pero solo los chunks que además caen dentro del disco de carga alrededor del jugador (modo estricto). */
+     private static void discoLimitado(Plan p, int n, int cx0, int cy0, int r, float base, float peso, int pcx, int pcy, int carga){
+         for(int dy = -r; dy <= r; dy++){
+@@ -236,9 +256,10 @@
+         p.epoca = e.epoca;
+         final int n = e.n, carga = e.carga;
+         // nivel 0: bajo el jugador y lo que se ve (discos)
+-        disco(p, n, e.pcx, e.pcy, R_BASE, 0f, 1f);
++        final float fx = Math.max(0f, Math.min(n, e.px / Coord.CHUNK)), fy = Math.max(0f, Math.min(n, e.py / Coord.CHUNK));
++        discoF(p, n, fx, fy, R_BASE, 0f, 1f);
+         // la CÁMARA siempre carga lo que ve (sin tope, como Minecraft): lo más cercano a la unidad primero, hacia fuera
+-        disco(p, n, e.camX, e.camY, e.rVista, 0.5f, 0.05f);
++        discoF(p, n, e.camFx, e.camFy, e.rVista, 0.5f, 0.05f);
+         // nivel 1: cono hacia donde se mueve, recortado por el disco de carga
+         if(velocidad(e.vx, e.vy) > UMBRAL_MOVIMIENTO){
+             float len = (float)Math.hypot(e.vx, e.vy), dirx = e.vx / len, diry = e.vy / len;
+@@ -254,7 +275,7 @@
+             }
+         }
+         // nivel 2: reserva = disco de "distancia de carga" alrededor del jugador
+-        disco(p, n, e.pcx, e.pcy, carga, 2000f, 1f);
++        discoF(p, n, fx, fy, carga, 2000f, 1f);
+         // nivel 3: bajo los edificios guardados
+         for(int i = 0; i < e.nReq; i++){
+             int k = e.req[i];
 diff -ruN orig/MindustryOpenWorldTest-main/src/mundoinfinito/MundoInfinitoMod.java mow/MindustryOpenWorldTest-main/src/mundoinfinito/MundoInfinitoMod.java
 --- orig/MindustryOpenWorldTest-main/src/mundoinfinito/MundoInfinitoMod.java	2026-10-13 21:12:53.000000000 +0000
-+++ mow/MindustryOpenWorldTest-main/src/mundoinfinito/MundoInfinitoMod.java	2026-10-15 05:35:07.891847137 +0000
-@@ -105,6 +105,7 @@
++++ mow/MindustryOpenWorldTest-main/src/mundoinfinito/MundoInfinitoMod.java	2026-10-15 05:57:23.709358340 +0000
+@@ -105,6 +105,8 @@
          Events.on(ClientLoadEvent.class, e -> Time.runTask(10f, () -> { MenuUI.inyectarBoton(); Hud.crear(); MapaVista.crear(); Ajustes.registrar(); }));
  
          // Bucle de streaming: se ejecuta cada frame (presupuesto de tiempo propio).
 +        Events.run(Trigger.update, Rescate::tick);   // ANTES del streaming y de Groups.update: saca unidades de casillas sólidas
++        Events.run(Trigger.update, Efectos::tick);
          Events.run(Trigger.update, Streamer::tick);
          // Drones de carga orbital: puro dato, avanza aunque el jugador esté en la otra dimensión.
          Events.run(Trigger.update, Orbita::tick);
-@@ -2993,6 +2994,7 @@
+@@ -2458,6 +2460,7 @@
+ 
+             Perfil.fin(Perfil.S_APLICAR, tS);
+ 
++            seguirJugador();   // posición viva (cada 6 ticks) y plan nuevo al moverse 1/4 de chunk: la carga ya no avanza a saltos de chunk/0,5 s
+             tS = Perfil.t();
+             pedirMas();   // mantiene la tubería llena sin esperar al siguiente escaneo (antes: 5 chunks cada 0,5 s)
+             Perfil.fin(Perfil.S_PEDIR, tS);
+@@ -2508,6 +2511,36 @@
+         static final IntSeq faltanK = new IntSeq();
+         static final FloatSeq faltanS = new FloatSeq();
+ 
++        static float acumSeguir, planPx = -1e9f, planPy = -1e9f, planCx = -1e9f, planCy = -1e9f;
++
++        /**
++         * Seguimiento CONTINUO del jugador y de la cámara. Antes la posición solo se leía en escanear() (cada 30 ticks) y el plan de
++         * carga dependía del chunk ENTERO del jugador: la carga avanzaba a saltos al cruzar fronteras de chunk. Ahora, cada 6 ticks se
++         * lee la posición viva y se entrega un plan nuevo al motor en cuanto el jugador o la cámara se mueven 1/4 de chunk
++         * (el motor trabaja con la posición fraccionaria: el disco de carga se desliza con el jugador).
++         */
++        static void seguirJugador(){
++            acumSeguir += Time.delta;
++            if(acumSeguir < 6f) return;
++            acumSeguir = 0f;
++            if(meta == null || nch <= 0 || Vars.player == null || Vars.player.dead() || Vars.player.unit() == null) return;
++            if(Mundos.rebase != null || Mundos.viajando || restaurando) return;
++            Unit u = Vars.player.unit();
++            jugadorX = u.x / 8f;
++            jugadorY = u.y / 8f;
++            float camX = Core.camera != null ? Core.camera.position.x / 8f : jugadorX;
++            float camY = Core.camera != null ? Core.camera.position.y / 8f : jugadorY;
++            motor.actualizar(jugadorX, jugadorY, Math.max(1f, Time.time - ultimoEscaneo));
++            ultimoEscaneo = Time.time;
++            final float q = TAM_CHUNK * 0.25f;
++            if(Math.abs(jugadorX - planPx) < q && Math.abs(jugadorY - planPy) < q && Math.abs(camX - planCx) < q && Math.abs(camY - planCy) < q) return;
++            planPx = jugadorX; planPy = jugadorY; planCx = camX; planCy = camY;
++            int pcx = Mathf.clamp((int)jugadorX / TAM_CHUNK, 0, nch - 1), pcy = Mathf.clamp((int)jugadorY / TAM_CHUNK, 0, nch - 1);
++            int cenX = Mathf.clamp((int)camX / TAM_CHUNK, 0, nch - 1), cenY = Mathf.clamp((int)camY / TAM_CHUNK, 0, nch - 1);
++            motor.solicitar(nch, pcx, pcy, cenX, cenY, camX / TAM_CHUNK, camY / TAM_CHUNK, rVista, Ajustes.carga(), Ajustes.estricto(),
++                ox / TAM_CHUNK, oy / TAM_CHUNK, epoca, requeridos);
++        }
++
+         /** Decide qué chunks necesita el mundo y, si el jugador se acerca al borde de la ventana, la reubica. */
+         static void escanear(){
+             deseados.clear();
+@@ -2538,7 +2571,10 @@
+             motor.actualizar(jugadorX, jugadorY, Math.max(1f, Time.time - ultimoEscaneo));
+             ultimoEscaneo = Time.time;
+             // MOTOR ASÍNCRONO: el plan se calcula en su propio hilo; aquí solo se le entrega la foto del momento
+-            motor.solicitar(nch, pcx, pcy, cenX, cenY, rVista, Ajustes.carga(), Ajustes.estricto(),
++            planPx = jugadorX; planPy = jugadorY;
++            planCx = Core.camera != null ? Core.camera.position.x / 8f : jugadorX;
++            planCy = Core.camera != null ? Core.camera.position.y / 8f : jugadorY;
++            motor.solicitar(nch, pcx, pcy, cenX, cenY, planCx / TAM_CHUNK, planCy / TAM_CHUNK, rVista, Ajustes.carga(), Ajustes.estricto(),
+                 ox / TAM_CHUNK, oy / TAM_CHUNK, epoca, requeridos);
+ 
+             Entidades.tick(pcx, pcy);     // las unidades aliadas lejanas duermen; las cercanas despiertan
+@@ -2993,6 +3029,7 @@
              r.canGameOver = false;
              r.defaultTeam = Team.sharded;
              r.limitMapArea = false;
@@ -109,7 +273,7 @@ diff -ruN orig/MindustryOpenWorldTest-main/src/mundoinfinito/MundoInfinitoMod.ja
              r.borderDarkness = true;
              r.lighting = false;
              r.coreIncinerates = true;
-@@ -3011,7 +3013,6 @@
+@@ -3011,7 +3048,6 @@
                  // Todo se puede construir: sin árbol tecnológico ni bloques baneados.
                  // Los equipos enemigos juegan "con trampa": sus torretas siempre tienen munición y sus bloques no piden energía.
                  // Sin límite de unidades: el tope sale de los núcleos CARGADOS y, al alejarse de la base, valía 0 (morían al crearse).

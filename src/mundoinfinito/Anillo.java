@@ -226,7 +226,7 @@ final class Anillo{
             r.dt = ausente;
             Streamer.colaRestaurar.addLast(r);
         }
-        for(MundoInfinitoMod.Estructuras.RegU u : c.unidades){
+        for(Estructuras.RegU u : c.unidades){
             if(u.clase == 0) Streamer.unidadesPend.add(u);
         }
         if(c.niebla != null && Vars.fogControl != null){
@@ -310,7 +310,7 @@ final class Anillo{
         for(Unit u : Groups.unit){
             if(u == null || !u.isValid() || u.isPlayer()) continue;
             if(Math.floorDiv(u.tileX(), T) != cx || Math.floorDiv(u.tileY(), T) != cy) continue;
-            if(u.controller() instanceof MundoInfinitoMod.Estructuras.Guardia) tmpGuard.add(u);
+            if(u.controller() instanceof Estructuras.Guardia) tmpGuard.add(u);
         }
 
         // 3) guardar
@@ -366,10 +366,10 @@ final class Anillo{
         if(reescribir && viejo != null) reg.sucia = true;
 
         final boolean hib = Bases.dormida(Coord.claveVirtual(cx, cy));
-        final Seq<MundoInfinitoMod.Estructuras.RegU> dorm = new Seq<>();
+        final Seq<Estructuras.RegU> dorm = new Seq<>();
         final Seq<Reg> edHib = new Seq<>();
         if(reescribir && viejo != null){
-            for(MundoInfinitoMod.Estructuras.RegU u : viejo.unidades) if(u.clase == 1 || hib) dorm.add(u);
+            for(Estructuras.RegU u : viejo.unidades) if(u.clase == 1 || hib) dorm.add(u);
             if(hib) for(Reg re : viejo.edificios) if(re.equipo != Team.sharded.id) edHib.add(re);
         }
 
@@ -411,7 +411,7 @@ final class Anillo{
         }
         cg.unidades.addAll(dorm);
         cg.edificios.addAll(edHib);
-        for(Unit u : guardias) cg.unidades.add(MundoInfinitoMod.Estructuras.RegU.desde(u, 0, 0));
+        for(Unit u : guardias) cg.unidades.add(Estructuras.RegU.desde(u, 0, 0));
         cg.tick = Mundos.reloj();
     }
 
@@ -434,7 +434,7 @@ final class Anillo{
         }
         final java.util.HashMap<Integer, Seq<Unit>> guard = new java.util.HashMap<>();
         for(Unit u : Groups.unit){
-            if(!u.isValid() || !(u.controller() instanceof MundoInfinitoMod.Estructuras.Guardia)) continue;
+            if(!u.isValid() || !(u.controller() instanceof Estructuras.Guardia)) continue;
             int cx = Math.floorDiv(u.tileX(), T), cy = Math.floorDiv(u.tileY(), T);
             guard.computeIfAbsent(Streamer.clave(cx, cy), kk -> new Seq<>()).add(u);
         }

@@ -150,6 +150,9 @@ project(":"){
         compileOnly("com.github.GglLfr.EntityAnno:entity:$entVersion")
         annotationProcessor("com.github.GglLfr.EntityAnno:entity:$entVersion")
 
+        // Motor MX-Test (parches OW): DEBE ir antes que el Mindustry oficial para que sus clases
+        // (World, Tiles, FogControl, ChunkDarkness...) tengan prioridad en el classpath.
+        compileOnly(files(layout.projectDirectory.file("libs/MindustryX-Desktop.jar")))
         compileOnly("Anuken:$mindustry:$mindustryVersion")
     }
 

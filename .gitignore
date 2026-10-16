@@ -10,3 +10,6 @@ build/
 .idea/
 .vscode/
 .kateproject
+
+# Jar del motor MX-Test (se descarga en CI)
+libs/

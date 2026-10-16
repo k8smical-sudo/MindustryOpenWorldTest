@@ -14,6 +14,9 @@ jobs:
   buildJar:
     name: Build and Publish Jar
     runs-on: ubuntu-latest
+    env:
+      # Repositorio de tu fork del motor (MX-Test). CAMBIA ESTA LÍNEA si el repo se llama distinto.
+      MX_REPO: k8smical-sudo/MX-Test
     steps:
       - uses: actions/checkout@v7
       - name: Set up JDK 17
@@ -44,6 +47,20 @@ jobs:
             curl -fsSL --retry 3 "$url" -o "build/fetched-raw/$name"
           done
           echo "Components: $(ls build/fetched-raw | wc -l)"
+      # El mod usa API que SOLO existe en el motor MX-Test (ChunkDarkness, Tiles.chunkLoaded,
+      # World.publishChunk, FogControl.putStaticChunk...). Se compila contra su jar de escritorio,
+      # no contra el Mindustry oficial.
+      - name: Download MX-Test engine jar
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG=$(gh release list --repo "$MX_REPO" --limit 1 --json tagName -q '.[0].tagName')
+          echo "MX-Test release: $TAG"
+          mkdir -p libs
+          gh release download "$TAG" --repo "$MX_REPO" --pattern '*-Desktop.jar' --dir libs --clobber
+          mv libs/*-Desktop.jar libs/MindustryX-Desktop.jar
+          ls -la libs
       - name: Build mod artifact
         run: ./gradlew dex -x fetchComps --stacktrace
       - name: Upload built mod artifact as a GitHub Action artifact

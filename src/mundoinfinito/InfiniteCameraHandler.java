@@ -102,7 +102,7 @@ final class InfiniteCameraHandler{
         }
 
         // ---- 1. deshacer el recorte del juego ----
-        if((panX != 0f || panY != 0f) && tienePrev){
+        if(!Vars.world.isRing() && (panX != 0f || panY != 0f) && tienePrev){   // en un mundo en anillo el motor ya no recorta la cámara
             final float escala = cam.width / Core.graphics.getWidth();      // igual que MobileInput.pan()
             final float ex = Coord.mundoX(prevVX) - panX * escala;           // dónde habría quedado sin recorte
             final float ey = Coord.mundoY(prevVY) - panY * escala;

@@ -66,12 +66,11 @@ final class Portal{
     /** Viaja a una posición VIRTUAL de la dimensión actual. Cerca: salto directo; lejos: se reabre la ventana allí. */
     static void irA(double vx, double vy){
         if(!Streamer.activo || Mundos.viajando || Streamer.restaurando || Vars.player == null || Vars.player.dead() || Mundos.actual == null) return;
-        final int tam = Streamer.meta.tam;
-        final double lx = vx - Coord.origenX(), ly = vy - Coord.origenY();
-        final int margen = MundoInfinitoMod.MARGEN_REBASE * MundoInfinitoMod.TAM_CHUNK + 40;
+        final double lx = vx, ly = vy;   // sin ventana: la posición del mundo es la virtual
         Unit pu = Vars.player.unit();
-        if(lx > margen && ly > margen && lx < tam - margen && ly < tam - margen){
-            // salto directo dentro de la ventana cargada: el jugador y sus unidades cercanas van juntos
+        final int pcxD = Math.floorDiv((int)Math.floor(lx), MundoInfinitoMod.TAM_CHUNK), pcyD = Math.floorDiv((int)Math.floor(ly), MundoInfinitoMod.TAM_CHUNK);
+        if(Streamer.enMapa(pcxD, pcyD) && Streamer.generados.contains(Streamer.clave(pcxD, pcyD))){
+            // salto directo a un chunk ya cargado: el jugador y sus unidades cercanas van juntos
             float nx = (float)(lx * 8.0), ny = (float)(ly * 8.0);
             float ddx = nx - pu.x, ddy = ny - pu.y;
             Fx.launch.at(pu.x, pu.y);

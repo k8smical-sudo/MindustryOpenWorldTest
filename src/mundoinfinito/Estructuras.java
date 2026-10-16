@@ -346,9 +346,8 @@ final class Estructuras{
         try{
             UnitType t = Vars.content.unit(tipo);
             if(t == null) return;
-            double lx = vx - Coord.origenX(), ly = vy - Coord.origenY();
-            if(lx < 2 || ly < 2 || lx > Streamer.meta.tam - 2 || ly > Streamer.meta.tam - 2) return;
-            Unit u = t.spawn(equipo, (float)(lx * 8.0), (float)(ly * 8.0));
+            if(Vars.world.tile((int)Math.floor(vx), (int)Math.floor(vy)) == null) return;   // chunk no cargado: la unidad no puede existir aún
+            Unit u = t.spawn(equipo, (float)(vx * 8.0), (float)(vy * 8.0));
             u.controller(new Guardia(hvx, hvy, fuga));
             if(vida > 0f) u.health = Math.max(1f, vida);
         }catch(Throwable e){
@@ -390,12 +389,10 @@ final class Estructuras{
 
     /** ¿Están ya generados todos los chunks interiores que cubre el círculo (cx, cy, r)? */
     static boolean listo(int cx, int cy, int r){
-        int n = Streamer.nch;
-        int x0 = Math.floorDiv(cx - r - Streamer.ox, MundoInfinitoMod.TAM_CHUNK), x1 = Math.floorDiv(cx + r - Streamer.ox, MundoInfinitoMod.TAM_CHUNK);
-        int y0 = Math.floorDiv(cy - r - Streamer.oy, MundoInfinitoMod.TAM_CHUNK), y1 = Math.floorDiv(cy + r - Streamer.oy, MundoInfinitoMod.TAM_CHUNK);
+        int x0 = Math.floorDiv(cx - r, MundoInfinitoMod.TAM_CHUNK), x1 = Math.floorDiv(cx + r, MundoInfinitoMod.TAM_CHUNK);
+        int y0 = Math.floorDiv(cy - r, MundoInfinitoMod.TAM_CHUNK), y1 = Math.floorDiv(cy + r, MundoInfinitoMod.TAM_CHUNK);
         for(int a = x0; a <= x1; a++){
             for(int b = y0; b <= y1; b++){
-                if(a < 1 || b < 1 || a > n - 2 || b > n - 2) return false;
                 if(!Streamer.generados.contains(Streamer.clave(a, b))) return false;
             }
         }
@@ -411,11 +408,13 @@ final class Estructuras{
         int dim = m.dim;
         int sd = Muestreo.semDim(m.semilla, dim);
         Spawn sp = Muestreo.spawn(sd, dim);
-        int tam = m.tam;
+        // Alrededor del jugador (lo cargado): ya no hay ventana, el área es el disco de carga + 1 chunk
+        final int alc = (Ajustes.carga() + 1) * MundoInfinitoMod.TAM_CHUNK;
+        final int pvx = (int)Math.floor(Streamer.jugadorX), pvy = (int)Math.floor(Streamer.jugadorY);
         int c = sp.celdaE;
         int[] cen = new int[3];
-        for(int i = Math.floorDiv(Streamer.ox, c); i <= Math.floorDiv(Streamer.ox + tam, c); i++){
-            for(int j = Math.floorDiv(Streamer.oy, c); j <= Math.floorDiv(Streamer.oy + tam, c); j++){
+        for(int i = Math.floorDiv(pvx - alc, c); i <= Math.floorDiv(pvx + alc, c); i++){
+            for(int j = Math.floorDiv(pvy - alc, c); j <= Math.floorDiv(pvy + alc, c); j++){
                 int t = tipo(sd, sp, i, j, cen);
                 if(t == T_NADA) continue;
                 long id = clave(i, j, 0);
@@ -430,8 +429,8 @@ final class Estructuras{
             }
         }
         // enemigos errantes: celdas de 96 tiles
-        for(int i = Math.floorDiv(Streamer.ox, 96); i <= Math.floorDiv(Streamer.ox + tam, 96); i++){
-            for(int j = Math.floorDiv(Streamer.oy, 96); j <= Math.floorDiv(Streamer.oy + tam, 96); j++){
+        for(int i = Math.floorDiv(pvx - alc, 96); i <= Math.floorDiv(pvx + alc, 96); i++){
+            for(int j = Math.floorDiv(pvy - alc, 96); j <= Math.floorDiv(pvy + alc, 96); j++){
                 if(Muestreo.rnd(i, j, Muestreo.sem(sd, 9820)) > 0.14f + sp.probE * 0.5f) continue;
                 int px = i * 96 + 12 + (int)(Muestreo.rnd(i, j, Muestreo.sem(sd, 9821)) * 72f);
                 int py = j * 96 + 12 + (int)(Muestreo.rnd(i, j, Muestreo.sem(sd, 9822)) * 72f);

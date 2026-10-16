@@ -48,12 +48,10 @@ final class Motor{
     }
 
     private static final class Entrada{
-        int n, pcx, pcy, carga, vcx0, vcy0, epoca;
+        int pcx, pcy, carga, epoca;
         boolean estricto;
         float px, py, vx, vy;
-        int[] req = new int[64];
-        int nReq;
-        int[] uni = new int[2 * Vista.MAX];   // chunks locales de unidades aliadas: (cx, cy) alternados
+        int[] uni = new int[2 * Vista.MAX];   // chunks de unidades aliadas: (cx, cy) alternados
         int nUni;
     }
 
@@ -101,34 +99,24 @@ final class Motor{
     }
 
     /**
-     * Entrega una foto al motor (no espera). n = chunks por lado de la ventana; (pcx, pcy) chunk del jugador; carga = radio del disco
-     * del jugador; (vcx0, vcy0) chunk virtual de la esquina de la ventana; epoca = la del Streamer (un plan de otra época se
-     * descarta); requeridos = chunks con edificios guardados (claves locales). La CÁMARA ya no interviene: solo el jugador y las
+     * Entrega una foto al motor (no espera). (pcx, pcy) = chunk del jugador (coordenadas virtuales, sin ventana); carga = radio del
+     * disco del jugador; epoca = la del Streamer (un plan de otra época se descarta). La CÁMARA no interviene: solo el jugador y las
      * unidades aliadas (Vista) deciden qué se carga.
      */
-    void solicitar(int n, int pcx, int pcy, int carga, boolean estricto,
-                   int vcx0, int vcy0, int epoca, IntSet requeridos){
+    void solicitar(int pcx, int pcy, int carga, boolean estricto, int epoca){
         Entrada e;
         synchronized(lock){
             e = reciclada;
             reciclada = null;
         }
         if(e == null) e = new Entrada();
-        e.n = n; e.pcx = pcx; e.pcy = pcy; e.carga = carga;
-        e.estricto = estricto; e.vcx0 = vcx0; e.vcy0 = vcy0; e.epoca = epoca;
+        e.pcx = pcx; e.pcy = pcy; e.carga = carga;
+        e.estricto = estricto; e.epoca = epoca;
         e.px = px; e.py = py; e.vx = vx; e.vy = vy;
-        int sz = requeridos == null ? 0 : requeridos.size;
-        if(e.req.length < sz) e.req = new int[Math.max(sz, e.req.length * 2)];
-        int i = 0;
-        if(requeridos != null){
-            IntSet.IntSetIterator it = requeridos.iterator();
-            while(it.hasNext) e.req[i++] = it.next();
-        }
-        e.nReq = i;
         e.nUni = 0;
         for(int u = 0; u < Vista.n; u++){
-            e.uni[e.nUni++] = Coord.cxLocal(Vista.uvx[u]);
-            e.uni[e.nUni++] = Coord.cyLocal(Vista.uvy[u]);
+            e.uni[e.nUni++] = Vista.uvx[u];
+            e.uni[e.nUni++] = Vista.uvy[u];
         }
         synchronized(lock){
             if(pendiente != null) reciclada = pendiente;
@@ -208,29 +196,18 @@ final class Motor{
         }
     }
 
-    private static void poner(Plan p, int n, int cx, int cy, float prio){
-        if(cx < 0 || cy < 0 || cx >= n || cy >= n) return;
-        int k = cy * n + cx;
+    /** Clave de chunk del anillo (la misma que Streamer.clave): coordenadas virtuales de chunk, ±1024. */
+    private static void poner(Plan p, int cx, int cy, float prio){
+        if(cx < -1020 || cy < -1020 || cx > 1020 || cy > 1020) return;   // el motor solo conoce ±1024 chunks (un short de tiles)
+        int k = (cx << 16) | (cy & 0xFFFF);
         if(!p.mejor.containsKey(k) || p.mejor.get(k, Float.MAX_VALUE) > prio) p.mejor.put(k, prio);
     }
 
-    private static void disco(Plan p, int n, int cx0, int cy0, int r, float base, float peso){
+    private static void disco(Plan p, int cx0, int cy0, int r, float base, float peso){
         for(int dy = -r; dy <= r; dy++){
             for(int dx = -r; dx <= r; dx++){
                 if(!Ajustes.dentro(dx, dy, r)) continue;
-                poner(p, n, cx0 + dx, cy0 + dy, base + (float)Math.hypot(dx, dy) * peso);
-            }
-        }
-    }
-
-    /** Como disco(), pero solo los chunks que además caen dentro del disco de carga alrededor del jugador (modo estricto). */
-    private static void discoLimitado(Plan p, int n, int cx0, int cy0, int r, float base, float peso, int pcx, int pcy, int carga){
-        for(int dy = -r; dy <= r; dy++){
-            for(int dx = -r; dx <= r; dx++){
-                if(!Ajustes.dentro(dx, dy, r)) continue;
-                int cx = cx0 + dx, cy = cy0 + dy;
-                if(!Ajustes.dentro(cx - pcx, cy - pcy, carga)) continue;
-                poner(p, n, cx, cy, base + (float)Math.hypot(dx, dy) * peso);
+                poner(p, cx0 + dx, cy0 + dy, base + (float)Math.hypot(dx, dy) * peso);
             }
         }
     }
@@ -241,11 +218,11 @@ final class Motor{
         p.regX.clear();
         p.regY.clear();
         p.epoca = e.epoca;
-        final int n = e.n, carga = e.carga;
+        final int carga = e.carga;
         // nivel 0: bajo el jugador y lo que se ve (discos)
-        disco(p, n, e.pcx, e.pcy, R_BASE, 0f, 1f);
+        disco(p, e.pcx, e.pcy, R_BASE, 0f, 1f);
         // cada UNIDAD ALIADA mantiene cargado su entorno (así nunca pisa terreno sin cargar). La cámara ya NO carga nada.
-        for(int u = 0; u < e.nUni; u += 2) disco(p, n, e.uni[u], e.uni[u + 1], Vista.R_UNIDAD, 100f, 1f);
+        for(int u = 0; u < e.nUni; u += 2) disco(p, e.uni[u], e.uni[u + 1], Vista.R_UNIDAD, 100f, 1f);
         // nivel 1: cono hacia donde se mueve, recortado por el disco de carga
         if(velocidad(e.vx, e.vy) > UMBRAL_MOVIMIENTO){
             float len = (float)Math.hypot(e.vx, e.vy), dirx = e.vx / len, diry = e.vy / len;
@@ -256,18 +233,12 @@ final class Motor{
                 for(int l = -w; l <= w; l++){
                     int cx = (int)Math.floor(cxf + dirx * d - diry * l), cy = (int)Math.floor(cyf + diry * d + dirx * l);
                     if(!Ajustes.dentro(cx - e.pcx, cy - e.pcy, carga)) continue;
-                    poner(p, n, cx, cy, 1000f + d * 10f + Math.abs(l));
+                    poner(p, cx, cy, 1000f + d * 10f + Math.abs(l));
                 }
             }
         }
-        // nivel 2: reserva = disco de "distancia de carga" alrededor del jugador
-        disco(p, n, e.pcx, e.pcy, carga, 2000f, 1f);
-        // nivel 3: bajo los edificios guardados
-        for(int i = 0; i < e.nReq; i++){
-            int k = e.req[i];
-            int cx = k % n, cy = k / n;
-            poner(p, n, cx, cy, 3000f + (float)Math.hypot(cx - e.pcx, cy - e.pcy));
-        }
+        // nivel 2: reserva = disco de "distancia de carga" (+1: los edificios de un chunk solo se restauran con sus 8 vecinos cargados)
+        disco(p, e.pcx, e.pcy, carga + 1, 2000f, 1f);
         // orden por prioridad (menor primero), sin objetos: la prioridad (>= 0, sus bits conservan el orden) va en la mitad alta del long
         int sz = p.mejor.size;
         if(p.orden.length < sz) p.orden = new long[Math.max(sz, p.orden.length * 2)];
@@ -279,7 +250,7 @@ final class Motor{
         final int reg = MundoInfinitoMod.REGION_CHUNKS;
         for(int j = 0; j < p.claves.size; j++){
             int k = p.claves.items[j];
-            int rx = Math.floorDiv(e.vcx0 + k % n, reg), ry = Math.floorDiv(e.vcy0 + k / n, reg);
+            int rx = Math.floorDiv(k >> 16, reg), ry = Math.floorDiv((short)k, reg);
             boolean ya = false;
             for(int q = 0; q < p.regX.size; q++){
                 if(p.regX.items[q] == rx && p.regY.items[q] == ry){ ya = true; break; }

@@ -144,8 +144,8 @@ final class Entidades{
         Regiones.ChunkGuardado c = Regiones.chunk(vcx, vcy, false);
         if(c == null || c.unidades.isEmpty()) return;
         int lcx = Coord.cxLocal(vcx), lcy = Coord.cyLocal(vcy);
-        if(!Streamer.enMapa(lcx, lcy) || !Streamer.generados.contains(Streamer.clave(lcx, lcy)) || Ventana.enStaging(lcx, lcy)) return;
-        int pcx = (int)Streamer.jugadorX / MundoInfinitoMod.TAM_CHUNK, pcy = (int)Streamer.jugadorY / MundoInfinitoMod.TAM_CHUNK;
+        if(!Streamer.enMapa(lcx, lcy) || !Streamer.generados.contains(Streamer.clave(lcx, lcy))) return;
+        int pcx = Streamer.pcx(), pcy = Streamer.pcy();
         if(!Ajustes.dentro(lcx - pcx, lcy - pcy, radioActivo())) return;
         boolean cambio = false;
         for(int i = c.unidades.size - 1; i >= 0; i--){
@@ -158,7 +158,7 @@ final class Entidades{
 
     /** Cada ~0,5 s: duerme las que se alejaron y despierta las que el jugador volvió a acercar. */
     static void tick(int pcx, int pcy){
-        if(Streamer.restaurando || Mundos.rebase != null || Mundos.viajando) return;
+        if(Streamer.restaurando || Mundos.viajando) return;
         int radio = radioActivo();
         Seq<Unit> dormir = new Seq<>();
         for(Unit u : Groups.unit){

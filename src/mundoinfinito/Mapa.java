@@ -159,7 +159,7 @@ final class Mapa{
                 nucleosSucios = true;
             }
         }
-        boolean estable = !Streamer.restaurando && MundoInfinitoMod.Mundos.rebase == null && !MundoInfinitoMod.Mundos.viajando
+        boolean estable = !Streamer.restaurando && !MundoInfinitoMod.Mundos.viajando
             && Streamer.colaRestaurar.isEmpty();
         if(!estable) return;
         final int tam = Streamer.meta == null ? 0 : Streamer.meta.tam;
@@ -168,11 +168,10 @@ final class Mapa{
             java.util.Map.Entry<Long, int[]> e = it.next();
             if(vivos.contains(e.getKey())) continue;
             int[] v = e.getValue();
-            int lx = v[0] - Streamer.ox, ly = v[1] - Streamer.oy;
-            if(lx < 0 || ly < 0 || lx >= tam || ly >= tam) continue;       // fuera de la ventana: se conserva
-            int cx = lx / Coord.CHUNK, cy = ly / Coord.CHUNK;
-            if(cx < 1 || cy < 1 || cx > Streamer.nch - 2 || cy > Streamer.nch - 2) continue;   // anillo exterior: sus edificios no se restauran
-            if(!Streamer.generados.contains(Streamer.clave(cx, cy))) continue;
+            int lx = v[0], ly = v[1];
+            int cx = Math.floorDiv(lx, Coord.CHUNK), cy = Math.floorDiv(ly, Coord.CHUNK);
+            if(!Streamer.generados.contains(Streamer.clave(cx, cy))) continue;           // chunk no cargado: se conserva
+            if(!Anillo.restaurados.contains(Streamer.clave(cx, cy))) continue;                  // aún no se restauraron sus edificios
             Tile t = Vars.world.tile(lx, ly);
             if(t != null && t.build instanceof CoreBlock.CoreBuild) continue;
             it.remove();                                                    // el núcleo ya no está: destruido

@@ -101,7 +101,7 @@ final class Bases{
         escDatos = null;
     }
 
-    /** Al mover la ventana las claves virtuales siguen valiendo: no hay nada que rehacer. */
+    /** (Heredado de la ventana; ya no se llama.) */
     static void reiniciarVentana(){
         // Lo que estaba a medio despertar (cola en coordenadas virtuales) sigue siendo válido; se retoma solo.
         // Lo que estaba a medio hibernar SIN confirmar usa coordenadas locales de la ventana vieja: se descarta (nada cambió en el mundo).
@@ -123,7 +123,7 @@ final class Bases{
     static boolean cerca(double vx, double vy, int extra){
         int lcx = Math.floorDiv((int)Math.floor(vx - Streamer.ox), MundoInfinitoMod.TAM_CHUNK);
         int lcy = Math.floorDiv((int)Math.floor(vy - Streamer.oy), MundoInfinitoMod.TAM_CHUNK);
-        int pcx = (int)Streamer.jugadorX / MundoInfinitoMod.TAM_CHUNK, pcy = (int)Streamer.jugadorY / MundoInfinitoMod.TAM_CHUNK;
+        int pcx = Streamer.pcx(), pcy = Streamer.pcy();
         return Ajustes.dentro(lcx - pcx, lcy - pcy, Entidades.radioActivo() + extra);
     }
 
@@ -154,7 +154,7 @@ final class Bases{
     static void tick(){
         puedeEscanear = false;
         Meta m = Streamer.meta;
-        if(m == null || !m.dimensional() || !Streamer.activo || Streamer.restaurando || Mundos.rebase != null || Mundos.viajando) return;
+        if(m == null || !m.dimensional() || !Streamer.activo || Streamer.restaurando || Mundos.viajando) return;
         puedeEscanear = false;
         if(!Estructuras.cola.isEmpty() || !Estructuras.enCola.isEmpty()) return;
         despertarCercanas();
@@ -218,7 +218,7 @@ final class Bases{
         try{
             if(h.dorm == null){
                 // fase A: serializar. El mundo no cambia, así que si el jugador vuelve se cancela sin consecuencias.
-                if(cerca(h.cx, h.cy, 1) || Streamer.restaurando || Mundos.rebase != null || Mundos.viajando){ hib = null; return; }
+                if(cerca(h.cx, h.cy, 1) || Streamer.restaurando || Mundos.viajando){ hib = null; return; }
                 int n = 0;
                 while(h.idx < h.edificios.size){
                     if((++n & 3) == 0 && System.nanoTime() >= finNs) break;

@@ -40,13 +40,13 @@ final class Vista{
     static int pcx(){
         final Unit u = Vars.player == null ? null : Vars.player.unit();
         if(u != null && !Vars.player.dead()) return Math.floorDiv(u.tileX(), MundoInfinitoMod.TAM_CHUNK);
-        return Math.floorDiv((int)Streamer.jugadorX, MundoInfinitoMod.TAM_CHUNK);
+        return Math.floorDiv((int)Math.floor(Streamer.jugadorX), MundoInfinitoMod.TAM_CHUNK);
     }
 
     static int pcy(){
         final Unit u = Vars.player == null ? null : Vars.player.unit();
         if(u != null && !Vars.player.dead()) return Math.floorDiv(u.tileY(), MundoInfinitoMod.TAM_CHUNK);
-        return Math.floorDiv((int)Streamer.jugadorY, MundoInfinitoMod.TAM_CHUNK);
+        return Math.floorDiv((int)Math.floor(Streamer.jugadorY), MundoInfinitoMod.TAM_CHUNK);
     }
 
     /** Hilo del juego (cada escaneo, ~0,5 s): recoge dónde están las unidades aliadas. */

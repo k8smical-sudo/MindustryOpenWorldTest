@@ -24,9 +24,12 @@ final class Ajustes{
 
     private Ajustes(){}
 
-    /** Mayor radio útil: la ventana en RAM es finita, más allá de su mitad no hay dónde cargar. */
+    /**
+     * Mayor radio útil: el anillo tiene 32 chunks por lado y los chunks cargados (radio + 1 de reserva + histéresis de descarga)
+     * no pueden pasar de ese lado o dos chunks se disputarían el mismo hueco: 32 / 2 - 4 = 12.
+     */
     static int maxCarga(){
-        return Math.max(4, MundoInfinitoMod.ventana() / MundoInfinitoMod.TAM_CHUNK / 2 - 2);
+        return Math.max(4, MundoInfinitoMod.Streamer.ANILLO_CHUNKS / 2 - 4);
     }
 
     /**

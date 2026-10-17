@@ -21,6 +21,8 @@ final class Ajustes{
     static final String K_CARGA = "ow-carga", K_SIM = "ow-sim", K_NIEBLA = "ow-niebla", K_VISION = "ow-vision";
     /** Con visión automática el dron nunca revela más de esto (la niebla se actualiza por cada casilla que se mueve el dron). */
     static final int VISION_AUTO_MAX = 12;
+    /** Menor distancia de chunks permitida (antes 3): con 1 solo se carga el chunk del jugador y sus vecinos inmediatos. */
+    static final int MIN_CARGA = 1;
 
     private Ajustes(){}
 
@@ -46,12 +48,12 @@ final class Ajustes{
     }
 
     static int carga(){
-        return Mathf.clamp(Core.settings.getInt(K_CARGA, Math.min(cargaPorDefecto(), maxCarga())), 3, maxCarga());
+        return Mathf.clamp(Core.settings.getInt(K_CARGA, Math.min(cargaPorDefecto(), maxCarga())), MIN_CARGA, maxCarga());
     }
 
     /** Nunca mayor que la carga: no se puede simular lo que no está cargado. */
     static int sim(){
-        return Mathf.clamp(Core.settings.getInt(K_SIM, simPorDefecto()), 2, carga());
+        return Mathf.clamp(Core.settings.getInt(K_SIM, simPorDefecto()), MIN_CARGA, carga());
     }
 
     /** ¿Niebla de guerra activa? Por defecto sí (igual que el ajuste "fogofwar" de Mindustry v4). */
@@ -108,7 +110,7 @@ final class Ajustes{
 
     /** Radio (en chunks) que el minimapa va fotografiando alrededor del jugador: sigue a la distancia de carga. */
     static int rMapa(){
-        return Mathf.clamp(carga(), 3, 12);
+        return Mathf.clamp(carga(), 1, 12);
     }
 
     /** ¿(dx, dy) está dentro del círculo de radio r? (un poco redondeado hacia fuera para que el borde no tenga muescas) */
@@ -129,8 +131,8 @@ final class Ajustes{
             p.put("setting." + K_NIEBLA + ".name", "Niebla de guerra (ocultar lo no explorado)");
             p.put("setting." + K_VISION + ".name", "Visión del dron (chunks que revela)");
             Vars.ui.settings.addCategory("OpenWorld", Icon.map, t -> {
-                t.sliderPref(K_CARGA, Math.min(cargaPorDefecto(), maxCarga()), 3, maxCarga(), v -> v + " chunks (" + (v * MundoInfinitoMod.TAM_CHUNK) + " tiles, redondo)");
-                t.sliderPref(K_SIM, simPorDefecto(), 2, maxCarga(), v -> v + " chunks (redondo)");
+                t.sliderPref(K_CARGA, Math.min(cargaPorDefecto(), maxCarga()), MIN_CARGA, maxCarga(), v -> v + " chunks (" + (v * MundoInfinitoMod.TAM_CHUNK) + " tiles, redondo)");
+                t.sliderPref(K_SIM, simPorDefecto(), MIN_CARGA, maxCarga(), v -> v + " chunks (redondo)");
                 t.checkPref(K_NIEBLA, true);
                 t.sliderPref(K_VISION, 0, 0, maxCarga(), v -> v <= 0 ? "Automática (según la distancia de carga)" : v + " chunks (" + (v * MundoInfinitoMod.TAM_CHUNK) + " tiles)");
             });

@@ -294,7 +294,16 @@ final class ChunkMeshRenderer{
                     final Ranura r = cubiertos[i];
                     Fill.crect(r.offX - 4.5f, r.offY - 4.5f, CH + 1f, CH + 1f);   // 0,5 de solape: sin costuras
                 }
-                for(int i = 0; i < nNegros; i++) Fill.crect(negX[i] - 4.5f, negY[i] - 4.5f, CH + 1f, CH + 1f);   // fuera de alcance
+                Draw.color();
+                Draw.z(z0);
+            }
+            if(nNegros > 0){
+                // Chunks CARGADOS pero fuera del alcance de render (quedan cargados por la histéresis, o porque aún guardan edificios):
+                // se tapan POR ENCIMA de edificios, unidades y balas (antes iban por debajo y las estructuras se veían flotando en el vacío).
+                final float z0 = Draw.z();
+                Draw.z(Layer.flyingUnit + 1f);
+                Draw.color(0f, 0f, 0f, 1f);
+                for(int i = 0; i < nNegros; i++) Fill.crect(negX[i] - 4.5f, negY[i] - 4.5f, CH + 1f, CH + 1f);
                 Draw.color();
                 Draw.z(z0);
             }

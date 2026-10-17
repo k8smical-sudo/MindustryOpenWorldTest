@@ -25,7 +25,7 @@ final class Entidades{
 
     static boolean dormible(Unit u){
         return u != null && u.isValid() && u.team == Team.sharded && u.type != null
-            && !u.isPlayer() && !u.spawnedByCore && !(u.controller() instanceof Estructuras.Guardia);
+            && !u.isPlayer() && !u.spawnedByCore;
     }
 
     /** Guarda la unidad en el almacén (en el chunk virtual donde está) y la quita del mundo. */
@@ -104,7 +104,10 @@ final class Entidades{
             UnitType t = Vars.content.unit(r.tipo);
             if(t == null) return true;   // tipo que ya no existe: se descarta
             double lx = r.vx - Coord.origenX(), ly = r.vy - Coord.origenY();
-            if(lx < 1 || ly < 1 || lx > Streamer.meta.tam - 1 || ly > Streamer.meta.tam - 1) return false;
+            // ERROR ANTIGUO: aquí se exigía 1 <= lx, ly <= tam - 1 (la ventana de 1024 casillas de cuando el mundo era una ventana). Con el mundo en
+            // anillo las coordenadas son virtuales y negativas o mayores que 1024 son normales: toda unidad dormida fuera de ese cuadrado
+            // NUNCA volvía a despertar y se perdía ("entidades que desaparecen"). Ahora basta con que su casilla exista (chunk cargado).
+            if(Vars.world.tileWorld((float)(lx * 8.0), (float)(ly * 8.0)) == null) return false;
             float wx = (float)(lx * 8.0), wy = (float)(ly * 8.0);
             if(!t.flying && !t.allowLegStep){
                 // una unidad terrestre que cae sobre una casilla sólida muere al instante (aunque tenga la vida completa):

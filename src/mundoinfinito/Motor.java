@@ -197,8 +197,19 @@ final class Motor{
     }
 
     /** Clave de chunk del anillo (la misma que Streamer.clave): coordenadas virtuales de chunk, ±1024. */
+    /**
+     * Límites del mundo en chunks (inclusive). Integer.MIN_VALUE / MAX_VALUE = infinito. Los fija Streamer.reiniciar según el mundo
+     * (Meta.limX / limY: 0 = infinito); el hilo del motor solo los lee.
+     */
+    static volatile int limCxMin = Integer.MIN_VALUE, limCxMax = Integer.MAX_VALUE, limCyMin = Integer.MIN_VALUE, limCyMax = Integer.MAX_VALUE;
+
+    static boolean permitido(int cx, int cy){
+        return cx >= limCxMin && cx <= limCxMax && cy >= limCyMin && cy <= limCyMax;
+    }
+
     private static void poner(Plan p, int cx, int cy, float prio){
         if(cx < -1020 || cy < -1020 || cx > 1020 || cy > 1020) return;   // el motor solo conoce ±1024 chunks (un short de tiles)
+        if(!permitido(cx, cy)) return;                                   // más allá del límite de terreno del mundo no se genera nada
         int k = (cx << 16) | (cy & 0xFFFF);
         if(!p.mejor.containsKey(k) || p.mejor.get(k, Float.MAX_VALUE) > prio) p.mejor.put(k, prio);
     }
@@ -220,7 +231,7 @@ final class Motor{
         p.epoca = e.epoca;
         final int carga = e.carga;
         // nivel 0: bajo el jugador y lo que se ve (discos)
-        disco(p, e.pcx, e.pcy, R_BASE, 0f, 1f);
+        disco(p, e.pcx, e.pcy, Math.min(R_BASE, carga), 0f, 1f);   // con distancia 1 el chunk base también se recorta
         // cada UNIDAD ALIADA mantiene cargado su entorno (así nunca pisa terreno sin cargar). La cámara ya NO carga nada.
         for(int u = 0; u < e.nUni; u += 2) disco(p, e.uni[u], e.uni[u + 1], Vista.R_UNIDAD, 100f, 1f);
         // nivel 1: cono hacia donde se mueve, recortado por el disco de carga

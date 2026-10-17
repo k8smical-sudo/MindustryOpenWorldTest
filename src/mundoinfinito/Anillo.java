@@ -164,6 +164,7 @@ final class Anillo{
 
     /** Tras publicar (cx, cy): lo guardado de ese chunk y de sus 8 vecinos puede estar ya listo para restaurarse. */
     static void alCargar(int cx, int cy){
+        OpenWorldAPI.chunkCargado_(cx, cy);   // aviso a los mods (hilo del juego)
         for(int dy = -1; dy <= 1; dy++){
             for(int dx = -1; dx <= 1; dx++){
                 int vx = cx + dx, vy = cy + dy;
@@ -226,9 +227,8 @@ final class Anillo{
             r.dt = ausente;
             Streamer.colaRestaurar.addLast(r);
         }
-        for(Estructuras.RegU u : c.unidades){
-            if(u.clase == 0) Streamer.unidadesPend.add(u);
-        }
+        // (las unidades de guardia enemiga de mundos antiguos, clase 0, se descartan: el mod ya no genera enemigos. Las aliadas dormidas,
+        // clase 1, las despierta Entidades cuando el jugador se acerca.)
         if(c.niebla != null && Vars.fogControl != null){
             final long[] b = new long[16];
             for(int i = 0; i < 16; i++) b[i] = (c.niebla[2 * i] & 0xFFFFFFFFL) | ((long)c.niebla[2 * i + 1] << 32);
@@ -305,13 +305,8 @@ final class Anillo{
         final boolean rest = restaurados.contains(k);
         if((rest || tmpEdif.size > 0) && !Regiones.lista(cx, cy)) return false;   // no leer disco en el hilo del juego
 
-        // 2) unidades de guardia enemigas (se guardan con el chunk) y resto de unidades en él
+        // 2) (sin unidades de guardia: ya no existen; la lista se conserva vacía para no cambiar la firma de capturarChunk)
         tmpGuard.clear();
-        for(Unit u : Groups.unit){
-            if(u == null || !u.isValid() || u.isPlayer()) continue;
-            if(Math.floorDiv(u.tileX(), T) != cx || Math.floorDiv(u.tileY(), T) != cy) continue;
-            if(u.controller() instanceof Estructuras.Guardia) tmpGuard.add(u);
-        }
 
         // 3) guardar
         capturarChunk(cx, cy, tmpEdif, tmpGuard, rest, true);
@@ -347,6 +342,7 @@ final class Anillo{
             restaurados.remove(k);
             pendRestaurar.remove(k);
             Streamer.solicitados.remove(k);
+            OpenWorldAPI.chunkDescargado_(cx, cy);   // aviso a los mods
         }else{
             Log.warn("[MundoInfinito] No se pudo soltar el chunk @,@ (aún tiene edificios)", cx, cy);
         }
@@ -365,12 +361,10 @@ final class Anillo{
         Regiones.ChunkGuardado viejo = reescribir ? reg.chunks.remove(idx) : reg.chunks.get(idx);
         if(reescribir && viejo != null) reg.sucia = true;
 
-        final boolean hib = Bases.dormida(Coord.claveVirtual(cx, cy));
         final Seq<Estructuras.RegU> dorm = new Seq<>();
-        final Seq<Reg> edHib = new Seq<>();
+        final Seq<Reg> edHib = new Seq<>();   // sin uso (antes: edificios de bases hibernadas); se conserva vacía
         if(reescribir && viejo != null){
-            for(Estructuras.RegU u : viejo.unidades) if(u.clase == 1 || hib) dorm.add(u);
-            if(hib) for(Reg re : viejo.edificios) if(re.equipo != Team.sharded.id) edHib.add(re);
+            for(Estructuras.RegU u : viejo.unidades) if(u.clase == 1) dorm.add(u);   // unidades aliadas dormidas
         }
 
         int[] niebla = viejo == null ? null : viejo.niebla;
@@ -411,7 +405,6 @@ final class Anillo{
         }
         cg.unidades.addAll(dorm);
         cg.edificios.addAll(edHib);
-        for(Unit u : guardias) cg.unidades.add(Estructuras.RegU.desde(u, 0, 0));
         cg.tick = Mundos.reloj();
     }
 
@@ -432,12 +425,7 @@ final class Anillo{
                 porChunk.computeIfAbsent(Streamer.clave(cx, cy), kk -> new Seq<>()).add(b);
             }
         }
-        final java.util.HashMap<Integer, Seq<Unit>> guard = new java.util.HashMap<>();
-        for(Unit u : Groups.unit){
-            if(!u.isValid() || !(u.controller() instanceof Estructuras.Guardia)) continue;
-            int cx = Math.floorDiv(u.tileX(), T), cy = Math.floorDiv(u.tileY(), T);
-            guard.computeIfAbsent(Streamer.clave(cx, cy), kk -> new Seq<>()).add(u);
-        }
+        final java.util.HashMap<Integer, Seq<Unit>> guard = new java.util.HashMap<>();   // vacío: ya no hay unidades de guardia
         tmpCargados.clear();
         Vars.world.tiles.eachLoadedChunk((cx, cy) -> tmpCargados.add(Streamer.clave(cx, cy)));
         final Seq<Building> vacioB = new Seq<>();

@@ -398,13 +398,19 @@ final class Anillo{
                 Tile t = ts.get(x0 + lx, y0 + ly);
                 if(t == null || t.build == null) continue;
                 Building b = t.build;
-                if(b.tile != t) {
-                    // trozo de un edificio cuyo origen está en otro chunk: ese chunk lo guardará y lo quitará primero
-                    if(forzar){
-                        origenCx = Math.floorDiv(b.tile.x, T);
-                        origenCy = Math.floorDiv(b.tile.y, T);
+                if(b.tile != t){
+                    final int ocx = Math.floorDiv(b.tile.x, T), ocy = Math.floorDiv(b.tile.y, T);
+                    // trozo de un edificio cuyo origen está en OTRO chunk: ese chunk lo guardará y lo quitará primero
+                    if(ocx != cx || ocy != cy){
+                        if(forzar){
+                            origenCx = ocx;
+                            origenCy = ocy;
+                        }
+                        return false;
                     }
-                    return false;
+                    // el origen está en este mismo chunk: el edificio se añade al visitar su casilla origen (antes esto bloqueaba
+                    // para siempre la descarga de cualquier chunk con un edificio de más de 1x1, p. ej. el núcleo => ghost chunks)
+                    continue;
                 }
                 if(b.tile.pos() == Mundos.proxyPos) return false;
                 final int size = b.block.size, off = -(size - 1) / 2;

@@ -161,7 +161,13 @@ final class Anillo{
         if(!Vars.world.isRing()) return true;
         final Tiles ts = Vars.world.tiles;
         if(ts.chunkLoaded(d.cx, d.cy)) return true;
-        if(ts.chunkSlotBusy(d.cx, d.cy)) return false;
+        if(ts.chunkSlotBusy(d.cx, d.cy)){
+            // El ocupante del hueco es un chunk a un múltiplo de 32 chunks (1024 casillas) de distancia. Si no está fuera de la vista según
+            // planificarDescarga (lo retienen las unidades aliadas, un edificio multichunk o el proxy) nunca se soltaba: el chunk del jugador
+            // quedaba sin cargar (negro en el minimapa, sombras y terreno del chunk lejano repetidos por el anillo). Se fuerza su descarga.
+            liberarHueco(d.cx, d.cy);
+            return false;
+        }
         if(!Vars.world.publishChunk(d.cx, d.cy, d.tiles)) return true;
         final int k = Streamer.clave(d.cx, d.cy);
         Streamer.generados.add(k);
@@ -307,12 +313,79 @@ final class Anillo{
         }
     }
 
+    // ---- liberar el hueco de un chunk que no puede publicarse
+    private static int holdCx, holdCy;
+    private static boolean holdHay;
+    private static long cuadroForzado = -1;
+    private static int nForzados;
+    private static long ultimoLog = -10000;
+
+    /**
+     * El chunk (cx, cy) está construido pero su hueco del anillo lo tiene otro chunk (el que está a 32 chunks de distancia en algún eje).
+     * Si ese ocupante no cae dentro del disco del propio jugador se suelta YA (guardando sus edificios), aunque lo retengan las unidades
+     * aliadas; si es el chunk del núcleo proxy, el proxy se traslada. Como mucho 2 por fotograma.
+     */
+    static void liberarHueco(int cx, int cy){
+        final Tiles ts = Vars.world.tiles;
+        final long cuadro = arc.Core.graphics == null ? 0L : arc.Core.graphics.getFrameId();
+        if(cuadro != cuadroForzado){
+            cuadroForzado = cuadro;
+            nForzados = 0;
+        }
+        if(nForzados >= 2) return;
+        final int mask = Streamer.ANILLO_CHUNKS - 1;
+        holdHay = false;
+        ts.eachLoadedChunk((hx, hy) -> {
+            if(holdHay || (hx == cx && hy == cy)) return;
+            if(((hx - cx) & mask) != 0 || ((hy - cy) & mask) != 0) return;   // otro hueco
+            holdCx = hx;
+            holdCy = hy;
+            holdHay = true;
+        });
+        if(!holdHay) return;
+        nForzados++;
+        final int pcx = Vista.pcx(), pcy = Vista.pcy(), carga = Ajustes.carga();
+        int hx = holdCx, hy = holdCy;
+        if(cuadro - ultimoLog > 600){   // diagnóstico: como mucho una línea cada ~10 s
+            ultimoLog = cuadro;
+            Log.info("[MundoInfinito] Hueco del anillo ocupado: chunk @,@ espera a @,@ (proxy: @)", cx, cy, hx, hy, hx == proxyCx && hy == proxyCy);
+        }
+        if(hx == proxyCx && hy == proxyCy){
+            trasladarProxy(pcx, pcy, true);
+            return;
+        }
+        // cadena: si el ocupante es un trozo de un edificio multichunk, primero se suelta el chunk donde está su origen
+        for(int i = 0; i < 4; i++){
+            if(Ajustes.dentro(hx - pcx, hy - pcy, carga + HISTERESIS)) return;   // nunca se suelta lo que el propio jugador ve
+            if(hx == proxyCx && hy == proxyCy){
+                trasladarProxy(pcx, pcy, true);
+                return;
+            }
+            origenCx = origenCy = Integer.MIN_VALUE;
+            if(soltar(hx, hy, pcx, pcy, carga, true) || origenCx == Integer.MIN_VALUE) return;
+            hx = origenCx;
+            hy = origenCy;
+        }
+    }
+
     private static boolean fueraDeVista(int cx, int cy, int pcx, int pcy, int carga){
         return !Streamer.enMapa(cx, cy) || !Vista.dentro(cx, cy, pcx, pcy, carga, HISTERESIS);
     }
 
+    /** Chunk de origen de un edificio multichunk que impidió soltar otro (solo lo rellena soltar en modo forzado). */
+    private static int origenCx = Integer.MIN_VALUE, origenCy = Integer.MIN_VALUE;
+
     /** @return true si el chunk se soltó. */
     private static boolean soltar(int cx, int cy, int pcx, int pcy, int carga){
+        return soltar(cx, cy, pcx, pcy, carga, false);
+    }
+
+    /**
+     * @param forzar el chunk estorba a un hueco del anillo que el jugador necesita: se ignoran los discos de las unidades aliadas y la
+     * histéresis al comprobar los edificios (se guardan igual), y las unidades aliadas del chunk se duermen en vez de perderse.
+     * @return true si el chunk se soltó.
+     */
+    private static boolean soltar(int cx, int cy, int pcx, int pcy, int carga, boolean forzar){
         final Tiles ts = Vars.world.tiles;
         if(!ts.chunkLoaded(cx, cy)) return false;
         final int k = Streamer.clave(cx, cy);
@@ -327,6 +400,10 @@ final class Anillo{
                 Building b = t.build;
                 if(b.tile != t) {
                     // trozo de un edificio cuyo origen está en otro chunk: ese chunk lo guardará y lo quitará primero
+                    if(forzar){
+                        origenCx = Math.floorDiv(b.tile.x, T);
+                        origenCy = Math.floorDiv(b.tile.y, T);
+                    }
                     return false;
                 }
                 if(b.tile.pos() == Mundos.proxyPos) return false;
@@ -334,7 +411,7 @@ final class Anillo{
                 for(int a = 0; a < size; a++){
                     for(int c = 0; c < size; c++){
                         int ccx = Math.floorDiv(b.tile.x + off + a, T), ccy = Math.floorDiv(b.tile.y + off + c, T);
-                        if(!fueraDeVista(ccx, ccy, pcx, pcy, carga)) return false;
+                        if(forzar ? Ajustes.dentro(ccx - pcx, ccy - pcy, carga + HISTERESIS) : !fueraDeVista(ccx, ccy, pcx, pcy, carga)) return false;
                     }
                 }
                 tmpEdif.add(b);
@@ -342,6 +419,9 @@ final class Anillo{
         }
         final boolean rest = restaurados.contains(k);
         if((rest || tmpEdif.size > 0) && !Regiones.lista(cx, cy)) return false;   // no leer disco en el hilo del juego
+
+        // 1b) modo forzado: las unidades aliadas que retenían el chunk se duermen (se guardan con su posición virtual)
+        if(forzar && !Entidades.despejar(cx, cy)) return false;   // la región de disco aún se lee: se reintenta en el siguiente fotograma
 
         // 2) (sin unidades de guardia: ya no existen; la lista se conserva vacía para no cambiar la firma de capturarChunk)
         tmpGuard.clear();

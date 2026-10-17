@@ -2195,6 +2195,7 @@ public class MundoInfinitoMod extends Mod{
         static final Seq<Reg> configsPendientes = new Seq<>();
         static final Seq<Estructuras.RegU> unidadesPend = new Seq<>();
         static boolean restaurando = false;
+        static float restauroDesde = -1f;   // Time.time en que empezó la restauración inicial (-1 = no empezó)
         static int totalRestaurar = 1;
         static Datos datosPendientes;
         static final Thread[] trabajadores = new Thread[8];
@@ -2254,8 +2255,13 @@ public class MundoInfinitoMod extends Mod{
         static void limitarUnidades(){
             final Meta m = meta;
             if(m == null || !m.limitado() || !activo) return;
-            final float x0 = m.limX > 0 ? m.minTX() * 8f - 4f : -Float.MAX_VALUE, x1 = m.limX > 0 ? m.maxTX() * 8f + 4f : Float.MAX_VALUE;
-            final float y0 = m.limY > 0 ? m.minTY() * 8f - 4f : -Float.MAX_VALUE, y1 = m.limY > 0 ? m.maxTY() * 8f + 4f : Float.MAX_VALUE;
+            // El terreno se genera por chunks ENTEROS (Motor.limCxMin..limCxMax): el borde jugable es el del último chunk generado, no el
+            // límite exacto en tiles. Antes el dron se frenaba en minTX..maxTX y quedaba un trozo de terreno ya generado inalcanzable
+            // (con límites pequeños, hasta la mitad del área). Tile t ocupa [t*8-4, t*8+4]; el chunk c abarca los tiles c*32..c*32+31.
+            final float x0 = m.limX > 0 ? Motor.limCxMin * (float)(TAM_CHUNK * 8) - 4f : -Float.MAX_VALUE;
+            final float x1 = m.limX > 0 ? (Motor.limCxMax * (float)TAM_CHUNK + (TAM_CHUNK - 1)) * 8f + 4f : Float.MAX_VALUE;
+            final float y0 = m.limY > 0 ? Motor.limCyMin * (float)(TAM_CHUNK * 8) - 4f : -Float.MAX_VALUE;
+            final float y1 = m.limY > 0 ? (Motor.limCyMax * (float)TAM_CHUNK + (TAM_CHUNK - 1)) * 8f + 4f : Float.MAX_VALUE;
             for(Unit u : Groups.unit){
                 if(u == null) continue;
                 if(u.x < x0){ u.x = x0; u.vel.x = Math.max(0f, u.vel.x); }
@@ -2285,6 +2291,7 @@ public class MundoInfinitoMod extends Mod{
             unidadesPend.clear();
             Ausencia.reiniciar();
             restaurando = false;
+            restauroDesde = -1f;
             datosPendientes = null;
             acumEscaneo = 0f;
             acumGuardado = 0f;
@@ -2402,7 +2409,14 @@ public class MundoInfinitoMod extends Mod{
                 long finR = System.nanoTime() + PRESUPUESTO_RESTAURAR_NS;
                 while(System.nanoTime() < finR && !colaRestaurar.isEmpty()) Mundos.restaurarEdificio(colaRestaurar.pollFirst());
                 Perfil.fin(Perfil.S_RESTAURAR, tRes);
-                if(colaRestaurar.isEmpty() && !Anillo.hayPendientesCerca(pcx(), pcy(), 2)){
+                if(restauroDesde < 0f) restauroDesde = Time.time;
+                // Tope de espera: mientras 'restaurando' el streaming está parado (no se piden ni publican chunks), así que un chunk cercano
+                // que espera a un vecino que aún no se ha cargado se esperaba para siempre: el jugador nunca aparecía y no se veía nada.
+                // Pasado el tope se termina igual: lo pendiente se restaura solo, en el ciclo normal, cuando lleguen los vecinos.
+                final boolean agotado = Time.time - restauroDesde > 240f;
+                if(colaRestaurar.isEmpty() && (agotado || !Anillo.hayPendientesCerca(pcx(), pcy(), 2))){
+                    if(agotado) Log.warn("[MundoInfinito] Restauración inicial sin terminar tras ~4 s (pendientes cerca: @, generados: @); se continúa.", Anillo.hayPendientesCerca(pcx(), pcy(), 2), generados.size);
+                    restauroDesde = -1f;
                     restaurando = false;
                     Mundos.finalizarRestauracion();
                 }else{
@@ -2800,6 +2814,9 @@ public class MundoInfinitoMod extends Mod{
             for(int i = 0; i < cargados.size; i++) Anillo.alCargar(Streamer.cxDe(cargados.items[i]), Streamer.cyDe(cargados.items[i]));
             Streamer.totalRestaurar = Math.max(1, Streamer.colaRestaurar.size());
 
+            Log.info("[MundoInfinito] Mundo abierto: límite @x@ tiles, chunks permitidos X [@..@] Y [@..@], jugador en chunk @,@, publicados @ de @",
+                m.limX, m.limY, Motor.limCxMin, Motor.limCxMax, Motor.limCyMin, Motor.limCyMax,
+                Math.floorDiv(px, TAM_CHUNK), Math.floorDiv(py, TAM_CHUNK), cargados.size, chunks.size);
             m.ultimo = System.currentTimeMillis();
             Almacen.guardarMeta(m);
             OpenWorldAPI.mundoAbierto(m, nueva);

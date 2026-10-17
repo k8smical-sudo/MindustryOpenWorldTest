@@ -281,7 +281,7 @@ final class ChunkGeometryCooker{
         int hilos = Math.max(1, Math.min(2, Runtime.getRuntime().availableProcessors() - 1));
         for(int i = 0; i < hilos; i++){
             Thread t = Threads.daemon("MundoInfinito-Cocinero-" + i, ChunkGeometryCooker::bucle);
-            try{ t.setPriority(Thread.MIN_PRIORITY + 1); }catch(Throwable ignored){}
+            try{ t.setPriority(Thread.NORM_PRIORITY); }catch(Throwable ignored){}   // en Android, prioridad < 5 = grupo de segundo plano (poca CPU)
         }
     }
 

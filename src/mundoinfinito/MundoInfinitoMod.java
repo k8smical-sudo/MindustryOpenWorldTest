@@ -2301,7 +2301,7 @@ public class MundoInfinitoMod extends Mod{
                 if(t != null && t.isAlive()) continue;
                 final int id = i;
                 t = Threads.daemon("MundoInfinito-Chunks-" + i, () -> bucleTrabajador(id));
-                try{ t.setPriority(Thread.MIN_PRIORITY + 1); }catch(Throwable ignored){}
+                try{ t.setPriority(Thread.NORM_PRIORITY); }catch(Throwable ignored){}   // en Android, prioridad < 5 = nice >= 10 = grupo de segundo plano (núcleos LITTLE, poca CPU)
                 trabajadores[i] = t;
             }
             synchronized(cola){ cola.notifyAll(); }   // los hilos que sobraban y ahora hacen falta despiertan
@@ -2371,8 +2371,8 @@ public class MundoInfinitoMod extends Mod{
         static long presupuesto(){
             float dt = Core.graphics == null ? 0.016f : Core.graphics.getDeltaTime();
             long base = Ajustes.presupuestoNs();
-            if(dt > 0.05f) return Math.min(base, 300_000L);   // antes 150 µs: con el juego lento el terreno casi no avanzaba y se veía negro/congelado
-            if(dt > 0.03f) return Math.min(base, 550_000L);
+            if(dt > 0.05f) return Math.min(base, 450_000L);   // antes 150 µs: con el juego lento el terreno casi no avanzaba y se veía negro/congelado
+            if(dt > 0.03f) return Math.min(base, 700_000L);
             // sobrado de FPS y con terreno esperando: se aprovecha (el terreno que falta es lo que más se nota)
             if(dt < 0.0185f && !listos.isEmpty()) return base * 2L;
             return base;
@@ -3077,7 +3077,7 @@ public class MundoInfinitoMod extends Mod{
             return f.get(o);
         }
 
-        /** Móvil: el botón se inserta justo después del de Campaña (la primera celda) con un MobileButton idéntico. */
+        /** Móvil: el botón se añade al final de la cuadrícula del menú con un MobileButton idéntico (sin tocar el orden interno de celdas). */
         @SuppressWarnings({"unchecked", "rawtypes"})
         static void inyectarMovil() throws Exception{
             final Table cont = (Table)campo(Vars.ui.menufrag, "container");
@@ -3086,9 +3086,11 @@ public class MundoInfinitoMod extends Mod{
             if(celdas.isEmpty()) return;
             final mindustry.ui.MobileButton boton = new mindustry.ui.MobileButton(Icon.play, TEXTO_BOTON, MenuUI::abrirLista);
             boton.name = NOMBRE_BOTON;
-            final Cell nueva = cont.add(boton);        // hereda size/pad de container.defaults(), igual que los demás
-            celdas.remove(celdas.size - 1);                   // se mueve de "al final" a "justo después de Campaña"
-            celdas.insert(1, nueva);
+            // Se añade con la API normal y se queda donde cae (al final de la última fila). NO se reordena la lista de celdas a mano:
+            // Table solo recalcula 'columns' en endRow(), y una celda movida conserva su column/row antiguos. Tras cada ResizeEvent
+            // (rotar la pantalla) eso dejaba una celda con column == columns y Table.computeSize lanzaba ArrayIndexOutOfBoundsException
+            // (length=5; index=5) en el hilo de GL: cierre del juego.
+            cont.add(boton);                           // hereda size/pad de container.defaults(), igual que los demás
             cont.invalidateHierarchy();
         }
 

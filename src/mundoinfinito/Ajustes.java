@@ -83,7 +83,7 @@ final class Ajustes{
     }
 
     static int hilos(){
-        return Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() - 1));
+        return Math.max(1, Math.min(3, Runtime.getRuntime().availableProcessors() - 2));
     }
 
     /** El render por chunks lee de esta caché todo lo que se ve fuera de la ventana: más holgura que antes (24 MB). */

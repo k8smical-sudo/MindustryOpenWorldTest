@@ -163,7 +163,7 @@ final class Motor{
         if(hilo != null && hilo.isAlive()) return;
         hilo = new Thread(this::bucle, "MundoInfinito-Motor");
         hilo.setDaemon(true);
-        try{ hilo.setPriority(Thread.NORM_PRIORITY - 1); }catch(Throwable ignored){}
+        try{ hilo.setPriority(Thread.NORM_PRIORITY); }catch(Throwable ignored){}   // NORM-1 = nice 10 = segundo plano en Android
         hilo.start();
     }
 

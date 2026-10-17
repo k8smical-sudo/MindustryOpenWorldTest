@@ -1,7 +1,7 @@
   {
           "name": "mundo-infinito",
                 "displayName": "Mundo Infinito",
-                      "description": "Mundo abierto infinito con dos dimensiones (Serpulo y Erekir), bases enemigas, ruinas y portales interdimensionales.",
+                      "description": "Mundo abierto infinito base por chunks con dos dimensiones (Serpulo y Erekir), portales interdimensionales y API para mods. Sin enemigos ni estructuras: los añaden otros mods.",
                             "version": "1.0.0",
                                   "minGameVersion": "160",
                                         "author": "k8smical-sudo",

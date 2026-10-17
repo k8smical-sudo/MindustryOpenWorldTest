@@ -2420,6 +2420,15 @@ public class MundoInfinitoMod extends Mod{
             Mapa.tick(pcx(), pcy());
             Perfil.fin(Perfil.S_MAPA, tS);
 
+            // ---- soltar (guardando) los chunks fuera de la vista, CADA fotograma y con tiempo propio: libera sus huecos del anillo ANTES de
+            // publicar (un chunk nuevo solo cabe en un hueco libre). Con chunks ya construidos esperando hueco, la descarga es urgente.
+            if(Anillo.hayDescargasPendientes()){
+                tS = Perfil.t();
+                final boolean urgente = !esperaHueco.isEmpty();
+                Anillo.procesarDescargas(Presupuesto.hasta(urgente ? 2_000_000L : 800_000L), urgente ? Anillo.MAX_DESCARGAS_URGENTE : Anillo.MAX_DESCARGAS);
+                Perfil.fin(Perfil.S_VENTANA, tS);
+            }
+
             // ---- publicar los chunks que los hilos de fondo ya construyeron (32 arraycopy + eventos de índice cada uno)
             tS = Perfil.t();
             final int pcx = pcx(), pcy = pcy(), carga = Ajustes.carga();
@@ -2519,7 +2528,7 @@ public class MundoInfinitoMod extends Mod{
             motor.solicitar(pcx, pcy, Ajustes.carga(), Ajustes.estricto(), epoca);
 
             Entidades.tick(pcx, pcy);     // las unidades aliadas lejanas duermen; las cercanas despiertan
-            Anillo.descargar(pcx, pcy);   // suelta (guardando) los chunks fuera de la vista: libera sus huecos del anillo
+            Anillo.planificarDescarga(pcx, pcy);   // qué chunks quedaron fuera de la vista (se sueltan en tickInterno, cada fotograma)
             Anillo.vigilarProxy(pcx, pcy);
 
             ajustarHilos();

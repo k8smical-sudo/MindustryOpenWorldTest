@@ -36,8 +36,14 @@ import mundoinfinito.MundoInfinitoMod.Streamer;
  */
 final class Anillo{
     static final int T = MundoInfinitoMod.TAM_CHUNK;
-    /** Descargas máximas por escaneo (~0,5 s): se reparten para no provocar tirones. */
-    static final int MAX_DESCARGAS = 4;
+    /**
+     * Descargas máximas por FOTOGRAMA (además del tope de tiempo de Presupuesto). Un chunk nuevo solo cabe si el hueco que le toca en el
+     * anillo está libre, así que soltar a 4 chunks cada escaneo (~0,5 s = 8/s) frenaba la carga al moverse rápido: el borde de la
+     * pantalla se quedaba en negro esperando huecos. Ahora se suelta cada fotograma, con su porción de tiempo.
+     */
+    static final int MAX_DESCARGAS = 6;
+    /** Igual, pero cuando hay chunks ya construidos esperando un hueco ocupado (Streamer.esperaHueco no vacía). */
+    static final int MAX_DESCARGAS_URGENTE = 16;
     /** Chunks extra alrededor del disco de carga que se mantienen antes de soltarlos (histéresis anti-parpadeo). */
     static final int HISTERESIS = 3;
 
@@ -67,6 +73,8 @@ final class Anillo{
     static void reiniciar(){
         restaurados.clear();
         pendRestaurar.clear();
+        colaDescarga.clear();
+        cabezaDescarga = 0;
         proxyCx = proxyCy = Integer.MIN_VALUE;
     }
 
@@ -245,8 +253,17 @@ final class Anillo{
     private static final Seq<Unit> tmpGuard = new Seq<>();
     private static final IntSeq tmpFuera = new IntSeq();
 
-    /** Cada escaneo: suelta (guardando) los chunks que quedaron fuera de la vista + histéresis. Se reparte: unos pocos por vez. */
-    static void descargar(int pcx, int pcy){
+    /** Chunks fuera de la vista pendientes de soltar, del MÁS LEJANO al más cercano (claves de Streamer). Solo hilo del juego. */
+    private static final IntSeq colaDescarga = new IntSeq();
+    private static int cabezaDescarga;
+
+    /**
+     * Cada escaneo (~0,5 s): PLANIFICA qué chunks quedaron fuera de la vista + histéresis y los ordena (los más lejanos primero: son los
+     * que más estorban a los huecos del anillo). No suelta nada: de eso se encarga procesarDescargas() en cada fotograma.
+     */
+    static void planificarDescarga(int pcx, int pcy){
+        colaDescarga.clear();
+        cabezaDescarga = 0;
         if(!Vars.world.isRing()) return;
         final int carga = Ajustes.carga();
         tmpFuera.clear();
@@ -254,9 +271,8 @@ final class Anillo{
             if(cx == proxyCx && cy == proxyCy) return;
             if(!Vista.dentro(cx, cy, pcx, pcy, carga, HISTERESIS)) tmpFuera.add(Streamer.clave(cx, cy));
         });
-        if(tmpFuera.size == 0) return;
-        // los más lejanos primero (los que más estorban a los huecos del anillo)
         final int n = tmpFuera.size;
+        if(n == 0) return;
         final long[] ord = new long[n];
         for(int i = 0; i < n; i++){
             int cx = Streamer.cxDe(tmpFuera.items[i]), cy = Streamer.cyDe(tmpFuera.items[i]);
@@ -264,10 +280,30 @@ final class Anillo{
             ord[i] = (d2 << 32) | (tmpFuera.items[i] & 0xFFFFFFFFL);
         }
         java.util.Arrays.sort(ord);
-        int hechos = 0;
-        for(int i = n - 1; i >= 0 && hechos < MAX_DESCARGAS; i--){
-            int k = (int)(ord[i] & 0xFFFFFFFFL);
-            if(soltar(Streamer.cxDe(k), Streamer.cyDe(k), pcx, pcy, carga)) hechos++;
+        for(int i = n - 1; i >= 0; i--) colaDescarga.add((int)(ord[i] & 0xFFFFFFFFL));
+    }
+
+    static boolean hayDescargasPendientes(){
+        return cabezaDescarga < colaDescarga.size;
+    }
+
+    /**
+     * Cada fotograma: suelta (guardando) chunks de la cola planificada hasta agotar 'hastaNs' (instante de System.nanoTime) o 'maximo'.
+     * Siempre intenta al menos uno. Antes de cada uno se vuelve a comprobar con la posición EN VIVO del jugador: si el chunk volvió a
+     * la vista desde el escaneo, se deja donde está.
+     */
+    static void procesarDescargas(long hastaNs, int maximo){
+        if(!Vars.world.isRing()) return;
+        final int pcx = Vista.pcx(), pcy = Vista.pcy(), carga = Ajustes.carga();
+        int hechos = 0, intentos = 0;
+        while(cabezaDescarga < colaDescarga.size && hechos < maximo){
+            if(intentos > 0 && System.nanoTime() >= hastaNs) break;
+            final int k = colaDescarga.items[cabezaDescarga++];
+            final int cx = Streamer.cxDe(k), cy = Streamer.cyDe(k);
+            if(cx == proxyCx && cy == proxyCy) continue;
+            if(Vista.dentro(cx, cy, pcx, pcy, carga, HISTERESIS)) continue;   // volvió a la vista
+            intentos++;
+            if(soltar(cx, cy, pcx, pcy, carga)) hechos++;
         }
     }
 

@@ -17,7 +17,7 @@ final class Perfil{
     static final int S_ESCANEO = 0, S_ESTRUCTURAS = 1, S_BASES = 2, S_AUSENCIA = 3, S_MAPA = 4, S_VENTANA = 5, S_APLICAR = 6,
         S_PEDIR = 7, S_GUARDAR = 8, S_REBASE = 9, S_RENDER_ACTUALIZAR = 10, S_RENDER_DIBUJO = 11, S_RESTAURAR = 12;
     private static final String[] NOMBRES = {
-        "escaneo", "estructuras", "bases", "ausencia", "minimapa", "ventana", "aplicar", "pedir", "guardar", "rebase",
+        "escaneo", "estructuras", "bases", "ausencia", "minimapa", "descarga", "aplicar", "pedir", "guardar", "rebase",
         "render-act", "render-dibujo", "restaurar"
     };
     private static final int N = NOMBRES.length;

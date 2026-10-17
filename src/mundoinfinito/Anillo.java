@@ -215,7 +215,9 @@ final class Anillo{
         if(restaurados.contains(k)) return true;
         for(int dy = -1; dy <= 1; dy++){
             for(int dx = -1; dx <= 1; dx++){
-                if(!Streamer.enMapa(cx + dx, cy + dy)) return false;   // un edificio grande podría quedar cortado
+                // un edificio grande podría quedar cortado; pero un vecino más allá del límite de terreno del mundo NUNCA se cargará:
+                // esperarlo dejaba la pantalla "Restaurando edificios... 100%" para siempre en los mundos con límite
+                if(!Streamer.enMapa(cx + dx, cy + dy) && Streamer.permitido(cx + dx, cy + dy)) return false;
             }
         }
         if(!Regiones.lista(cx, cy)) return false;                      // la región se lee en el hilo de E/S

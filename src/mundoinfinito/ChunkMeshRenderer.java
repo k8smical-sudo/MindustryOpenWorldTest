@@ -470,6 +470,8 @@ final class ChunkMeshRenderer{
      * lx, ly = chunk LOCAL; pcx, pcy = chunk local del jugador.
      */
     private static boolean alcance(int lx, int ly, int pcx, int pcy, int radio, int margen){
+        // Más allá del límite de terreno del mundo no existe nada: ni se genera, ni se cocina, ni se dibuja (ni siquiera lo ya explorado).
+        if(!Streamer.permitido(Coord.vcx(lx), Coord.vcy(ly))) return false;
         // La vista es el disco REDONDO del jugador + el entorno de sus unidades aliadas (Vista); nunca la cámara ni lo explorado.
         if(Vista.dentro(lx, ly, pcx, pcy, radio, margen)) return true;
         return EXPLORADO_VISIBLE && Mapa.get(Coord.vcx(lx), Coord.vcy(ly)) != null;

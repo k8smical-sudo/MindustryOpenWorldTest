@@ -63,6 +63,41 @@ jobs:
           ls -la libs
       - name: Build mod artifact
         run: ./gradlew dex -x fetchComps --stacktrace
+      # ---- FASE 0 del plan: corpus de regresión del terreno base, equivalencia de hilos y línea base de coste ----
+      # Solo usa Muestreo (puro): no necesita el juego. continue-on-error: es la primera vez que corre en CI; cuando salga en verde una vez,
+      # quita esa línea de los dos pasos de "Corpus" para que sea una puerta real (un cambio que altere el mundo hará fallar el build).
+      - name: Corpus - reproducibilidad y equivalencia de hilos
+        continue-on-error: true
+        run: |
+          mkdir -p build/corpus
+          java -cp "build/classes/java/main:libs/MindustryX-Desktop.jar" mundoinfinito.Corpus comprobar 2>&1 | tee build/corpus/comprobar.txt
+          test "${PIPESTATUS[0]}" -eq 0
+        shell: bash
+      - name: Corpus - verificar contra lo congelado
+        continue-on-error: true
+        run: |
+          mkdir -p build/corpus
+          CP="build/classes/java/main:libs/MindustryX-Desktop.jar"
+          if [ -f corpus/esperado.txt ]; then
+            java -cp "$CP" mundoinfinito.Corpus verificar corpus/esperado.txt 2>&1 | tee build/corpus/verificar.txt
+            test "${PIPESTATUS[0]}" -eq 0
+          else
+            java -cp "$CP" mundoinfinito.Corpus congelar build/corpus/esperado.txt 2>&1 | tee build/corpus/congelar.txt
+            echo "::notice::No existe corpus/esperado.txt. Se generó build/corpus/esperado.txt (artefacto corpus): copialo a corpus/esperado.txt en el repo para fijarlo."
+          fi
+        shell: bash
+      - name: Corpus - linea base de coste por chunk
+        continue-on-error: true
+        run: |
+          mkdir -p build/corpus
+          java -cp "build/classes/java/main:libs/MindustryX-Desktop.jar" mundoinfinito.Corpus base build/corpus/linea-base.txt
+      - name: Subir resultados del corpus
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: corpus
+          path: build/corpus/
+          if-no-files-found: ignore
       - name: Upload built mod artifact as a GitHub Action artifact
         uses: actions/upload-artifact@v7
         if: github.event_name == 'push' || github.event_name == 'pull_request'

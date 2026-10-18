@@ -2476,7 +2476,9 @@ public class MundoInfinitoMod extends Mod{
                     if(baja != null){
                         long vk = baja;
                         if(CacheChunks.tiene(mid, vk)) continue;
+                        final long tg = Perfil.t();
                         ChunkData cd = ChunkData.generar(p, m.semilla, dm, m.tam, 0, 0, ep, Coord.vcxDeClave(vk) * TAM_CHUNK, Coord.vcyDeClave(vk) * TAM_CHUNK);
+                        Perfil.generacion(dm, tg);
                         CacheChunks.poner(mid, vk, cd);
                         cd.liberar();
                     }else{
@@ -2484,7 +2486,9 @@ public class MundoInfinitoMod extends Mod{
                         long vk = Coord.claveVirtual(cx, cy);
                         ChunkData cd = CacheChunks.copiar(mid, vk, cx, cy, ep);   // ¿ya se generó antes? entonces no se recalcula
                         if(cd == null){
+                            final long tg = Perfil.t();
                             cd = ChunkData.generar(p, m.semilla, dm, m.tam, cx, cy, ep, 0, 0);
+                            Perfil.generacion(dm, tg);
                             CacheChunks.poner(mid, vk, cd);
                         }
                         Anillo.construir(cd, mid, m, p, dm, ep);   // casillas + oscuridad de muros, en el hilo de fondo

@@ -32,6 +32,16 @@ final class Perfil{
     static boolean activo = true;
 
     private static final long[] acum = new long[N];
+
+    // ---- Coste de generar un chunk en los hilos de fondo (línea base real, en el dispositivo): 0 = Serpulo, 1 = Erekir, 2 = mezclado / otros mundos
+    private static final String[] NOMBRES_GEN = {"Serpulo", "Erekir", "otros"};
+    private static final java.util.concurrent.atomic.AtomicLong[] genNs = contadoresGen(), genN = contadoresGen(), genMax = contadoresGen();
+
+    private static java.util.concurrent.atomic.AtomicLong[] contadoresGen(){
+        java.util.concurrent.atomic.AtomicLong[] a = new java.util.concurrent.atomic.AtomicLong[3];
+        for(int i = 0; i < a.length; i++) a[i] = new java.util.concurrent.atomic.AtomicLong();
+        return a;
+    }
     private static long ultimoLog;
     private static int cuadros;
     // peor tick de la ventana de ~15 s, para el resumen
@@ -47,6 +57,28 @@ final class Perfil{
 
     static void fin(int seccion, long t0){
         acum[seccion] += System.nanoTime() - t0;
+    }
+
+    /** Cualquier hilo. Anota lo que tardó en generarse un chunk (terreno base + hooks de la API) en la dimensión 'dim'. */
+    static void generacion(int dim, long t0){
+        final long dt = System.nanoTime() - t0;
+        final int i = dim == 0 ? 0 : dim == 1 ? 1 : 2;
+        genNs[i].addAndGet(dt);
+        genN[i].incrementAndGet();
+        long m = genMax[i].get();
+        while(dt > m && !genMax[i].compareAndSet(m, dt)) m = genMax[i].get();
+    }
+
+    /** Escribe y reinicia el resumen de generación de los últimos ~15 s (si hubo chunks). */
+    private static void resumenGeneracion(){
+        final StringBuilder sb = new StringBuilder(96);
+        for(int i = 0; i < genN.length; i++){
+            final long n = genN[i].getAndSet(0L), ns = genNs[i].getAndSet(0L), mx = genMax[i].getAndSet(0L);
+            if(n == 0L) continue;
+            if(sb.length() > 0) sb.append(" | ");
+            sb.append(NOMBRES_GEN[i]).append(" n=").append(n).append(" media=").append(ms(ns / n)).append("ms max=").append(ms(mx)).append("ms");
+        }
+        if(sb.length() > 0) Log.info("[Perfil] generación por chunk (hilos de fondo): @", sb.toString());
     }
 
     /** Cierra el fotograma del mod: escribe una línea si hubo tirón y reinicia los contadores. Llamar una vez por tick. */
@@ -79,6 +111,7 @@ final class Perfil{
         if(cuadros >= 900){
             Log.info("[Perfil] resumen 15 s: peor tick del mod = @ | tirones escritos = @", peorTexto.isEmpty() ? "ninguno" : peorTexto, tiradas);
             if(Hilos.activo()) Log.info("[Perfil] @", Hilos.resumen());
+            resumenGeneracion();
             cuadros = 0;
             peorNs = 0L;
             peorTexto = "";

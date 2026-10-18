@@ -1,0 +1,11 @@
+{
+  "name": "ejemplo-mundo-abierto",
+  "displayName": "Ejemplo API Mundo Abierto",
+  "description": "Mod mínimo que usa terreno, fenómenos, estructuras, política de sueño y un mundo registrado de la API v2.",
+  "version": "0.1.0",
+  "minGameVersion": "160",
+  "java": true,
+  "main": "ejemplo.EjemploMod",
+  "dependencies": ["mundo-infinito"],
+  "openWorld": { "api": 2, "capacidades": ["terreno", "fenomeno", "estructura", "entidades", "mundos", "almacen"] }
+}

@@ -67,7 +67,8 @@ public class SiloInterdimensional extends StorageBlock{
         }
 
         boolean dimensional(){
-            return MundoInfinitoMod.Mundos.actual != null && MundoInfinitoMod.Mundos.actual.dimensional();
+            // la logística orbital une solo Serpulo y Erekir: en los mundos registrados por mods el silo no envía ni recibe
+            return MundoInfinitoMod.Mundos.actual != null && MundoInfinitoMod.Mundos.actual.dimensional() && MundoInfinitoMod.Mundos.dimActual() <= MundoInfinitoMod.DIM_EREKIR;
         }
 
         @Override

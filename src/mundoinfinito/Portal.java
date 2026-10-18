@@ -33,8 +33,7 @@ final class Portal{
         final double px = Coord.virtualX(dev.x), py = Coord.virtualY(dev.y);
         if(Estructuras.registrarPunto(px, py)) Vars.ui.showInfoToast("Checkpoint guardado", 2.5f);
 
-        final int destino = 1 - Mundos.dimActual();
-        final String otra = destino == MundoInfinitoMod.DIM_SERPULO ? "Serpulo" : "Erekir";
+        final int actualDim = Mundos.dimActual();
         BaseDialog d = new BaseDialog("Portal interdimensional");
         d.cont.add("[accent]" + m.nombreDim() + "[]   X " + (long)Math.floor(px) + "   Y " + (long)Math.floor(py)).padBottom(10f).row();
 
@@ -53,11 +52,29 @@ final class Portal{
         d.cont.add("Checkpoints").padTop(6f).row();
         d.cont.pane(lista).maxHeight(Core.graphics.getHeight() * 0.38f).row();
 
-        d.cont.button("Ir a " + otra, Styles.defaultt, () -> { d.hide(); Mundos.saltar(destino); }).size(320f, 56f).padTop(8f).row();
+        // Destinos: las dimensiones del mundo base que no son la actual y los mundos registrados por mods visibles desde aquí
+        if(actualDim != MundoInfinitoMod.DIM_SERPULO){
+            d.cont.button("Ir a Serpulo", Styles.defaultt, () -> { d.hide(); Mundos.saltar(MundoInfinitoMod.DIM_SERPULO); }).size(320f, 56f).padTop(8f).row();
+        }
+        if(actualDim != MundoInfinitoMod.DIM_EREKIR){
+            d.cont.button("Ir a Erekir", Styles.defaultt, () -> { d.hide(); Mundos.saltar(MundoInfinitoMod.DIM_EREKIR); }).size(320f, 56f).padTop(8f).row();
+        }
+        for(final MundoRegistrado w : Extensiones.mundos()){
+            boolean visible;
+            try{
+                visible = w.dimension() != actualDim && w.visible.desde(actualDim);
+            }catch(Throwable t){
+                visible = false;
+            }
+            if(!visible) continue;
+            d.cont.button("Ir a " + w.nombre, Styles.defaultt, () -> { d.hide(); Mundos.saltar(w.dimension()); }).size(320f, 56f).padTop(8f).row();
+        }
 
-        if(dev.team == Vars.player.team()){
-            d.cont.add("[gray]Logística: en camino aquí " + Orbita.pendientes(Mundos.dimActual())
-                + "   hacia allá " + Orbita.pendientes(destino) + "[]").padTop(8f).row();
+        // la logística orbital solo une Serpulo y Erekir
+        if(dev.team == Vars.player.team() && actualDim <= MundoInfinitoMod.DIM_EREKIR){
+            final int otra = 1 - actualDim;
+            d.cont.add("[gray]Logística: en camino aquí " + Orbita.pendientes(actualDim)
+                + "   hacia allá " + Orbita.pendientes(otra) + "[]").padTop(8f).row();
         }
         d.addCloseButton();
         d.show();

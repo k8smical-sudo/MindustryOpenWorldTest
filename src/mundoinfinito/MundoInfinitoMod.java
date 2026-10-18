@@ -101,11 +101,16 @@ public class MundoInfinitoMod extends Mod{
     public static final int REGION_CHUNKS = 16;             // 16x16 chunks por archivo de región (512x512 tiles)
     public static final String URL_SEMILLAS = "https://raw.githubusercontent.com/TU_USUARIO/mundo-infinito-semillas/main/semillas/actual.json"; // TODO: URL real
     public static final int TIMEOUT_HTTP_MS = 4000;
-    public static final int GEN_ACTUAL = 3;                 // 3 = dos dimensiones (Serpulo/Erekir). Los mundos gen 2 (terreno mezclado) siguen jugables tal cual.
-    public static final int GEN_MEZCLADO = 2;
+    public static final int GEN_ACTUAL = 4;                 // 4 = generación revisada (Parte A del plan): respiraderos con disco de Poisson, roca caliente y magma en Serpulo.
+    public static final int GEN_ANTERIOR = 3;               // 3 = dos dimensiones (Serpulo/Erekir) con la generación anterior: conserva su terreno exacto.
+    public static final int GEN_REVISADA = 4;               // primera generación que activa los generadores del mundo base (FenomenosBase)
+    public static final int GEN_MEZCLADO = 2;               // 2 = terreno mezclado (mundos antiguos): sigue jugable tal cual.
     public static final int DIM_SERPULO = 0, DIM_EREKIR = 1;
 
     public MundoInfinitoMod(){
+        // Generadores del propio mundo base: usan la misma API que los mods (Parte A del plan). Solo actúan en mundos de generación >= GEN_REVISADA.
+        FenomenosBase.registrar();
+
         // Botón en el menú principal cuando el cliente terminó de cargar.
         Events.on(ClientLoadEvent.class, e -> Time.runTask(10f, () -> { MenuUI.inyectarBoton(); Hud.crear(); MapaVista.crear(); Ajustes.registrar(); }));
 
@@ -196,12 +201,12 @@ public class MundoInfinitoMod extends Mod{
         }
 
         boolean compatible(){
-            return gen == GEN_ACTUAL || gen == GEN_MEZCLADO;
+            return gen == GEN_ACTUAL || gen == GEN_ANTERIOR || gen == GEN_MEZCLADO;
         }
 
         /** true = mundo con dos dimensiones separadas; false = mundo antiguo de terreno mezclado. */
         boolean dimensional(){
-            return gen >= GEN_ACTUAL;
+            return gen >= GEN_ANTERIOR;
         }
 
         /** Dimensión que recibe el generador: -1 = terreno mezclado (mundos antiguos). */
@@ -217,6 +222,11 @@ public class MundoInfinitoMod extends Mod{
         }
 
         Block nucleoBlock(){
+            if(dimensional() && dim >= MundoRegistrado.DIM_MINIMA){
+                final MundoRegistrado w = Extensiones.mundoPorDim(dim);
+                final Block b = w == null ? null : Vars.content.block(w.nucleo);
+                return b instanceof CoreBlock ? b : Blocks.coreShard;
+            }
             if(dimensional()) return dim == DIM_SERPULO ? Blocks.coreShard : Blocks.coreBastion;
             int t = nucleo;
             if(t == 0) t = 1 + (Muestreo.sem(semilla, 77) & 1);
@@ -224,6 +234,10 @@ public class MundoInfinitoMod extends Mod{
         }
 
         String nombreDim(){
+            if(dimensional() && dim >= MundoRegistrado.DIM_MINIMA){
+                final MundoRegistrado w = Extensiones.mundoPorDim(dim);
+                return w == null ? "Mundo desconocido" : w.nombre;
+            }
             return !dimensional() ? "Mixto" : (dim == DIM_SERPULO ? "Serpulo" : "Erekir");
         }
 
@@ -420,7 +434,23 @@ public class MundoInfinitoMod extends Mod{
             {P_DARKSAND, P_DARKSAND, P_DARKSAND, P_CHARR, P_BASALT, P_CHARR, P_REDMAT, P_REDMAT}
         };
         // Los 3 respiraderos de un pozo de respiraderos: desplazamientos ENTEROS del centro (bloques de 3x3 separados, nunca solapados)
-        static final int[][] VENTS_POZO = {{0, 0}, {4, 1}, {-3, -3}};
+        static final int[][] VENTS_POZO = {{0, 0}, {4, 1}, {-3, -3}};   // generaciones anteriores a GEN_REVISADA
+
+        /**
+         * Los 3 respiraderos de un pozo, generación revisada: repartidos a ~120 grados alrededor del centro del pozo con orientación propia de cada
+         * semilla y pozo (antes, desplazamientos fijos a 4-5 casillas: los tres bloques 3x3 quedaban pegados). Separación entre centros >= ~7.
+         */
+        static int[][] ventsPozo(int s, int k, float r){
+            final float a0 = rnd(k, 41, sem(s, 8900)) * 6.2831853f;
+            final float rho = 5f + 1.5f * rnd(k, 42, sem(s, 8901)) + Math.max(0f, r - 6.5f) * 0.35f;
+            final int[][] o = new int[3][2];
+            for(int i = 0; i < 3; i++){
+                final float a = a0 + i * 2.0943951f + (rnd(k, 43 + i, sem(s, 8902)) - 0.5f) * 0.5f;
+                o[i][0] = Math.round((float)Math.cos(a) * rho);
+                o[i][1] = Math.round((float)Math.sin(a) * rho);
+            }
+            return o;
+        }
 
         // Terreno base de Erekir (campaña): regolito domina, luego yellowStone, riolita y carbón.
         /** Terreno base de Erekir según la altura (de bajo a alto). El suelo ferroso (ferricStone) llena el escalón entre amarillo y riolita. */
@@ -1319,6 +1349,9 @@ public class MundoInfinitoMod extends Mod{
          * (aux[11] = 0 debe ponerse al empezar cada chunk).
          */
         static void muestrear(int s, int x, int y, Spawn sp, float[] aux, int[] out){
+            // Generación revisada (GEN_REVISADA): los respiraderos de Erekir y la roca caliente los ponen FenomenosBase (disco de Poisson);
+            // los mundos anteriores conservan los respiraderos en rejilla y el pozo de respiraderos fijo, para no cambiar su terreno guardado.
+            final boolean nueva = Extensiones.generacionNueva();
             double dx0 = x, dy0 = y;
             float dist = (float)Math.sqrt(dx0 * dx0 + dy0 * dy0);
             double wx = x + (fbm(sem(s, 50), 90f, 3, x, y) - 0.5) * 70.0;
@@ -1341,7 +1374,7 @@ public class MundoInfinitoMod extends Mod{
 
             // --- respiradero de cráter: el bloque 3x3 entero toma el mismo piso (decidido con su centro) ---
             int ventP = -1;
-            if(hue == 0){
+            if(hue == 0 && !nueva){
                 long vc = ventCentro(s, x, y);
                 if(vc != SIN_VENT) ventP = ventPisoCentro(s, (int)(vc >> 32), (int)vc, sp);
             }
@@ -1359,7 +1392,7 @@ public class MundoInfinitoMod extends Mod{
                         // fraccionario y salían bloques de 3x3, 3x4 o 4x4: un sprite por cada 3x3 completo = grietas repetidas)
                         int bx = Math.round(poz[k + 1]), by = Math.round(poz[k + 2]);
                         boolean ev = false;
-                        for(int[] o : VENTS_POZO){
+                        for(int[] o : (nueva ? ventsPozo(s, k, r) : VENTS_POZO)){
                             if(Math.abs(x - (bx + o[0])) <= 1 && Math.abs(y - (by + o[1])) <= 1){ ev = true; break; }
                         }
                         if(ev){ pzPiso = P_VRHYO; pzLibre = true; break; }
@@ -1409,7 +1442,7 @@ public class MundoInfinitoMod extends Mod{
                     else if(pct > 55 && rnd(x, y, sem(s, 5102)) < 0.10f) mena = O_CHATARRA;
                 }
             }else{
-                int c = craterVent(s, x, y, dist);
+                int c = nueva ? 0 : craterVent(s, x, y, dist);
                 if(c == 2){
                     if(seco(p)) p = cratereDe(p);   // el centro 3x3 sin respiradero válido queda como suelo de cráter
                     enCrater = true;
@@ -1656,9 +1689,34 @@ public class MundoInfinitoMod extends Mod{
          */
         static ChunkData generar(Paleta pal, int semilla, int dim, int tam, int cx, int cy, int epoca, int ox, int oy){
             ChunkData d = obtener(cx, cy, epoca);
+            final int vx0 = ox + cx * TAM_CHUNK, vy0 = oy + cy * TAM_CHUNK;
+            final int vcx = Math.floorDiv(vx0, TAM_CHUNK), vcy = Math.floorDiv(vy0, TAM_CHUNK);
+            // ¿el chunk toca el borde del mundo? Los generadores añadidos no se ejecutan ahí (no deben tocar el muro del borde)
+            final boolean tocaBorde = vx0 < -LIMITE_MUNDO || vx0 + TAM_CHUNK - 1 > LIMITE_MUNDO || vy0 < -LIMITE_MUNDO || vy0 + TAM_CHUNK - 1 > LIMITE_MUNDO;
             int sd = Muestreo.semDim(semilla, dim);
-            Muestreo.Spawn sp = Muestreo.spawn(sd, dim);   // el spawn del mundo está en el origen virtual (0,0)
             int bordePiso = pal.idPiso[Muestreo.P_STONE], bordeMuro = pal.idMuroDePiso[Muestreo.P_STONE];
+            if(dim >= MundoRegistrado.DIM_MINIMA){
+                // Mundo registrado por un mod: su generador rellena el chunk entero (no hay terreno base que muestrear)
+                if(!tocaBorde){
+                    Extensiones.generarMundo(d, pal, semilla, dim, vcx, vcy);
+                    Extensiones.aplicarTerreno(d, pal, semilla, dim, vcx, vcy);
+                }else{
+                    Extensiones.generarMundo(d, pal, semilla, dim, vcx, vcy);
+                    for(int ly = 0; ly < TAM_CHUNK; ly++){
+                        for(int lx = 0; lx < TAM_CHUNK; lx++){
+                            final int vx = vx0 + lx, vy = vy0 + ly;
+                            if(vx < -LIMITE_MUNDO || vx > LIMITE_MUNDO || vy < -LIMITE_MUNDO || vy > LIMITE_MUNDO){
+                                final int i = ly * TAM_CHUNK + lx;
+                                d.piso[i] = (short)bordePiso;
+                                d.mena[i] = 0;
+                                d.bloque[i] = (short)bordeMuro;
+                            }
+                        }
+                    }
+                }
+                return d;
+            }
+            Muestreo.Spawn sp = Muestreo.spawn(sd, dim);   // el spawn del mundo está en el origen virtual (0,0)
             d.aux[11] = 0f;   // caché de estructura de la celda: vacía al empezar el chunk
             for(int ly = 0; ly < TAM_CHUNK; ly++){
                 for(int lx = 0; lx < TAM_CHUNK; lx++){
@@ -1686,6 +1744,8 @@ public class MundoInfinitoMod extends Mod{
                     d.bloque[i] = (short)b;
                 }
             }
+            // Fenómenos, terreno de mods y escuchas (hilo de fondo, sobre el terreno base ya completo del chunk)
+            if(!tocaBorde) Extensiones.aplicarTerreno(d, pal, semilla, dim, vcx, vcy);
             return d;
         }
     }
@@ -1800,6 +1860,8 @@ public class MundoInfinitoMod extends Mod{
             final Seq<Estructuras.RegU> unidades = new Seq<>();   // unidades enemigas de guardia (bases y errantes)
             int[] niebla; // 32 enteros: una fila de 32 bits por fila del chunk (null = nada explorado)
             double tick;  // reloj del mundo cuando se guardó: sirve para saber cuánto tiempo estuvo ausente
+            /** Datos propios de los mods (AlmacenModulo), por id de módulo. null = ninguno. Los arrays nunca se modifican en sitio. */
+            java.util.TreeMap<String, byte[]> modulos;
         }
 
         static final class Region{
@@ -1938,6 +2000,18 @@ public class MundoInfinitoMod extends Mod{
                         for(int j = 0; j < nu; j++) c.unidades.add(Estructuras.RegU.leer(in, ver));
                     }
                     if(ver >= 5) c.tick = in.readDouble();
+                    if(ver >= 7){
+                        int nm = in.readInt();
+                        if(nm > 0){
+                            c.modulos = new java.util.TreeMap<>();
+                            for(int j = 0; j < nm; j++){
+                                String id = in.readUTF();
+                                byte[] b = new byte[in.readInt()];
+                                in.readFully(b);
+                                c.modulos.put(id, b);
+                            }
+                        }
+                    }
                     r.chunks.put(idx, c);
                 }
                 in.close();
@@ -1954,6 +2028,7 @@ public class MundoInfinitoMod extends Mod{
             Estructuras.RegU[] unidades;
             int[] niebla;
             double tick;
+            java.util.Map<String, byte[]> modulos;
         }
 
         /** Hilo del juego: barato (copia de referencias), sin escribir ni un byte. */
@@ -1969,6 +2044,7 @@ public class MundoInfinitoMod extends Mod{
                 for(int i = 0; i < x.unidades.length; i++) x.unidades[i] = c.unidades.get(i);
                 x.niebla = c.niebla;   // se reemplaza entero, nunca se modifica en sitio
                 x.tick = c.tick;
+                x.modulos = c.modulos == null ? null : new java.util.TreeMap<>(c.modulos);   // copia de referencias: el juego sustituye arrays, no los modifica
                 lista.add(x);
             }
             return lista;
@@ -1980,7 +2056,7 @@ public class MundoInfinitoMod extends Mod{
             try{
                 ByteArrayOutputStream bos = new ByteArrayOutputStream();
                 DataOutputStream out = new DataOutputStream(bos);
-                out.writeInt(6);
+                out.writeInt(7);
                 out.writeInt(lista.size());
                 for(InstantaneaChunk c : lista){
                     out.writeShort(c.idx);
@@ -1991,6 +2067,14 @@ public class MundoInfinitoMod extends Mod{
                     out.writeInt(c.unidades.length);
                     for(Estructuras.RegU u : c.unidades) u.escribir(out);
                     out.writeDouble(c.tick);
+                    out.writeInt(c.modulos == null ? 0 : c.modulos.size());
+                    if(c.modulos != null){
+                        for(java.util.Map.Entry<String, byte[]> e : c.modulos.entrySet()){
+                            out.writeUTF(e.getKey());
+                            out.writeInt(e.getValue().length);
+                            out.write(e.getValue());
+                        }
+                    }
                 }
                 out.flush();
                 return bos.toByteArray();
@@ -2284,6 +2368,7 @@ public class MundoInfinitoMod extends Mod{
             Anillo.reiniciar();
             cursorPlan = 0;
             synchronized(cola){ cola.clear(); colaBaja.clear(); pendBaja.clear(); }
+            Extensiones.alReiniciarMundo(m);   // cierra el registro, fija la versión de generación y limpia el estado por mundo
             CacheChunks.configurar(m.semilla, m.dimGen());
             vaciarListos();
             colaRestaurar.clear();
@@ -2483,6 +2568,8 @@ public class MundoInfinitoMod extends Mod{
                 unidadesPend.clear();   // (sin guardias que restaurar; las unidades aliadas dormidas las despierta Entidades)
             }
             Perfil.fin(Perfil.S_RESTAURAR, tS);
+
+            Extensiones.tick();   // estructuras de mods pendientes (una sola vez por ancla, con presupuesto propio)
 
             tS = Perfil.t();
             pedirMas();   // mantiene la tubería llena sin esperar al siguiente escaneo
@@ -2699,7 +2786,7 @@ public class MundoInfinitoMod extends Mod{
             viajando = true;
             final Meta m = actual;
             Fx.launch.at(Vars.player.x, Vars.player.y);
-            Carga.mostrar("Despegando hacia " + (destino == DIM_SERPULO ? "Serpulo" : "Erekir") + "...");
+            Carga.mostrar("Despegando hacia " + (destino == DIM_SERPULO ? "Serpulo" : destino == DIM_EREKIR ? "Erekir" : (Extensiones.mundoPorDim(destino) == null ? "otro mundo" : Extensiones.mundoPorDim(destino).nombre)) + "...");
             Time.runTask(50f, () -> {
                 try{
                     guardar(true);                       // síncrono: escribe en la carpeta de la dimensión de origen
@@ -2716,7 +2803,11 @@ public class MundoInfinitoMod extends Mod{
                     Datos d = f.exists() ? Datos.leer(f) : null;
                     llegadaNueva = d == null;
                     if(d != null) abrir(m, d, d.vx, d.vy);
-                    else abrir(m, null, 0.0, 0.0);       // (0,0) del planeta nuevo
+                    else{
+                        // primera visita: el núcleo aparece en el punto de llegada del mundo registrado, o en (0,0) en Serpulo y Erekir
+                        final MundoRegistrado w = Extensiones.mundoPorDim(destino);
+                        abrir(m, null, w == null ? 0.0 : w.llegadaX, w == null ? 0.0 : w.llegadaY);
+                    }
                 }catch(Throwable t){
                     Log.err("[MundoInfinito] Error al saltar de dimensión", t);
                     Carga.ocultar();
@@ -2944,12 +3035,22 @@ public class MundoInfinitoMod extends Mod{
             r.bannedBlocks.clear();
             if(actual != null && actual.dimensional()){
                 // Dimensión: la UI nativa de Mindustry se adapta sola al planeta (bloques por entorno, ítems ocultos del otro planeta).
-                Planet p = actual.dim == DIM_SERPULO ? Planets.serpulo : Planets.erekir;
+                final MundoRegistrado mundoReg = actual.dim >= MundoRegistrado.DIM_MINIMA ? Extensiones.mundoPorDim(actual.dim) : null;
+                final boolean serpulo = mundoReg != null ? !"erekir".equalsIgnoreCase(mundoReg.planeta) : actual.dim == DIM_SERPULO;
+                Planet p = serpulo ? Planets.serpulo : Planets.erekir;
                 r.planet = p;
                 r.env = p.defaultEnv;
-                r.loadout = actual.dim == DIM_SERPULO
+                r.loadout = mundoReg != null && !mundoReg.inicio.isEmpty() ? mundoReg.inicio
+                    : serpulo
                     ? ItemStack.list(Items.copper, 400, Items.lead, 250, Items.sand, 100, Items.graphite, 150)
                     : ItemStack.list(Items.beryllium, 200, Items.graphite, 150);
+                if(mundoReg != null && mundoReg.reglas != null){
+                    try{
+                        mundoReg.reglas.get(r);
+                    }catch(Throwable t){
+                        Log.err("[MundoInfinito][API] El ajuste de reglas del mundo \"@\" falló", mundoReg.id, t);
+                    }
+                }
                 // Todo se puede construir: sin árbol tecnológico ni bloques baneados.
                 // Sin límite de unidades: el tope sale de los núcleos CARGADOS y, al alejarse de la base, valía 0 (morían al crearse).
                 r.disableUnitCap = true;
@@ -3017,6 +3118,7 @@ public class MundoInfinitoMod extends Mod{
                 }
                 if(r.cfgTipo != 0) Streamer.configsPendientes.add(r);
                 if(r.dt > 0 && t.build != null && r.equipo == Team.sharded.id) Ausencia.agregar(t.build, r.dt);   // se pone al día
+                if(t.build != null) OpenWorldAPI.edificioRestaurado_(t.build);
             }catch(Throwable t){
                 Log.warn("[MundoInfinito] No se pudo restaurar @", r.bloque);
             }
@@ -3032,6 +3134,11 @@ public class MundoInfinitoMod extends Mod{
         }
 
         static final Team[] EQUIPOS_GUARDADO = {Team.sharded, Team.crux, Team.malis, Team.derelict, Team.green, Team.blue};
+
+        /** Equipos que siempre se guardan: los del base más los que un mod registró con OpenWorldAPI.registrarEquipo. */
+        static Team[] equiposGuardado(){
+            return Extensiones.equiposGuardado(EQUIPOS_GUARDADO);
+        }
 
         static void escribirAsync(Datos d, boolean sincrono){
             final Meta m = actual;

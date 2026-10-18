@@ -102,8 +102,13 @@ final class Estructuras{
 
         /** Unidad aliada que se manda a dormir: conserva vida, escudo, munición y orientación. */
         static RegU aliada(Unit u, int ox, int oy){
+            return dormida(u, ox, oy, 1);
+        }
+
+        /** clase 1 = aliada del mundo base; clase 2 = unidad de un mod que su PoliticaSueno manda dormir. */
+        static RegU dormida(Unit u, int ox, int oy, int clase){
             RegU r = new RegU();
-            r.clase = 1;
+            r.clase = clase;
             r.tipo = u.type.name;
             r.equipo = u.team.id;
             r.vx = ox + u.x / 8.0;

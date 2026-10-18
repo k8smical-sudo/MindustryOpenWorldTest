@@ -236,6 +236,7 @@ final class Anillo{
         }
         if(!Regiones.lista(cx, cy)) return false;                      // la región se lee en el hilo de E/S
         restaurados.add(k);
+        Extensiones.alRestaurarChunk(cx, cy);   // anclas de estructuras de mods que caen en este chunk (se colocan después, una sola vez)
         Regiones.ChunkGuardado c = Regiones.chunk(cx, cy, false);
         if(c == null) return true;
         final double ausente = c.tick > 0 ? Math.max(0.0, Mundos.reloj() - c.tick) : 0.0;
@@ -488,7 +489,7 @@ final class Anillo{
         final Seq<Estructuras.RegU> dorm = new Seq<>();
         final Seq<Reg> edHib = new Seq<>();   // sin uso (antes: edificios de bases hibernadas); se conserva vacía
         if(reescribir && viejo != null){
-            for(Estructuras.RegU u : viejo.unidades) if(u.clase == 1) dorm.add(u);   // unidades aliadas dormidas
+            for(Estructuras.RegU u : viejo.unidades) if(u.clase == 1 || u.clase == 2) dorm.add(u);   // unidades dormidas: aliadas (1) y de mods con PoliticaSueno (2)
         }
 
         int[] niebla = viejo == null ? null : viejo.niebla;
@@ -506,7 +507,8 @@ final class Anillo{
             if(!vaciarNiebla) Vars.fogControl.putStaticChunk(Team.sharded, cx, cy, b);   // guardado periódico: la niebla viva se queda
         }
 
-        final boolean algo = edificios.size > 0 || guardias.size > 0 || dorm.size > 0 || edHib.size > 0 || niebla != null;
+        final boolean algo = edificios.size > 0 || guardias.size > 0 || dorm.size > 0 || edHib.size > 0 || niebla != null
+            || (viejo != null && viejo.modulos != null);   // datos de mods (AlmacenModulo): nunca se pierden al reescribir el chunk
         if(!algo) return;
 
         final Regiones.ChunkGuardado cg = Regiones.chunk(cx, cy, true);
@@ -515,6 +517,7 @@ final class Anillo{
             cg.unidades.clear();
         }
         if(niebla != null) cg.niebla = niebla;
+        if(viejo != null && viejo.modulos != null) cg.modulos = viejo.modulos;
         for(Building b : edificios){
             if(!b.isValid() || b.tile == null || b.tile.build != b) continue;
             Reg nuevo = Reg.desde(b, 0, 0);
@@ -541,7 +544,7 @@ final class Anillo{
     static void capturarTodo(){
         if(!Vars.world.isRing()) return;
         final java.util.HashMap<Integer, Seq<Building>> porChunk = new java.util.HashMap<>();
-        for(Team eq : Mundos.EQUIPOS_GUARDADO){
+        for(Team eq : Mundos.equiposGuardado()){
             for(Building b : Vars.state.teams.get(eq).buildings){
                 if(!b.isValid() || b.tile == null || b.tile.build != b) continue;
                 if(b.tile.pos() == Mundos.proxyPos) continue;

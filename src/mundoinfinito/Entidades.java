@@ -23,15 +23,21 @@ final class Entidades{
         return Ajustes.estricto() ? Ajustes.sim() : Math.max(Ajustes.sim(), Streamer.rVista + 1);
     }
 
+    /** 1 = aliada del mundo base, 2 = unidad de un mod cuya PoliticaSueno manda dormir, 0 = no duerme. */
+    static int claseSueno(Unit u){
+        if(u == null || !u.isValid() || u.type == null || u.isPlayer() || u.spawnedByCore) return 0;
+        if(u.team == Team.sharded) return 1;
+        return Extensiones.claseSueno(u);
+    }
+
     static boolean dormible(Unit u){
-        return u != null && u.isValid() && u.team == Team.sharded && u.type != null
-            && !u.isPlayer() && !u.spawnedByCore;
+        return claseSueno(u) != 0;
     }
 
     /** Guarda la unidad en el almacén (en el chunk virtual donde está) y la quita del mundo. */
     static void hibernar(Unit u){
         try{
-            Estructuras.RegU r = Estructuras.RegU.aliada(u, Coord.origenX(), Coord.origenY());
+            Estructuras.RegU r = Estructuras.RegU.dormida(u, Coord.origenX(), Coord.origenY(), claseSueno(u) == 0 ? 1 : claseSueno(u));
             int vcx = Math.floorDiv((int)Math.floor(r.vx), MundoInfinitoMod.TAM_CHUNK), vcy = Math.floorDiv((int)Math.floor(r.vy), MundoInfinitoMod.TAM_CHUNK);
             Regiones.chunk(vcx, vcy, true).unidades.add(r);
             u.remove();
@@ -133,6 +139,7 @@ final class Entidades{
             u.health = Math.max(1f, r.vida);
             u.shield = r.escudo;
             u.rotation = r.rot;
+            if(r.clase == 2) OpenWorldAPI.entidadDespertada_(u);
             return true;
         }catch(Throwable e){
             Log.warn("[MundoInfinito] No se pudo despertar una unidad @", r.tipo);
@@ -153,7 +160,7 @@ final class Entidades{
         boolean cambio = false;
         for(int i = c.unidades.size - 1; i >= 0; i--){
             Estructuras.RegU r = c.unidades.get(i);
-            if(r.clase != 1) continue;
+            if(r.clase != 1 && r.clase != 2) continue;
             if(despertar(r)){ c.unidades.remove(i); cambio = true; }
         }
         if(cambio) Regiones.chunk(vcx, vcy, true);   // marca la región como modificada

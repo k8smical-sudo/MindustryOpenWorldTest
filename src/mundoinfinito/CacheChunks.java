@@ -30,7 +30,7 @@ final class CacheChunks{
     private static final LinkedHashMap<Long, byte[]> n2 = new LinkedHashMap<>(512, 0.75f, true);
     private static long bytesN2;
     private static volatile int mundo;                        // identifica (semilla, dimensión) vigentes
-    private static int semilla, dim;
+    private static int semilla, dim, firma;
     private static boolean hayMundo;
     static volatile long aciertos, aciertosN2, fallos;        // estadísticas
 
@@ -38,10 +38,12 @@ final class CacheChunks{
 
     /** Llamar al (re)iniciar el streaming. Solo vacía la caché si el mundo o la dimensión cambiaron. */
     static synchronized void configurar(int sem, int d){
-        if(hayMundo && sem == semilla && d == dim) return;
+        final int f = Extensiones.firma();   // si cambia el conjunto de generadores, el terreno cacheado ya no vale
+        if(hayMundo && sem == semilla && d == dim && f == firma) return;
         hayMundo = true;
         semilla = sem;
         dim = d;
+        firma = f;
         n1.clear();
         n2.clear();
         bytesN2 = 0;

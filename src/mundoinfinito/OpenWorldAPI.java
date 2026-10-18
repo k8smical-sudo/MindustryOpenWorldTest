@@ -27,14 +27,21 @@ import mundoinfinito.MundoInfinitoMod.Streamer;
  *   Events.on(OpenWorldAPI.MundoAbierto.class, e -> { ... });                    // al crear o continuar un mundo (o cambiar de dimensión)
  *   OpenWorldAPI.registrarReglas(r -> r.waveTimer = false);                       // se aplica a las reglas de cada mundo al abrirlo
  *
+ * Desde la v2 hay además puntos de extensión (registrarTerreno, registrarFenomeno, registrarEstructura, registrarPolitica, registrarEquipo,
+ * registrarMundo, alTerrenoGenerado, viajarA) y las clases públicas de Generador*, Contexto*, PoliticaSueno, MundoRegistrado y AlmacenModulo.
+ *
  * Lo que un mod coloque en un chunk (edificios de cualquier equipo, incluidos equipos nuevos) se guarda y se restaura con él: en mundos
  * nuevos el mod no descarta nada. Lo que un mod ponga en el mundo NO se regenera: el terreno sí es una función pura de la semilla.
  */
 public final class OpenWorldAPI{
     private OpenWorldAPI(){}
 
-    /** Versión de esta API (sube cuando cambia algo incompatible). */
-    public static final int VERSION = 1;
+    /**
+     * Versión de esta API. 2 = puntos de extensión (generadores de terreno, fenómenos y estructuras, políticas de sueño, mundos registrados,
+     * almacén por módulo, equipos propios y eventos nuevos). Todo lo de la versión 1 sigue funcionando igual.
+     * Un mod declara la mínima que necesita en su mod.json:  "openWorld": { "api": 2, "capacidades": ["terreno", "fenomeno"] }
+     */
+    public static final int VERSION = 2;
     /** Nombre interno del mod: lo que va en "dependencies" de otro mod. */
     public static final String ID_MOD = "mundo-infinito";
 
@@ -75,6 +82,106 @@ public final class OpenWorldAPI{
             this.cx = cx;
             this.cy = cy;
         }
+    }
+
+    /** (v2) Un chunk está a punto de publicarse. HILO DE FONDO: el contexto solo vale dentro de la llamada. Ver {@link GeneradorTerreno}. */
+    public static class TerrenoGenerado{
+        public final ContextoTerreno ctx;
+
+        TerrenoGenerado(ContextoTerreno ctx){
+            this.ctx = ctx;
+        }
+    }
+
+    /** (v2) Un edificio guardado acaba de restaurarse al cargar su chunk. Hilo del juego. Solo para reaccionar: no se puede cancelar. */
+    public static class EdificioRestaurado{
+        public final mindustry.gen.Building edificio;
+
+        EdificioRestaurado(mindustry.gen.Building b){
+            this.edificio = b;
+        }
+    }
+
+    /** (v2) Una unidad de un mod salió del sueño (ver {@link PoliticaSueno}). Hilo del juego. */
+    public static class EntidadDespertada{
+        public final mindustry.gen.Unit unidad;
+
+        EntidadDespertada(mindustry.gen.Unit u){
+            this.unidad = u;
+        }
+    }
+
+    /** (v2) Se registró un mundo (ver {@link #registrarMundo}). Hilo del juego. El mundo ya tiene su dimensión asignada. */
+    public static class MundoRegistradoEvento{
+        public final MundoRegistrado mundo;
+
+        MundoRegistradoEvento(MundoRegistrado m){
+            this.mundo = m;
+        }
+    }
+
+    // ------------------------------------------------------------------ (v2) puntos de extensión
+    // Todos devuelven false (y dejan el motivo en el registro, con el prefijo "[MundoInfinito][API]") si el registro se rechaza; nunca lanzan.
+    // Terreno, fenómenos, mundos y escuchas de TerrenoGenerado se registran AL CARGAR EL MOD (constructor, init o loadContent): al abrir el
+    // primer mundo el registro se cierra, porque un generador tardío dejaría chunks ya generados sin él.
+
+    /** Generador de terreno de fondo. Ver {@link GeneradorTerreno}. */
+    public static boolean registrarTerreno(GeneradorTerreno g){
+        return Extensiones.registrarTerreno(g);
+    }
+
+    /** Generador de fenómenos con distancia mínima. Ver {@link GeneradorFenomeno}. */
+    public static boolean registrarFenomeno(GeneradorFenomeno g){
+        return Extensiones.registrarFenomeno(g);
+    }
+
+    /** Generador de estructuras (plantillas colocadas una vez). Ver {@link GeneradorEstructura}. */
+    public static boolean registrarEstructura(GeneradorEstructura g){
+        return Extensiones.registrarEstructura(g);
+    }
+
+    /** Política que decide si las unidades de un mod duermen fuera de vista. Ver {@link PoliticaSueno}. Se puede registrar en cualquier momento. */
+    public static boolean registrarPolitica(PoliticaSueno p){
+        return Extensiones.registrarPolitica(p);
+    }
+
+    /**
+     * Equipo (Team) propio cuyos edificios se guardan y restauran SIEMPRE. En mundos nuevos ({@code limpio}: creados sin generador de enemigos del
+     * mod base) ya se conserva todo lo que pongan los mods; "limpio = false" solo existe en mundos antiguos, donde lo enemigo o abandonado
+     * guardado se descartaba. Registrar el equipo garantiza que el guardado periódico lo recorre aunque el base no lo conozca.
+     */
+    public static boolean registrarEquipo(mindustry.game.Team equipo){
+        return Extensiones.registrarEquipo(equipo);
+    }
+
+    /** Registra un mundo (dimensión) nuevo con su generador, reglas y nombre; aparece como destino en los portales. Ver {@link MundoRegistrado}. */
+    public static boolean registrarMundo(MundoRegistrado mundo){
+        return Extensiones.registrarMundo(mundo);
+    }
+
+    /** Escucha el evento TerrenoGenerado (hilo de fondo). {@code id} con formato "idmod:nombre": de él sale la semilla del contexto. */
+    public static void alTerrenoGenerado(String id, Cons<TerrenoGenerado> escucha){
+        Extensiones.alTerrenoGenerado(id, escucha);
+    }
+
+    /** Teletransporta al jugador (hilo del juego) al mundo registrado con ese id, igual que el portal. false si no existe o no se puede viajar ahora. */
+    public static boolean viajarA(String idMundo){
+        final MundoRegistrado m = Extensiones.mundoPorId(idMundo);
+        if(m == null || !activo() || Mundos.viajando || Mundos.actual == null || !Mundos.actual.dimensional() || m.dimension() == Mundos.dimActual()) return false;
+        Mundos.saltar(m.dimension());
+        return true;
+    }
+
+    /** Vuelve a una dimensión del mundo base (0 Serpulo, 1 Erekir). */
+    public static boolean viajarADimensionBase(int dimension){
+        if((dimension != 0 && dimension != 1) || !activo() || Mundos.viajando || Mundos.actual == null || !Mundos.actual.dimensional() || dimension == Mundos.dimActual()) return false;
+        Mundos.saltar(dimension);
+        return true;
+    }
+
+    /** Capacidades que ofrece esta versión de la API (las que un mod puede pedir en su mod.json). */
+    public static String[] capacidades(){
+        return Extensiones.CAPACIDADES.clone();
     }
 
     // ------------------------------------------------------------------ consultas
@@ -144,6 +251,14 @@ public final class OpenWorldAPI{
 
     static void chunkDescargado_(int cx, int cy){
         fire(new ChunkDescargado(cx, cy));
+    }
+
+    static void edificioRestaurado_(mindustry.gen.Building b){
+        fire(new EdificioRestaurado(b));
+    }
+
+    static void entidadDespertada_(mindustry.gen.Unit u){
+        fire(new EntidadDespertada(u));
     }
 
     private static void fire(Object e){
@@ -216,6 +331,7 @@ public final class OpenWorldAPI{
 
     /** Escribe en el registro los mods detectados (al abrir un mundo): ayuda a depurar quién cambia qué. */
     static void registrarEnLog(){
+        Extensiones.registrarEnLog();
         final Seq<ModDetectado> l = modsDetectados();
         if(l.isEmpty()){
             Log.info("[MundoInfinito] API v@: ningún mod adicional altera el mundo.", VERSION);

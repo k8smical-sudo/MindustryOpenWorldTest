@@ -51,6 +51,7 @@ final class Perfil{
 
     /** Cierra el fotograma del mod: escribe una línea si hubo tirón y reinicia los contadores. Llamar una vez por tick. */
     static void cierre(){
+        Hilos.cuadro();   // marca el hilo principal (juego + dibujo) y relee el ajuste de hilos de vez en cuando
         if(!activo){
             java.util.Arrays.fill(acum, 0L);
             return;
@@ -77,6 +78,7 @@ final class Perfil{
         }
         if(cuadros >= 900){
             Log.info("[Perfil] resumen 15 s: peor tick del mod = @ | tirones escritos = @", peorTexto.isEmpty() ? "ninguno" : peorTexto, tiradas);
+            if(Hilos.activo()) Log.info("[Perfil] @", Hilos.resumen());
             cuadros = 0;
             peorNs = 0L;
             peorTexto = "";

@@ -46,6 +46,7 @@ public final class ContextoColocacion{
         final Tile t = tile(vx, vy);
         if(t == null) return false;
         t.setBlock(bloque, equipo, rotacion);
+        Visuales.refrescar(t);   // el sprite cacheado del bloque se rehornea (ver Visuales)
         return true;
     }
 

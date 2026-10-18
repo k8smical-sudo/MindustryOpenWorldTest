@@ -110,6 +110,7 @@ public class MundoInfinitoMod extends Mod{
     public MundoInfinitoMod(){
         // Generadores del propio mundo base: usan la misma API que los mods (Parte A del plan). Solo actúan en mundos de generación >= GEN_REVISADA.
         FenomenosBase.registrar();
+        GameRulesBase.registrar();   // gamerules del mod base (misma API que las de otros mods)
         Visuales.registrar();   // dibuja el cuerpo de los bloques drawCached (puentes, muros, nodos...) que el modo anillo deja sin caché
 
         // Botón en el menú principal cuando el cliente terminó de cargar.
@@ -151,6 +152,14 @@ public class MundoInfinitoMod extends Mod{
         boolean limpio;
         /** Mods activos al crear el mundo (nombres separados por coma): permite avisar si falta alguno al volver a abrirlo. */
         String mods = "";
+        /** Valor elegido para cada gamerule (id -> valor) al crear el mundo. Lo que falta usa el valor por defecto de la regla. */
+        final java.util.TreeMap<String, Boolean> gamerules = new java.util.TreeMap<>();
+
+        /** Valor de una gamerule en este mundo. */
+        boolean gameRule(GameRule g){
+            final Boolean v = gamerules.get(g.id);
+            return v == null ? g.porDefecto : v;
+        }
 
         Jval aJson(){
             Jval j = Jval.newObject();
@@ -168,6 +177,9 @@ public class MundoInfinitoMod extends Mod{
             j.put("limY", limY);
             j.put("limpio", limpio);
             j.put("mods", mods == null ? "" : mods);
+            final Jval gr = Jval.newObject();
+            for(java.util.Map.Entry<String, Boolean> e : gamerules.entrySet()) gr.put(e.getKey(), e.getValue());
+            j.put("gamerules", gr);
             return j;
         }
 
@@ -198,6 +210,10 @@ public class MundoInfinitoMod extends Mod{
             m.limY = Math.max(0, j.getInt("limY", 0));
             m.limpio = j.getBool("limpio", false);
             m.mods = j.getString("mods", "");
+            if(j.has("gamerules") && j.get("gamerules").isObject()){
+                final Jval.JsonMap mp = j.get("gamerules").asObject();
+                for(int i = 0; i < mp.size; i++) m.gamerules.put(mp.getKeyAt(i), mp.getValueAt(i).asBool());
+            }
             return m;
         }
 
@@ -2730,16 +2746,21 @@ public class MundoInfinitoMod extends Mod{
         // ---------- creación / continuar ----------
         /** limX / limY: límite de terreno en tiles (ancho / alto totales, centrados en el punto de aparición). 0 = infinito. */
         static void crearNuevo(String nombre, int nucleo, String semillaTxt, int limX, int limY){
+            crearNuevo(nombre, nucleo, semillaTxt, limX, limY, null);
+        }
+
+        /** gamerules: valor elegido por el jugador para cada GameRule (id -> valor); null o ausentes = valor por defecto de la regla. */
+        static void crearNuevo(String nombre, int nucleo, String semillaTxt, int limX, int limY, java.util.Map<String, Boolean> gamerules){
             String t = semillaTxt == null ? "" : semillaTxt.trim();
             if(!t.isEmpty()){
-                crearConSemilla(nombre, nucleo, Semillas.deTexto(t), t, limX, limY);
+                crearConSemilla(nombre, nucleo, Semillas.deTexto(t), t, limX, limY, gamerules);
                 return;
             }
             Carga.mostrar("Obteniendo semilla...");
-            Semillas.obtener(semilla -> crearConSemilla(nombre, nucleo, semilla, String.valueOf(semilla), limX, limY));
+            Semillas.obtener(semilla -> crearConSemilla(nombre, nucleo, semilla, String.valueOf(semilla), limX, limY, gamerules));
         }
 
-        static void crearConSemilla(String nombre, int nucleo, int semilla, String semillaTxt, int limX, int limY){
+        static void crearConSemilla(String nombre, int nucleo, int semilla, String semillaTxt, int limX, int limY, java.util.Map<String, Boolean> gamerules){
             Meta m = new Meta();
             m.id = "w" + System.currentTimeMillis();
             m.nombre = nombre == null || nombre.trim().isEmpty() ? "Mundo " + (Almacen.listar().size + 1) : nombre.trim();
@@ -2753,6 +2774,7 @@ public class MundoInfinitoMod extends Mod{
             m.limY = Math.max(0, limY);
             m.limpio = true;                       // mundo base: sin generador de enemigos ni de estructuras
             m.mods = OpenWorldAPI.firmaMods();
+            if(gamerules != null) m.gamerules.putAll(gamerules);
             m.creado = m.ultimo = System.currentTimeMillis();
             Almacen.guardarMeta(m);
             Regiones.iniciar(m);
@@ -3090,6 +3112,7 @@ public class MundoInfinitoMod extends Mod{
                 r.env = ENTORNO_COMBINADO;
                 r.loadout = ItemStack.list(Items.copper, 400, Items.lead, 250, Items.sand, 100, Items.beryllium, 200, Items.graphite, 150);
             }
+            Extensiones.aplicarGameRules(actual, r);   // gamerules elegidas al crear el mundo (las del base y las de otros mods)
             OpenWorldAPI.aplicarReglas(r);   // los mods que dependen de este ajustan las reglas aquí (enemigos, oleadas, equipos...)
         }
 
@@ -3387,7 +3410,24 @@ public class MundoInfinitoMod extends Mod{
             t.add(info).left().width(150f).row();
         }
 
-        /** Nuevo mundo: nombre, semilla (opcional), dimensión inicial y límite de terreno opcional (0 = infinito) en cada eje. */
+        /** Lista de gamerules con un interruptor por regla. Edita {@code valores} (id -> valor) en el sitio; lo que no se toque queda en su valor por defecto. */
+        static void abrirGameRules(final java.util.TreeMap<String, Boolean> valores){
+            final BaseDialog g = new BaseDialog("Gamerules");
+            final Table t = new Table();
+            final Seq<GameRule> reglas = Extensiones.gameRules();
+            t.add("[lightgray]Reglas del mundo. Los mods que añadan las suyas las mostrarán aquí.[]").width(420f).wrap().padBottom(12f).row();
+            for(final GameRule r : reglas){
+                final boolean actual = valores.containsKey(r.id) ? valores.get(r.id) : r.porDefecto;
+                t.check(r.nombre, actual, v -> valores.put(r.id, v)).left().padBottom(2f).row();
+                if(!r.descripcion.isEmpty()) t.add("[lightgray]" + r.descripcion + "[]").width(420f).wrap().left().padBottom(12f).row();
+            }
+            if(reglas.isEmpty()) t.add("[lightgray]No hay gamerules registradas.[]").row();
+            g.cont.pane(t).grow();
+            g.addCloseButton();
+            g.show();
+        }
+
+        /** Nuevo mundo: nombre, semilla (opcional), dimensión inicial, gamerules y límite de terreno opcional (0 = infinito) en cada eje. */
         static void abrirNuevo(){
             BaseDialog d = new BaseDialog("Nuevo mundo");
             final Table c = new Table();   // dentro de un panel con scroll: en móvil (pantalla baja) el formulario no cabe entero
@@ -3410,6 +3450,10 @@ public class MundoInfinitoMod extends Mod{
             });
             c.row();
 
+            // Gamerules: el botón abre una lista con las reglas del mod base y las que añadan otros mods (OpenWorldAPI.registrarGameRule)
+            final java.util.TreeMap<String, Boolean> gamerules = new java.util.TreeMap<>();
+            c.button("Gamerules", () -> abrirGameRules(gamerules)).size(320f, 56f).padBottom(16f).row();
+
             c.add("Límite de terreno (0 = infinito)").padBottom(2f).row();
             c.add("[lightgray]Centrado en el punto de aparición. Más allá del límite no se genera nada.[]").padBottom(8f).row();
             c.table(t -> {
@@ -3422,7 +3466,7 @@ public class MundoInfinitoMod extends Mod{
                 c.add("[accent]Mods que alteran el mundo:[] " + mods).width(420f).wrap().padBottom(10f).row();
             }
 
-            c.button("Crear mundo", () -> { d.hide(); Mundos.crearNuevo(nombre[0], nuc[0], semilla[0], limX[0], limY[0]); }).size(320f, 64f).pad(6f).row();
+            c.button("Crear mundo", () -> { d.hide(); Mundos.crearNuevo(nombre[0], nuc[0], semilla[0], limX[0], limY[0], gamerules); }).size(320f, 64f).pad(6f).row();
             d.cont.pane(c).grow();
             d.addCloseButton();
             d.show();

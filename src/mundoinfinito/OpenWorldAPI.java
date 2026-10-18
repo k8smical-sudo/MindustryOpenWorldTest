@@ -154,6 +154,22 @@ public final class OpenWorldAPI{
         return Extensiones.registrarEquipo(equipo);
     }
 
+    /**
+     * (v2) Añade una gamerule al botón "Gamerules" del diálogo de nuevo mundo. El jugador la activa o no al crear el mundo, el valor se guarda en
+     * el mundo y {@link GameRule#aplicacion} lo aplica sobre las reglas de Mindustry cada vez que se abre. Se puede registrar en cualquier
+     * momento antes de crear el mundo. Ver {@link GameRule}.
+     */
+    public static boolean registrarGameRule(GameRule regla){
+        return Extensiones.registrarGameRule(regla);
+    }
+
+    /** (v2) Valor de una gamerule en el mundo abierto (su valor por defecto si no hay mundo abierto; false si la regla no existe). Hilo del juego. */
+    public static boolean gameRule(String id){
+        final GameRule g = Extensiones.gameRule(id);
+        if(g == null) return false;
+        return Mundos.actual == null ? g.porDefecto : Mundos.actual.gameRule(g);
+    }
+
     /** Registra un mundo (dimensión) nuevo con su generador, reglas y nombre; aparece como destino en los portales. Ver {@link MundoRegistrado}. */
     public static boolean registrarMundo(MundoRegistrado mundo){
         return Extensiones.registrarMundo(mundo);

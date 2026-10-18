@@ -40,7 +40,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 final class Extensiones{
     static final String LOG = "[MundoInfinito][API] ";
     /** Capacidades que ofrece esta versión de la API (las que un mod puede pedir en su mod.json). */
-    static final String[] CAPACIDADES = {"terreno", "fenomeno", "estructura", "entidades", "mundos", "almacen", "eventos"};
+    static final String[] CAPACIDADES = {"terreno", "fenomeno", "estructura", "entidades", "mundos", "almacen", "eventos", "gamerules"};
 
     private Extensiones(){}
 
@@ -54,6 +54,7 @@ final class Extensiones{
     private static final ConcurrentHashMap<String, MundoRegistrado> mundosPorId = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<Integer, MundoRegistrado> mundosPorDim = new ConcurrentHashMap<>();
     private static final CopyOnWriteArrayList<Escucha> escuchasTerreno = new CopyOnWriteArrayList<>();
+    private static final ConcurrentHashMap<String, GameRule> gameRules = new ConcurrentHashMap<>();
 
     /** true tras abrir el primer mundo: ya no se admiten generadores ni mundos nuevos (cambiarían chunks ya generados). */
     private static volatile boolean cerrado;
@@ -195,6 +196,49 @@ final class Extensiones{
             Log.err(LOG + "Un mod falló en MundoRegistradoEvento", t);
         }
         return true;
+    }
+
+    /** Una gamerule no afecta al terreno ya generado, así que se puede registrar en cualquier momento (el diálogo de nuevo mundo lee la lista al abrirse). */
+    static boolean registrarGameRule(GameRule g){
+        if(g == null || g.nombre == null || g.nombre.trim().isEmpty() || g.aplicacion == null){
+            Log.err(LOG + "Gamerule rechazada: necesita id, nombre y aplicación");
+            return false;
+        }
+        if(!idValido(g.id, "Gamerule")) return false;
+        if(gameRules.putIfAbsent(g.id, g) != null){
+            Log.err(LOG + "Gamerule duplicada: @", g.id);
+            return false;
+        }
+        Log.info(LOG + "Gamerule registrada: @ (por defecto: @)", g.id, g.porDefecto);
+        return true;
+    }
+
+    static GameRule gameRule(String id){
+        return id == null ? null : gameRules.get(id);
+    }
+
+    /** Todas las gamerules: primero las del mod base, después las de los demás mods; dentro de cada grupo, por id (orden estable). */
+    static Seq<GameRule> gameRules(){
+        final Seq<GameRule> r = new Seq<>();
+        for(GameRule g : gameRules.values()) r.add(g);
+        r.sort((a, b) -> {
+            final boolean ba = a.id.startsWith(OpenWorldAPI.ID_MOD + ":"), bb = b.id.startsWith(OpenWorldAPI.ID_MOD + ":");
+            return ba != bb ? (ba ? -1 : 1) : a.id.compareTo(b.id);
+        });
+        return r;
+    }
+
+    /** Aplica sobre las reglas de Mindustry el valor que el mundo guardó para cada gamerule (o su valor por defecto). Hilo del juego. */
+    static void aplicarGameRules(MundoInfinitoMod.Meta m, mindustry.game.Rules r){
+        if(m == null) return;
+        final int dim = m.dimensional() ? m.dim : -1;
+        for(GameRule g : gameRules()){
+            try{
+                g.aplicacion.aplicar(r, m.gameRule(g), dim);
+            }catch(Throwable t){
+                Log.err(LOG + "La gamerule \"@\" falló al aplicarse", g.id, t);
+            }
+        }
     }
 
     static void alTerrenoGenerado(String id, Cons<OpenWorldAPI.TerrenoGenerado> cb){
@@ -516,7 +560,7 @@ final class Extensiones{
     /** Resumen de lo registrado, para el registro al abrir un mundo. */
     static void registrarEnLog(){
         verificarMods();
-        Log.info(LOG + "Registro: @ de terreno, @ de fenómenos, @ de estructuras, @ políticas de sueño, @ mundos, @ equipos propios.",
-            terreno.length, fenomenos.length, estructuras.length, politicas.size(), mundosPorId.size(), equipos.size());
+        Log.info(LOG + "Registro: @ de terreno, @ de fenómenos, @ de estructuras, @ políticas de sueño, @ mundos, @ equipos propios, @ gamerules.",
+            terreno.length, fenomenos.length, estructuras.length, politicas.size(), mundosPorId.size(), equipos.size(), gameRules.size());
     }
 }

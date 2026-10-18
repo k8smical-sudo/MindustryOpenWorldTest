@@ -110,7 +110,7 @@ public class MundoInfinitoMod extends Mod{
     public MundoInfinitoMod(){
         // Generadores del propio mundo base: usan la misma API que los mods (Parte A del plan). Solo actúan en mundos de generación >= GEN_REVISADA.
         FenomenosBase.registrar();
-        Visuales.registrar();   // sprites de bloques cacheados tras cada construcción del jugador
+        Visuales.registrar();   // dibuja el cuerpo de los bloques drawCached (puentes, muros, nodos...) que el modo anillo deja sin caché
 
         // Botón en el menú principal cuando el cliente terminó de cargar.
         Events.on(ClientLoadEvent.class, e -> Time.runTask(10f, () -> { MenuUI.inyectarBoton(); Hud.crear(); MapaVista.crear(); Ajustes.registrar(); }));
@@ -3148,7 +3148,6 @@ public class MundoInfinitoMod extends Mod{
                 }
                 if(r.cfgTipo != 0) Streamer.configsPendientes.add(r);
                 if(r.dt > 0 && t.build != null && r.equipo == Team.sharded.id) Ausencia.agregar(t.build, r.dt);   // se pone al día
-                Visuales.refrescar(t);   // tras leer sus datos: el sprite cacheado se rehornea con el estado final (ver Visuales)
                 if(t.build != null) OpenWorldAPI.edificioRestaurado_(t.build);
             }catch(Throwable t){
                 Log.warn("[MundoInfinito] No se pudo restaurar @", r.bloque);

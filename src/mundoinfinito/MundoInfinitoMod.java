@@ -437,17 +437,46 @@ public class MundoInfinitoMod extends Mod{
         static final int[][] VENTS_POZO = {{0, 0}, {4, 1}, {-3, -3}};   // generaciones anteriores a GEN_REVISADA
 
         /**
-         * Los 3 respiraderos de un pozo, generación revisada: repartidos a ~120 grados alrededor del centro del pozo con orientación propia de cada
-         * semilla y pozo (antes, desplazamientos fijos a 4-5 casillas: los tres bloques 3x3 quedaban pegados). Separación entre centros >= ~7.
+         * Respiraderos de un pozo de respiraderos, generación revisada. Entre 2 y 4 por pozo (según semilla y pozo), con ángulos IRREGULARES
+         * (huecos angulares aleatorios, no 120° fijos) y radios propios de cada uno, de modo que no formen figuras regulares. Separación
+         * mínima entre bloques 3x3 de 4 casillas (Chebyshev). Si son tres y casi equiláteros, se aleja uno: el pozo nunca sale como triángulo.
          */
         static int[][] ventsPozo(int s, int k, float r){
-            final float a0 = rnd(k, 41, sem(s, 8900)) * 6.2831853f;
-            final float rho = 5f + 1.5f * rnd(k, 42, sem(s, 8901)) + Math.max(0f, r - 6.5f) * 0.35f;
-            final int[][] o = new int[3][2];
-            for(int i = 0; i < 3; i++){
-                final float a = a0 + i * 2.0943951f + (rnd(k, 43 + i, sem(s, 8902)) - 0.5f) * 0.5f;
-                o[i][0] = Math.round((float)Math.cos(a) * rho);
-                o[i][1] = Math.round((float)Math.sin(a) * rho);
+            final float tau = 6.2831853f;
+            final int n = 2 + (int)(rnd(k, 40, sem(s, 8899)) * 3f);                 // 2, 3 o 4 respiraderos
+            final float a0 = rnd(k, 41, sem(s, 8900)) * tau;
+            final float[] hueco = new float[n];
+            float tot = 0f;
+            for(int i = 0; i < n; i++){
+                hueco[i] = 0.45f + 1.1f * rnd(k, 44 + i, sem(s, 8903));              // huecos angulares irregulares
+                tot += hueco[i];
+            }
+            final int[][] o = new int[n][2];
+            final float extra = Math.max(0f, r - 6.5f) * 0.35f;                      // pozos grandes tienen respiraderos más separados
+            float a = a0;
+            for(int i = 0; i < n; i++){
+                float rho = 3.5f + 3.5f * rnd(k, 50 + i, sem(s, 8904)) + extra * (0.5f + rnd(k, 56 + i, sem(s, 8905)));
+                for(int rep = 0; rep < 4; rep++){
+                    o[i][0] = Math.round((float)Math.cos(a) * rho);
+                    o[i][1] = Math.round((float)Math.sin(a) * rho);
+                    boolean ok = true;
+                    for(int q = 0; q < i; q++){
+                        if(Math.max(Math.abs(o[i][0] - o[q][0]), Math.abs(o[i][1] - o[q][1])) < 4){ ok = false; break; }
+                    }
+                    if(ok) break;
+                    rho += 3f;
+                }
+                a += hueco[i] / tot * tau;
+            }
+            if(n == 3){
+                final double d01 = Math.hypot(o[0][0] - o[1][0], o[0][1] - o[1][1]);
+                final double d12 = Math.hypot(o[1][0] - o[2][0], o[1][1] - o[2][1]);
+                final double d02 = Math.hypot(o[0][0] - o[2][0], o[0][1] - o[2][1]);
+                final double mx = Math.max(d01, Math.max(d12, d02)), mn = Math.min(d01, Math.min(d12, d02));
+                if(mn > 0 && mx / mn < 1.3){                                          // casi equilátero: se aleja uno
+                    o[2][0] = Math.round(o[2][0] * 1.5f);
+                    o[2][1] = Math.round(o[2][1] * 1.5f);
+                }
             }
             return o;
         }

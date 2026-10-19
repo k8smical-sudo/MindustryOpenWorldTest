@@ -10,8 +10,10 @@ import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * CORPUS DE REGRESIÓN DEL TERRENO BASE (plan definitivo, fase 0).
@@ -20,6 +22,7 @@ import java.util.Map;
  * puro (no necesita el juego cargado), así que corre en una JVM normal, en CI, con el classpath de la mod compilada + el jar del motor.
  * La ruta directa replica el bucle original de {@code ChunkData.generar}; la ruta del núcleo es la que usa el juego ahora ({@link Nucleo#terreno}).
  * "congelar" usa la ruta directa (referencia independiente del núcleo); "verificar" y la equivalencia de hilos usan la del núcleo.
+ * Fase 3: "comprobar" además prueba las etapas por separado (suelo solo contra Muestreo.pisoBase, sin decoración, sin cada etapa).
  * No cubre los hooks de la API (fenómenos, mods): necesitan el contenido del juego y entran en fases posteriores.
  *
  * Uso:   java -cp build/classes/java/main:libs/MindustryX-Desktop.jar mundoinfinito.Corpus MODO [archivo]
@@ -67,10 +70,8 @@ public final class Corpus{
         return h;
     }
 
-    /** Mismo hash, pero con el terreno base servido por el núcleo (el camino real de ChunkData.generar). Debe dar lo mismo que hashChunk. */
-    static long hashChunkNucleo(int semilla, int dim, int cx, int cy){
-        final int T = MundoInfinitoMod.TAM_CHUNK;
-        final AporteTerreno ap = Nucleo.terreno(semilla, dim, cx * T, cy * T, cx, cy);
+    /** Hash de un aporte de terreno: las cuatro capas, casilla a casilla, con la misma mezcla que hashChunk. */
+    static long hashAporte(AporteTerreno ap){
         long h = 0xcbf29ce484222325L;
         for(int i = 0; i < AporteTerreno.N; i++){
             h = (h ^ ap.piso[i]) * 0x100000001b3L;
@@ -85,6 +86,33 @@ public final class Corpus{
         return h;
     }
 
+    /** Mismo hash, pero con el terreno base servido por el núcleo (el camino real de ChunkData.generar). Debe dar lo mismo que hashChunk. */
+    static long hashChunkNucleo(int semilla, int dim, int cx, int cy){
+        final int T = MundoInfinitoMod.TAM_CHUNK;
+        return hashAporte(Nucleo.terreno(semilla, dim, cx * T, cy * T, cx, cy));
+    }
+
+    /** Lo mismo, pero evaluando solo las etapas indicadas (en orden canónico). */
+    static long hashChunkConEtapas(int semilla, int dim, int cx, int cy, Set<String> ids){
+        final int T = MundoInfinitoMod.TAM_CHUNK;
+        return hashAporte(Nucleo.terrenoSolo(ids, semilla, dim, cx * T, cy * T, cx, cy));
+    }
+
+    static final String PREFIJO = "mundo-infinito:";
+
+    static Set<String> ids(String... nombres){
+        final Set<String> s = new HashSet<String>();
+        for(String n : nombres) s.add(PREFIJO + n);
+        return s;
+    }
+
+    static Set<String> todasMenos(String... nombres){
+        final Set<String> s = new HashSet<String>();
+        for(ContribucionTerreno c : Nucleo.contribucionesTerreno()) s.add(c.id());
+        for(String n : nombres) s.remove(PREFIJO + n);
+        return s;
+    }
+
     /** Todas las entradas en un orden fijo (semilla, dimensión, coordenada). */
     static List<int[]> entradas(){
         final List<int[]> l = new ArrayList<int[]>();
@@ -97,6 +125,15 @@ public final class Corpus{
         for(int i = 0; i < r.length; i++){
             int[] e = es.get(i);
             r[i] = hashChunkNucleo(e[0], e[1], e[2], e[3]);
+        }
+        return r;
+    }
+
+    static long[] calcularConEtapas(List<int[]> es, Set<String> ids){
+        final long[] r = new long[es.size()];
+        for(int i = 0; i < r.length; i++){
+            int[] e = es.get(i);
+            r[i] = hashChunkConEtapas(e[0], e[1], e[2], e[3], ids);
         }
         return r;
     }
@@ -227,6 +264,77 @@ public final class Corpus{
         return 1;
     }
 
+    /** Etapas de suelo solas: el piso debe ser exactamente pisoBase de Muestreo (referencia independiente) y las demás capas quedan vacías. */
+    static int comprobarSuelo(List<int[]> es){
+        final Set<String> suelo = ids("suelo-serpulo", "suelo-erekir", "volcanico-serpulo", "brea-agua-serpulo");
+        final int T = MundoInfinitoMod.TAM_CHUNK;
+        int malas = 0;
+        for(int[] e : es){
+            final int sd = MundoInfinitoMod.Muestreo.semDim(e[0], e[1]);
+            final MundoInfinitoMod.Muestreo.Spawn sp = MundoInfinitoMod.Muestreo.spawn(sd, e[1]);
+            final AporteTerreno ap = Nucleo.terrenoSolo(suelo, e[0], e[1], e[2] * T, e[3] * T, e[2], e[3]);
+            for(int ly = 0; ly < T; ly++){
+                for(int lx = 0; lx < T; lx++){
+                    final int i = ly * T + lx, x = e[2] * T + lx, y = e[3] * T + ly;
+                    final double dx0 = x, dy0 = y;
+                    final float dist = (float)Math.sqrt(dx0 * dx0 + dy0 * dy0);
+                    final double wx = x + (MundoInfinitoMod.Muestreo.fbm(MundoInfinitoMod.Muestreo.sem(sd, 50), 90f, 3, x, y) - 0.5) * 70.0;
+                    final double wy = y + (MundoInfinitoMod.Muestreo.fbm(MundoInfinitoMod.Muestreo.sem(sd, 51), 90f, 3, x + 500.0, y + 500.0) - 0.5) * 70.0;
+                    final boolean ere = MundoInfinitoMod.Muestreo.esE(sd, x, y, sp);
+                    final int p = MundoInfinitoMod.Muestreo.pisoBase(sd, x, y, dist, wx, wy, ere, sp);
+                    if(ap.piso[i] != p || ap.mena[i] != 0 || ap.muro[i] != 0 || ap.prop[i] != 0){
+                        malas++;
+                        if(malas <= 5) System.out.println("[Corpus]   suelo distinto en " + e[0] + " " + e[1] + " chunk " + e[2] + "," + e[3] + " casilla " + lx + "," + ly + ": etapas " + ap.piso[i] + ", Muestreo.pisoBase " + p);
+                    }
+                }
+            }
+        }
+        if(malas == 0) System.out.println("[Corpus] etapas de suelo solas: el piso coincide con Muestreo.pisoBase y no tocan mena, muro ni decoración (" + es.size() + " chunks).");
+        else System.out.println("[Corpus] FALLO: las etapas de suelo solas difieren de Muestreo.pisoBase en " + malas + " casillas.");
+        return malas == 0 ? 0 : 1;
+    }
+
+    /** Quitar la decoración solo debe quitar la decoración: piso, mena y muro quedan idénticos al resultado completo. */
+    static int comprobarSinDecoracion(List<int[]> es){
+        final Set<String> sin = todasMenos("decoracion");
+        final int T = MundoInfinitoMod.TAM_CHUNK;
+        int malas = 0;
+        for(int[] e : es){
+            final AporteTerreno a = Nucleo.terreno(e[0], e[1], e[2] * T, e[3] * T, e[2], e[3]);
+            final int[] p = a.piso.clone(), m = a.mena.clone(), w = a.muro.clone();
+            final AporteTerreno b = Nucleo.terrenoSolo(sin, e[0], e[1], e[2] * T, e[3] * T, e[2], e[3]);
+            for(int i = 0; i < AporteTerreno.N; i++){
+                if(b.piso[i] != p[i] || b.mena[i] != m[i] || b.muro[i] != w[i] || b.prop[i] != 0){
+                    malas++;
+                    if(malas <= 5) System.out.println("[Corpus]   sin decoración difiere en " + e[0] + " " + e[1] + " chunk " + e[2] + "," + e[3] + " casilla " + i);
+                }
+            }
+        }
+        if(malas == 0) System.out.println("[Corpus] sin la decoración: piso, mena y muro idénticos al completo y sin decoración (" + es.size() + " chunks).");
+        else System.out.println("[Corpus] FALLO: quitar la decoración cambió otras capas en " + malas + " casillas.");
+        return malas == 0 ? 0 : 1;
+    }
+
+    /** Cada etapa quitada por turnos: el resultado debe ser reproducible (dos pasadas en frío iguales). Informa del hash de cada una. */
+    static int comprobarSinCadaEtapa(List<int[]> es, long[] completo){
+        int fallos = 0;
+        for(ContribucionTerreno c : Nucleo.contribucionesTerreno()){
+            final String nombre = c.id().substring(PREFIJO.length());
+            final Set<String> sin = todasMenos(nombre);
+            olvidarCaches();
+            final long[] r1 = calcularConEtapas(es, sin);
+            olvidarCaches();
+            final long[] r2 = calcularConEtapas(es, sin);
+            if(!Arrays.equals(r1, r2)){
+                fallos++;
+                System.out.println("[Corpus] FALLO: sin la etapa '" + nombre + "' el resultado no es reproducible.");
+            }else{
+                System.out.println("[Corpus] sin '" + nombre + "': reproducible, total=" + hex(total(r1)) + (Arrays.equals(r1, completo) ? " (igual que completo: no actúa en el corpus)" : ""));
+            }
+        }
+        return fallos;
+    }
+
     static int comprobar() throws Exception{
         final List<int[]> es = entradas();
         int fallos = 0;
@@ -252,6 +360,13 @@ public final class Corpus{
             fallos++;
             System.out.println("[Corpus] FALLO: el terreno servido por el núcleo difiere de la ruta directa.");
         }
+
+        // fase 3: independencia de las etapas
+        olvidarCaches();
+        fallos += comprobarSuelo(es);
+        olvidarCaches();
+        fallos += comprobarSinDecoracion(es);
+        fallos += comprobarSinCadaEtapa(es, a);
 
         for(int n : new int[]{1, 2, 4}){
             olvidarCaches();
@@ -299,6 +414,16 @@ public final class Corpus{
         sb.append("# nucleos=").append(Hilos.nucleos()).append(" gen=").append(MundoInfinitoMod.GEN_ACTUAL).append('\n');
         sb.append("# dim n media mediana p95 max\n");
         for(int d : DIMS) sb.append(fila("dim " + d, ns, es, d, Integer.MIN_VALUE));
+        final long[] nsN = new long[n];
+        olvidarCaches();
+        for(int i = 0; i < n; i++){
+            int[] e = es.get(i);
+            long t0 = System.nanoTime();
+            hashChunkNucleo(e[0], e[1], e[2], e[3]);
+            nsN[i] = System.nanoTime() - t0;
+        }
+        sb.append("# por el núcleo (etapas): debe quedar cerca de la ruta directa\n");
+        for(int d : DIMS) sb.append(fila("nucleo dim " + d, nsN, es, d, Integer.MIN_VALUE));
         sb.append("# por semilla\n");
         for(int s : SEMILLAS) for(int d : DIMS) sb.append(fila("semilla " + s + " dim " + d, ns, es, d, s));
         final String texto = sb.toString();

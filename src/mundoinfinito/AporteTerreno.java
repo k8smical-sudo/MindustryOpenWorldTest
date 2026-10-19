@@ -19,7 +19,8 @@ final class AporteTerreno{
     /** Decoración: 0 = ninguna, 1 = decoración del piso, 2 = cristal, 3 = cristal vivo. */
     final int[] prop = new int[N];
 
-    /** Trabajo interno del terreno base (lo que antes llevaba cada ChunkData). No forma parte del aporte. */
+    /** Trabajo interno de las etapas del terreno base (lo que antes llevaba cada ChunkData). No forma parte del aporte. */
     final float[] aux = new float[14];
-    final int[] out = new int[4];
+    /** Estado de la casilla que atraviesan las etapas del terreno base (uno por hilo, reutilizado). */
+    final CeldaBase celda = new CeldaBase();
 }

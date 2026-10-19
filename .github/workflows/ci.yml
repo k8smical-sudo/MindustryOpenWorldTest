@@ -64,17 +64,15 @@ jobs:
       - name: Build mod artifact
         run: ./gradlew dex -x fetchComps --stacktrace
       # ---- FASE 0 del plan: corpus de regresión del terreno base, equivalencia de hilos y línea base de coste ----
-      # Solo usa Muestreo (puro): no necesita el juego. continue-on-error: es la primera vez que corre en CI; cuando salga en verde una vez,
-      # quita esa línea de los dos pasos de "Corpus" para que sea una puerta real (un cambio que altere el mundo hará fallar el build).
-      - name: Corpus - reproducibilidad y equivalencia de hilos
-        continue-on-error: true
+      # Solo usa Muestreo (puro): no necesita el juego. Ya salió en verde, así que ahora es una puerta real: un cambio que altere el mundo,
+      # o que rompa la equivalencia entre hilos o el perfil de mundo, hace fallar el build. Solo la línea base sigue siendo informativa.
+      - name: Corpus - reproducibilidad, etapas, perfil y equivalencia de hilos
         run: |
           mkdir -p build/corpus
           java -cp "build/classes/java/main:libs/MindustryX-Desktop.jar" mundoinfinito.Corpus comprobar 2>&1 | tee build/corpus/comprobar.txt
           test "${PIPESTATUS[0]}" -eq 0
         shell: bash
       - name: Corpus - verificar contra lo congelado
-        continue-on-error: true
         run: |
           mkdir -p build/corpus
           CP="build/classes/java/main:libs/MindustryX-Desktop.jar"

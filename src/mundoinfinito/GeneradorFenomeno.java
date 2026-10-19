@@ -20,6 +20,15 @@ public interface GeneradorFenomeno{
         return dimension <= 1;
     }
 
+    /**
+     * Peso en los conflictos de espacio entre generadores cuando el mundo tiene distancia mínima global entre fenómenos: cuando dos fenómenos de
+     * distintas fuentes quedan más cerca que esa distancia, gana el de más peso con probabilidad proporcional (con peso 1 y 3, el segundo gana el 75 %).
+     * Un peso menor o igual que 0 hace que sus fenómenos pierdan siempre los conflictos (pero se colocan donde no estorban).
+     */
+    default float peso(){
+        return 1f;
+    }
+
     default int presupuestoMs(){
         return 20;
     }

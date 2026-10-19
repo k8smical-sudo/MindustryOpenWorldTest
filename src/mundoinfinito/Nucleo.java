@@ -23,7 +23,7 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 final class Nucleo{
     /** Versión del contrato del núcleo (sube con cambios incompatibles). */
-    static final int VERSION = 4;
+    static final int VERSION = 5;
     /** Fase 7: mientras sea false solo se cuentan unidades y excesos; nunca se recorta ni se registra una degradación. */
     static final boolean DEGRADACION_ACTIVA = false;
     /** Nombre bajo el que se cuenta la tubería de etapas del terreno base. */
@@ -31,6 +31,34 @@ final class Nucleo{
 
     /** Parámetros de generación del mundo abierto (perfil). Sin mundo abierto: los de por defecto. */
     private static volatile ParametrosGeneracion parametros = ParametrosGeneracion.DEFECTO;
+
+    /** La tubería de etapas del terreno base, como candidata en las disputas de terreno (peso 1, prioridad negativa: va la primera). */
+    private static final Contribucion BASE = new Contribucion(){
+        @Override
+        public String id(){
+            return TUBERIA_BASE;
+        }
+
+        @Override
+        public String fuente(){
+            return "mundo-infinito";
+        }
+
+        @Override
+        public int version(){
+            return 1;
+        }
+
+        @Override
+        public Tipo tipo(){
+            return Tipo.TERRENO;
+        }
+
+        @Override
+        public int prioridad(){
+            return -1000;
+        }
+    };
 
     private static final Object CERROJO = new Object();
     private static volatile ContribucionTerreno[] terreno = new ContribucionTerreno[0];   // siempre en orden canónico
@@ -157,9 +185,27 @@ final class Nucleo{
         final ContextoAporte ctx = new ContextoAporte(semilla, dim, x0, y0, vcx, vcy, par);
         final ContribucionTerreno[] todas = terreno;
 
-        int ne = 0;
-        for(ContribucionTerreno c : todas) if(c instanceof EtapaBase && c.aplicaA(dim)) ne++;
-        if(ne > 0){
+        // candidatas: la tubería del terreno base (si hay etapas) y las contribuciones de terreno que no son etapas
+        int ne = 0, no = 0;
+        for(ContribucionTerreno c : todas){
+            if(!c.aplicaA(dim)) continue;
+            if(c instanceof EtapaBase) ne++;
+            else no++;
+        }
+
+        // fase 6: si hay más de un candidato, la macrocélula (2x2 chunks) tiene UN dueño elegido por cuota de peso; todos sus chunks usan el mismo
+        ContribucionTerreno otra = null;
+        boolean usaBase = ne > 0;
+        if(no > 0){
+            final List<Contribucion> cand = new ArrayList<Contribucion>();
+            if(ne > 0) cand.add(BASE);
+            for(ContribucionTerreno c : todas) if(c.aplicaA(dim) && !(c instanceof EtapaBase)) cand.add(c);
+            final Contribucion dueno = Reparto.dueno(semilla, dim, Reparto.macro(vcx), Reparto.macro(vcy), cand);
+            usaBase = dueno == BASE;
+            if(dueno != null && dueno != BASE) otra = (ContribucionTerreno)dueno;
+        }
+
+        if(usaBase){
             final EtapaBase[] etapas = new EtapaBase[ne];
             int k = 0, declaradas = 0;
             for(ContribucionTerreno c : todas){
@@ -173,15 +219,12 @@ final class Nucleo{
             contar(TUBERIA_BASE, declaradas, "casilla", vcx, vcy, unidades, System.nanoTime() - t0);
             return out;
         }
-
-        for(ContribucionTerreno c : todas){
-            if(c.aplicaA(dim)){
-                final long t0 = System.nanoTime();
-                final int unidades = c.aportar(ctx, out);
-                final PresupuestoTrabajo p = c.presupuesto();
-                contar(c.id(), p.unidadesChunk, p.unidad, vcx, vcy, unidades, System.nanoTime() - t0);
-                return out;
-            }
+        if(otra != null){
+            final long t0 = System.nanoTime();
+            final int unidades = otra.aportar(ctx, out);
+            final PresupuestoTrabajo p = otra.presupuesto();
+            contar(otra.id(), p.unidadesChunk, p.unidad, vcx, vcy, unidades, System.nanoTime() - t0);
+            return out;
         }
 
         // Degradar, nunca rechazar: sin contribución aplicable, el chunk sale de piedra y se avisa una vez por mundo
@@ -195,6 +238,24 @@ final class Nucleo{
             out.prop[i] = 0;
         }
         return out;
+    }
+
+    /**
+     * Id de la contribución dueña del terreno de la macrocélula (mcx, mcy): el terreno base ({@link #TUBERIA_BASE}) o la contribución de terreno
+     * que ganó la disputa. Es la misma elección que hace {@link #terreno}. Consulta pura de diagnóstico.
+     */
+    static String duenoTerreno(int semilla, int dim, int mcx, int mcy){
+        final ContribucionTerreno[] todas = terreno;
+        final List<Contribucion> cand = new ArrayList<Contribucion>();
+        boolean hayEtapas = false;
+        for(ContribucionTerreno c : todas){
+            if(!c.aplicaA(dim)) continue;
+            if(c instanceof EtapaBase) hayEtapas = true;
+            else cand.add(c);
+        }
+        if(hayEtapas) cand.add(BASE);
+        final Contribucion d = Reparto.dueno(semilla, dim, mcx, mcy, cand);
+        return d == null ? "(ninguna)" : d.id();
     }
 
     /**

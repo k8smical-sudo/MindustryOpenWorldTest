@@ -14,16 +14,24 @@ final class ParametrosGeneracion{
     static final String ID_ALTURA_SERPULO = "mundo-infinito:serpulo-estiramiento-altura";
     static final String ID_TEMPERATURA_SERPULO = "mundo-infinito:serpulo-estiramiento-temperatura";
     static final String ID_HUMEDAD_SERPULO = "mundo-infinito:serpulo-estiramiento-humedad";
+    static final String ID_FENOMENOS_DISTANCIA = "mundo-infinito:fenomenos-distancia-minima";
 
     /** El perfil por defecto de todos los mundos. */
     static final ParametrosGeneracion DEFECTO = new ParametrosGeneracion(Muestreo.K_ALTURA, Muestreo.K_TEMP_S, Muestreo.K_HUM_S);
 
     /** Cuánto se estira el ruido de relieve, temperatura y humedad de Serpulo hacia [0,1]: más alto = biomas más contrastados. */
     final float estirarAlturaSerpulo, estirarTemperaturaSerpulo, estirarHumedadSerpulo;
+    /** Distancia mínima, en casillas, entre dos fenómenos de CUALQUIER generador. 0 = sin distancia global (cada generador solo respeta la suya). */
+    final int distanciaMinimaFenomenos;
 
     ParametrosGeneracion(float estirarAlturaSerpulo, float estirarTemperaturaSerpulo, float estirarHumedadSerpulo){
+        this(estirarAlturaSerpulo, estirarTemperaturaSerpulo, estirarHumedadSerpulo, 0);
+    }
+
+    ParametrosGeneracion(float estirarAlturaSerpulo, float estirarTemperaturaSerpulo, float estirarHumedadSerpulo, int distanciaMinimaFenomenos){
         this.estirarAlturaSerpulo = estirarAlturaSerpulo;
         this.estirarTemperaturaSerpulo = estirarTemperaturaSerpulo;
         this.estirarHumedadSerpulo = estirarHumedadSerpulo;
+        this.distanciaMinimaFenomenos = distanciaMinimaFenomenos;
     }
 }

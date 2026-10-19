@@ -50,6 +50,9 @@ final class RegistroAjustes{
         registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_HUMEDAD_SERPULO, "Humedad de Serpulo",
             "Cuánto se estira el ruido de humedad hacia [0,1]. Más alto = desiertos y pantanos más extensos. 1 = sin estirar.",
             AjusteMundo.Ambito.GENERACION, Muestreo.K_HUM_S, 1.0, 4.0).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
+        registrar(AjusteMundo.entero(ParametrosGeneracion.ID_FENOMENOS_DISTANCIA, "Distancia mínima entre fenómenos",
+            "Distancia mínima, en casillas, entre dos fenómenos de cualquier mod (respiraderos, pozos, cráteres...). 0 = cada generador solo respeta su propia distancia.",
+            AjusteMundo.Ambito.GENERACION, 0, 0, 512).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
     }
 
     private RegistroAjustes(){}

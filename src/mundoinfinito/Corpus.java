@@ -24,6 +24,7 @@ import java.util.Set;
  * La ruta directa replica el bucle original de {@code ChunkData.generar}; la ruta del núcleo es la que usa el juego ahora ({@link Nucleo#terreno}).
  * "congelar" usa la ruta directa (referencia independiente del núcleo); "verificar" y la equivalencia de hilos usan la del núcleo.
  * Fase 3: "comprobar" además prueba las etapas por separado (suelo solo contra Muestreo.pisoBase, sin decoración, sin cada etapa).
+ * Fase 6: y el reparto de áreas (cuota de peso por macrocélula, distancia mínima global entre fuentes, conflictos ponderados, procedencia).
  * Fase 5: y las políticas de resolución (media ponderada, prioridad absoluta, elección ponderada con hash, fuera de rango, sin política).
  * Fase 4: y el perfil de mundo (valores por defecto, mundos antiguos, recorte fuera de rango, persistencia y que el perfil por defecto no cambia el terreno).
  * No cubre los hooks de la API (fenómenos, mods): necesitan el contenido del juego y entran en fases posteriores.
@@ -353,7 +354,7 @@ public final class Corpus{
 
     private static boolean iguales(ParametrosGeneracion x, ParametrosGeneracion y){
         return x.estirarAlturaSerpulo == y.estirarAlturaSerpulo && x.estirarTemperaturaSerpulo == y.estirarTemperaturaSerpulo
-            && x.estirarHumedadSerpulo == y.estirarHumedadSerpulo;
+            && x.estirarHumedadSerpulo == y.estirarHumedadSerpulo && x.distanciaMinimaFenomenos == y.distanciaMinimaFenomenos;
     }
 
     private static Jval archivoDe(PerfilMundo p){
@@ -543,6 +544,202 @@ public final class Corpus{
         return fallos;
     }
 
+    // ================================================================== fase 6: reparto de áreas
+
+    /** Candidato de terreno de prueba para el reparto. */
+    private static final class CandPrueba implements Contribucion{
+        private final String fuente, id;
+        private final float peso;
+        private final int prioridad;
+
+        CandPrueba(String fuente, String nombre, float peso, int prioridad){
+            this.fuente = fuente;
+            this.id = fuente + ":" + nombre;
+            this.peso = peso;
+            this.prioridad = prioridad;
+        }
+
+        @Override public String id(){ return id; }
+        @Override public String fuente(){ return fuente; }
+        @Override public int version(){ return 1; }
+        @Override public Tipo tipo(){ return Tipo.TERRENO; }
+        @Override public float peso(){ return peso; }
+        @Override public int prioridad(){ return prioridad; }
+    }
+
+    /** Generador de fenómenos de prueba: un candidato por celda de 100 casillas, siempre en el mismo desplazamiento (los de distintas fuentes chocan entre sí). */
+    private static final class GenPrueba implements GeneradorFenomeno{
+        private final String id;
+        private final float peso;
+        private final int ox, oy;
+
+        GenPrueba(String id, float peso, int ox, int oy){
+            this.id = id;
+            this.peso = peso;
+            this.ox = ox;
+            this.oy = oy;
+        }
+
+        @Override public String id(){ return id; }
+        @Override public float peso(){ return peso; }
+        @Override public int celda(){ return 100; }
+        @Override public int distanciaMinima(){ return 30; }
+        @Override public int radio(){ return 0; }
+
+        @Override
+        public boolean proponer(ContextoFenomeno c, int celdaX, int celdaY, int intento, int[] out){
+            out[0] = celdaX * 100 + ox;
+            out[1] = celdaY * 100 + oy;
+            return true;
+        }
+
+        @Override public boolean valido(ContextoFenomeno c, int x, int y){ return true; }
+        @Override public void aplicar(ContextoTerreno ctx, ContextoFenomeno c, int x, int y){}
+    }
+
+    private static int contarDuenos(int semilla, int dim, int x0, int y0, int lado, List<CandPrueba> cands, String id){
+        int n = 0;
+        for(int j = 0; j < lado; j++){
+            for(int i = 0; i < lado; i++){
+                final CandPrueba d = Reparto.dueno(semilla, dim, x0 + i, y0 + j, cands);
+                if(d != null && d.id().equals(id)) n++;
+            }
+        }
+        return n;
+    }
+
+    private static long[] finales(GeneradorFenomeno g, GeneradorFenomeno[] todos, int semilla, int lado, int D){
+        return Fenomenos.puntosFinales(g, todos, new ContextoFenomeno(null, semilla, 0, g.id()), 0, 0, lado - 1, lado - 1, D);
+    }
+
+    /** Reparto de terreno por cuota de peso, distancia mínima global entre fuentes, conflictos ponderados, orden de carga y procedencia. */
+    static int comprobarAreas(){
+        int fallos = 0;
+
+        // ---- terreno disputado: pesos 1 y 3 sobre cien macrocélulas
+        final CandPrueba ligera = new CandPrueba("aaa", "ligera", 1f, 0), pesada = new CandPrueba("bbb", "pesada", 3f, 0);
+        final List<CandPrueba> par = Arrays.asList(ligera, pesada);
+        final int[] semillas = {1, 12345, 987654321, -20260101};
+        final int[][] origenes = {{0, 0}, {-5, -5}, {10, -15}};
+        int peor = 0;
+        for(int s : semillas){
+            for(int d : DIMS){
+                for(int[] o : origenes){
+                    final int a = contarDuenos(s, d, o[0], o[1], 10, par, ligera.id());
+                    peor = Math.max(peor, Math.abs(a - 25));
+                }
+            }
+        }
+        fallos += chequear("terreno disputado con pesos 1 y 3 sobre 100 macrocélulas: la de peso 1 se queda entre 25 +/- " + peor + " (límite del plan: menos de 5 puntos; "
+            + (semillas.length * DIMS.length * origenes.length) + " regiones)", peor < 5);
+
+        final CandPrueba a1 = new CandPrueba("aaa", "uno", 1f, 0), b1 = new CandPrueba("bbb", "dos", 1f, 0), c2 = new CandPrueba("ccc", "tres", 2f, 0);
+        final List<CandPrueba> tres = Arrays.asList(a1, b1, c2);
+        final int na = contarDuenos(12345, 0, 0, 0, 10, tres, a1.id()), nb = contarDuenos(12345, 0, 0, 0, 10, tres, b1.id()), nc = contarDuenos(12345, 0, 0, 0, 10, tres, c2.id());
+        fallos += chequear("tres candidatos con pesos 1, 1 y 2 reparten 100 macrocélulas como " + na + ", " + nb + " y " + nc + " (esperado 25, 25 y 50, tolerancia 5)",
+            na + nb + nc == 100 && Math.abs(na - 25) < 5 && Math.abs(nb - 25) < 5 && Math.abs(nc - 50) < 5);
+
+        boolean mismoOrden = true;
+        for(List<CandPrueba> p : permutaciones(tres)){
+            for(int j = -10; j < 10 && mismoOrden; j++){
+                for(int i = -10; i < 10; i++){
+                    if(!Reparto.dueno(777, 0, i, j, p).id().equals(Reparto.dueno(777, 0, i, j, tres).id())){
+                        mismoOrden = false;
+                        break;
+                    }
+                }
+            }
+        }
+        fallos += chequear("el dueño de cada macrocélula es el mismo con cualquier orden de carga de los candidatos (6 ordenaciones, 400 macrocélulas)", mismoOrden);
+
+        final CandPrueba cero = new CandPrueba("aaa", "cero", 0f, 0), neg = new CandPrueba("bbb", "neg", -2f, 0), nan = new CandPrueba("ccc", "nan", Float.NaN, 0), ok = new CandPrueba("ddd", "ok", 1f, 0);
+        boolean soloValido = true;
+        for(int i = 0; i < 50; i++) if(Reparto.dueno(1, 0, i, i, Arrays.asList(cero, neg, nan, ok)) != ok) soloValido = false;
+        fallos += chequear("un candidato con peso 0, negativo o NaN no se elige nunca, y sin candidatos válidos no hay dueño",
+            soloValido && Reparto.dueno(1, 0, 0, 0, Arrays.asList(cero, neg, nan)) == null);
+
+        final CandPrueba rara = new CandPrueba("aaa", "rara", 1f, 0), comun = new CandPrueba("bbb", "comun", 100f, 0);
+        final int pocas = contarDuenos(5, 0, 0, 0, 50, Arrays.asList(rara, comun), rara.id());
+        fallos += chequear("un candidato con muy poco peso (1 contra 100) sigue apareciendo: " + pocas + " de 2500 macrocélulas (esperado unas 25)", pocas >= 10 && pocas <= 40);
+
+        int distintas = 0;
+        for(int j = 0; j < 10; j++) for(int i = 0; i < 10; i++){
+            if(!Reparto.dueno(1, 0, i, j, par).id().equals(Reparto.dueno(2, 0, i, j, par).id())) distintas++;
+        }
+        fallos += chequear("otra semilla da otro reparto (" + distintas + " de 100 macrocélulas cambian)", distintas > 10);
+        fallos += chequear("con solo el terreno base registrado, el dueño de toda macrocélula es la tubería del terreno base",
+            Nucleo.TUBERIA_BASE.equals(Nucleo.duenoTerreno(1, 0, 3, 4)) && Nucleo.TUBERIA_BASE.equals(Nucleo.duenoTerreno(-9, 1, -7, 12)));
+
+        // ---- fenómenos: distancia mínima global entre fuentes
+        Fenomenos.reiniciar();
+        final GenPrueba ga = new GenPrueba("aaa:uno", 1f, 10, 10), gb = new GenPrueba("bbb:dos", 3f, 30, 10), gc = new GenPrueba("ccc:tres", 1f, 20, 40);
+        final GeneradorFenomeno[] todos = {ga, gb, gc};
+        final int LADO = 4000, D = 50, CELDAS = 40 * 40;
+
+        int sinGlobal = 0;
+        for(GeneradorFenomeno g : todos) sinGlobal += finales(g, todos, 11, LADO, 0).length;
+        final long[][] fin = new long[3][];
+        int total = 0;
+        for(int i = 0; i < 3; i++){
+            fin[i] = finales(todos[i], todos, 11, LADO, D);
+            total += fin[i].length;
+        }
+        long minimo = Long.MAX_VALUE;
+        final int[] px = new int[total], py = new int[total];
+        int k = 0;
+        for(long[] f : fin) for(long p : f){ px[k] = (int)(p >> 32); py[k] = (int)p; k++; }
+        for(int i = 0; i < total; i++){
+            for(int j = i + 1; j < total; j++){
+                final long dx = px[i] - px[j], dy = py[i] - py[j];
+                minimo = Math.min(minimo, dx * dx + dy * dy);
+            }
+        }
+        fallos += chequear("sin distancia global los tres generadores se pisan: " + sinGlobal + " fenómenos en " + CELDAS + " celdas (la prueba tiene dientes)", sinGlobal == 3 * CELDAS);
+        fallos += chequear("con distancia global " + D + ": " + total + " fenómenos, uno por celda, y el par más cercano de cualquier fuente está a " + (long)Math.sqrt(minimo) + " casillas (mínimo " + D + ")",
+            total == CELDAS && minimo >= (long)D * D);
+
+        final double fa = fin[0].length / (double)total, fb = fin[1].length / (double)total, fc = fin[2].length / (double)total;
+        fallos += chequear("conflictos ponderados con pesos 1, 3 y 1: ganan " + Math.round(fa * 1000) / 10.0 + " %, " + Math.round(fb * 1000) / 10.0 + " % y " + Math.round(fc * 1000) / 10.0
+            + " % (esperado 20, 60 y 20; tolerancia 5 puntos)", Math.abs(fa - 0.2) < 0.05 && Math.abs(fb - 0.6) < 0.05 && Math.abs(fc - 0.2) < 0.05);
+
+        boolean igualOrden = true;
+        for(List<GeneradorFenomeno> p : permutaciones(Arrays.asList(todos))){
+            final GeneradorFenomeno[] arr = p.toArray(new GeneradorFenomeno[0]);
+            for(int i = 0; i < 3; i++) if(!Arrays.equals(fin[i], finales(todos[i], arr, 11, LADO, D))) igualOrden = false;
+        }
+        fallos += chequear("el resultado es idéntico con cualquier orden de registro de los generadores (6 ordenaciones)", igualOrden);
+
+        // ---- procedencia por macrocélula
+        final int M = 16, ladoRegion = M * Procedencia.LADO;
+        int esperado = 0;
+        for(GeneradorFenomeno g : todos) esperado += Fenomenos.puntosFinales(g, todos, new ContextoFenomeno(null, 11, 0, g.id()), 0, 0, ladoRegion - 1, ladoRegion - 1, D).length;
+        int contados = 0;
+        boolean duenoBase = true;
+        for(int mj = 0; mj < M; mj++){
+            for(int mi = 0; mi < M; mi++){
+                final Procedencia.Macro m = Procedencia.consultar(todos, 11, 0, mi, mj, null, D);
+                contados += m.totalFenomenos();
+                if(!Nucleo.TUBERIA_BASE.equals(m.terreno)) duenoBase = false;
+            }
+        }
+        fallos += chequear("la procedencia por macrocélula suma " + contados + " fenómenos en " + (M * M) + " macrocélulas (directo: " + esperado + ") y dice quién es dueña del terreno", contados == esperado && duenoBase);
+
+        // ---- parámetro de generación: distancia mínima global
+        final String DIST = ParametrosGeneracion.ID_FENOMENOS_DISTANCIA;
+        fallos += chequear("la distancia global de fenómenos vale 0 por defecto: sin ella todo funciona como antes", ParametrosGeneracion.DEFECTO.distanciaMinimaFenomenos == 0 && new PerfilMundo().parametros().distanciaMinimaFenomenos == 0);
+        final PerfilMundo pd = new PerfilMundo();
+        pd.fijar(DIST, 9999);
+        final int alto = pd.parametros().distanciaMinimaFenomenos;
+        final PerfilMundo pb = new PerfilMundo();
+        pb.fijar(DIST, -3);
+        fallos += chequear("la distancia global se recorta a su rango (9999 -> 512, -3 -> 0)", alto == 512 && pb.parametros().distanciaMinimaFenomenos == 0);
+        final PerfilMundo pr = new PerfilMundo();
+        pr.sellarGeneracion(7, Arrays.asList(prop("aaa", "d", DIST, 40.0, 1, 0), prop("bbb", "d", DIST, 80.0, 3, 0)));
+        fallos += chequear("la distancia global se resuelve por media ponderada al crear el mundo (40 y 80 con pesos 1 y 3 = 70) y se guarda",
+            pr.parametros().distanciaMinimaFenomenos == 70 && PerfilMundo.desde(archivoDe(pr)).parametros().distanciaMinimaFenomenos == 70);
+        return fallos;
+    }
+
     static int comprobar() throws Exception{
         final List<int[]> es = entradas();
         int fallos = 0;
@@ -578,6 +775,7 @@ public final class Corpus{
         olvidarCaches();
         fallos += comprobarAjustes(es, a);
         fallos += comprobarResolucion();
+        fallos += comprobarAreas();
 
         for(int n : new int[]{1, 2, 4}){
             olvidarCaches();

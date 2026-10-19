@@ -4,6 +4,7 @@ import mundoinfinito.MundoInfinitoMod.Muestreo;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -18,6 +19,8 @@ import java.util.concurrent.ConcurrentHashMap;
  *  3. Mínimo garantizado: si una macrocelda queda con menos de g.minimoPorMacro() puntos, se añaden candidatos de rechazo o intentos extra
  *     que respeten la distancia mínima con todo lo aceptado alrededor y queden a >= distanciaMinima/2 del borde de la macrocelda (así dos
  *     macrocélulas vecinas nunca añaden dos puntos demasiado cercanos entre sí).
+ *  4. Distancia mínima GLOBAL (fase 6, opcional): con distancia global D > 0, ningún par de fenómenos de CUALQUIER generador queda a menos de D.
+ *     Ver {@link #puntosFinales}. Con D = 0 (por defecto) todo funciona exactamente como antes.
  */
 final class Fenomenos{
     private Fenomenos(){}
@@ -225,11 +228,110 @@ final class Fenomenos{
         return r;
     }
 
-    /** Aplica al chunk de {@code ctx} todos los fenómenos aceptados cuyo alcance lo toca. */
+    // ------------------------------------------------------------------ distancia mínima global entre fuentes (fase 6)
+    /** Un fenómeno aceptado de algún generador, con su clave de carrera. */
+    private static final class Pt{
+        final GeneradorFenomeno g;
+        final int x, y;
+        final double clave;
+
+        Pt(GeneradorFenomeno g, int x, int y, double clave){
+            this.g = g;
+            this.x = x;
+            this.y = y;
+            this.clave = clave;
+        }
+    }
+
+    /**
+     * Clave de carrera de un fenómeno: -ln(u) / peso, con u en (0,1) sacado de un hash de sus coordenadas y de la semilla del mundo (la misma para
+     * todos los generadores). En un conflicto gana la clave MENOR, y eso ocurre con probabilidad proporcional al peso (carrera de exponenciales).
+     * StrictMath: el mismo resultado en cualquier dispositivo.
+     */
+    private static double clave(ContextoFenomeno c, GeneradorFenomeno g, int x, int y){
+        final float w = g.peso();
+        if(!(w > 0f) || Float.isInfinite(w)) return Double.POSITIVE_INFINITY;
+        final int h = Muestreo.hash(x, y, Muestreo.sem(c.semDim, 0x6C0B));
+        final double u = ((h & 0xffffffffL) + 0.5) / 4294967296.0;
+        return -StrictMath.log(u) / w;
+    }
+
+    /** Orden total entre dos fenómenos: clave, luego orden canónico del generador (prioridad, id), luego coordenadas. Nunca depende del orden de la lista. */
+    private static boolean gana(Pt a, Pt b){
+        if(a.clave != b.clave) return a.clave < b.clave;
+        if(a.g != b.g){
+            final int p = Integer.compare(a.g.prioridad(), b.g.prioridad());
+            if(p != 0) return p < 0;
+            final int i = a.g.id().compareTo(b.g.id());
+            if(i != 0) return i < 0;
+        }
+        if(a.x != b.x) return a.x < b.x;
+        return a.y < b.y;
+    }
+
+    /**
+     * Fenómenos FINALES de {@code g} dentro del rectángulo virtual [x0, x1] x [y0, y1]: los aceptados por su propio muestreo, y además, si
+     * {@code distanciaGlobal} > 0, solo los que no tienen a menos de esa distancia otro fenómeno (de cualquier generador de {@code todos}) con mejor
+     * clave. Así ningún par de fenómenos, de la fuente que sea, queda más cerca que la distancia global; el resultado no depende del orden de
+     * {@code todos} ni del chunk desde el que se pregunte. Los generadores desactivados en el mundo siguen reservando su espacio (es lo que
+     * mantiene el resultado igual aunque uno falle). Con {@code distanciaGlobal} <= 0 o {@code todos} == null: solo {@link #puntos}.
+     */
+    static long[] puntosFinales(GeneradorFenomeno g, GeneradorFenomeno[] todos, ContextoFenomeno c, int x0, int y0, int x1, int y1, int distanciaGlobal){
+        final long[] propios = puntos(g, c, x0, y0, x1, y1);
+        if(distanciaGlobal <= 0 || todos == null || propios.length == 0) return propios;
+
+        // todos los fenómenos que pueden competir con alguno de los propios: a menos de D del rectángulo
+        final int D = distanciaGlobal, ex0 = x0 - D, ey0 = y0 - D, ex1 = x1 + D, ey1 = y1 + D;
+        final List<Pt> todosPts = new ArrayList<>();
+        boolean estaG = false;
+        for(GeneradorFenomeno h : todos){
+            if(h == g) estaG = true;
+            if(!h.aplicaA(c.dimension)) continue;
+            agregar(todosPts, h, h == g ? c : new ContextoFenomeno(c.pal, c.semilla, c.dimension, h.id()), c, ex0, ey0, ex1, ey1);
+        }
+        if(!estaG) agregar(todosPts, g, c, c, ex0, ey0, ex1, ey1);
+
+        final long d2 = (long)D * D;
+        long[] r = new long[propios.length];
+        int n = 0;
+        for(long p : propios){
+            final int px = (int)(p >> 32), py = (int)p;
+            final Pt yo = new Pt(g, px, py, clave(c, g, px, py));
+            boolean vive = true;
+            for(Pt q : todosPts){
+                if(q.g == g && q.x == px && q.y == py) continue;
+                final long dx = q.x - px, dy = q.y - py;
+                if(dx * dx + dy * dy >= d2) continue;
+                if(gana(q, yo)){
+                    vive = false;
+                    break;
+                }
+            }
+            if(vive) r[n++] = p;
+        }
+        return Arrays.copyOf(r, n);
+    }
+
+    private static void agregar(List<Pt> out, GeneradorFenomeno h, ContextoFenomeno ch, ContextoFenomeno semillas, int x0, int y0, int x1, int y1){
+        for(long p : puntos(h, ch, x0, y0, x1, y1)){
+            final int x = (int)(p >> 32), y = (int)p;
+            out.add(new Pt(h, x, y, clave(semillas, h, x, y)));
+        }
+    }
+
+    /** Aplica al chunk de {@code ctx} todos los fenómenos aceptados cuyo alcance lo toca (sin distancia global). */
     static void aplicar(GeneradorFenomeno g, ContextoTerreno ctx){
+        aplicar(g, ctx, null);
+    }
+
+    /**
+     * Igual, con la distancia mínima global del mundo (parámetro de generación). {@code todos} son los generadores registrados: los que compiten
+     * por el espacio. Con la distancia global a 0 (por defecto) es idéntico a {@link #aplicar(GeneradorFenomeno, ContextoTerreno)}.
+     */
+    static void aplicar(GeneradorFenomeno g, ContextoTerreno ctx, GeneradorFenomeno[] todos){
         final ContextoFenomeno c = ctx.lectura;
         final int r = g.radio(), T = ContextoTerreno.TAM;
-        final long[] pts = puntos(g, c, ctx.x0 - r, ctx.y0 - r, ctx.x0 + T - 1 + r, ctx.y0 + T - 1 + r);
+        final long[] pts = puntosFinales(g, todos, c, ctx.x0 - r, ctx.y0 - r, ctx.x0 + T - 1 + r, ctx.y0 + T - 1 + r, Nucleo.parametros().distanciaMinimaFenomenos);
         for(long p : pts) g.aplicar(ctx, c, (int)(p >> 32), (int)p);
     }
 }

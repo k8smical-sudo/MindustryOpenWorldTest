@@ -299,6 +299,16 @@ final class Extensiones{
         }
     }
 
+    /**
+     * Procedencia de una macrocélula (64x64 casillas) del mundo abierto: qué contribución es dueña del terreno y cuántos fenómenos de cada
+     * generador hay dentro. Diagnóstico: recalcula la respuesta y no guarda nada. Null si no hay mundo abierto.
+     */
+    static Procedencia.Macro procedencia(int mcx, int mcy){
+        final MundoInfinitoMod.Meta m = Streamer.meta;
+        if(m == null) return null;
+        return Procedencia.consultar(fenomenos, m.semilla, m.dimGen(), mcx, mcy, Streamer.paleta, Nucleo.parametros().distanciaMinimaFenomenos);
+    }
+
     /** ¿Usa este mundo la generación revisada (Parte A)? Los mundos de gen 3 guardados antes conservan su terreno exacto. */
     static boolean generacionNueva(){
         return generacion >= MundoInfinitoMod.GEN_REVISADA;
@@ -330,7 +340,7 @@ final class Extensiones{
             final long t0 = System.nanoTime();
             final ContextoTerreno ctx = new ContextoTerreno(d.piso, d.mena, d.bloque, pal, semilla, dim, vcx, vcy, id);
             try{
-                Fenomenos.aplicar(g, ctx);
+                Fenomenos.aplicar(g, ctx, fs);   // fs: todos los generadores, para la distancia mínima global (fase 6)
             }catch(Throwable t){
                 fallo(id, t);
             }finally{

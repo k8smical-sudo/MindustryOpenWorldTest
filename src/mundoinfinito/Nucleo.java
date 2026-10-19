@@ -23,7 +23,7 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 final class Nucleo{
     /** Versión del contrato del núcleo (sube con cambios incompatibles). */
-    static final int VERSION = 3;
+    static final int VERSION = 4;
     /** Fase 7: mientras sea false solo se cuentan unidades y excesos; nunca se recorta ni se registra una degradación. */
     static final boolean DEGRADACION_ACTIVA = false;
     /** Nombre bajo el que se cuenta la tubería de etapas del terreno base. */
@@ -34,6 +34,7 @@ final class Nucleo{
 
     private static final Object CERROJO = new Object();
     private static volatile ContribucionTerreno[] terreno = new ContribucionTerreno[0];   // siempre en orden canónico
+    private static volatile ContribucionParametro[] propuestas = new ContribucionParametro[0];   // siempre en orden canónico
     private static volatile boolean cerrado;
     private static final ConcurrentHashMap<String, Cuenta> cuentas = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, Boolean> avisos = new ConcurrentHashMap<>();
@@ -84,6 +85,35 @@ final class Nucleo{
             terreno = l.toArray(new ContribucionTerreno[0]);
             return true;
         }
+    }
+
+    /**
+     * Registra una propuesta de valor para un ajuste de generación (fase 5). Se resuelve al CREAR un mundo, junto con las demás propuestas
+     * sobre el mismo ajuste, y el resultado queda guardado en el perfil de ese mundo. Mismas reglas que {@link #registrar}: antes de abrir
+     * el primer mundo, id único, orden de registro irrelevante.
+     */
+    static boolean registrarParametro(ContribucionParametro c){
+        if(c == null || c.id() == null || c.fuente() == null || c.parametro() == null || c.id().isEmpty() || c.fuente().isEmpty() || c.parametro().isEmpty()) return false;
+        synchronized(CERROJO){
+            if(cerrado){
+                Log.warn("[MundoInfinito] Núcleo: el registro está cerrado; la propuesta '@' no se registra (hay que registrar antes de abrir el primer mundo).", c.id());
+                return false;
+            }
+            for(ContribucionParametro e : propuestas) if(e.id().equals(c.id())) return false;
+            final List<ContribucionParametro> l = new ArrayList<ContribucionParametro>();
+            Collections.addAll(l, propuestas);
+            l.add(c);
+            Collections.sort(l, Orden.CANONICO);
+            propuestas = l.toArray(new ContribucionParametro[0]);
+            return true;
+        }
+    }
+
+    /** Las propuestas registradas para un ajuste, en orden canónico. */
+    static List<ContribucionParametro> propuestasPara(String parametro){
+        final List<ContribucionParametro> l = new ArrayList<ContribucionParametro>();
+        for(ContribucionParametro c : propuestas) if(c.parametro().equals(parametro)) l.add(c);
+        return l;
     }
 
     /** Parámetros de generación del mundo abierto. */
@@ -219,6 +249,7 @@ final class Nucleo{
         }
         if(Degradaciones.total() > 0) sb.append(" | degradaciones=").append(Degradaciones.total());
         if(RegistroAjustes.totalRecortes() > 0) sb.append(" | ajustes recortados=").append(RegistroAjustes.totalRecortes());
+        if(Resolucion.conflictosSinPolitica() > 0) sb.append(" | ajustes sin política=").append(Resolucion.conflictosSinPolitica());
         return sb.toString();
     }
 }

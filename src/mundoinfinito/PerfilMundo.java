@@ -70,10 +70,23 @@ final class PerfilMundo{
         valores.put(id, ok);
     }
 
-    /** Escribe en el perfil el valor vigente de cada parámetro de generación que aún no esté, y congela. Se llama al CREAR un mundo. */
-    void sellarGeneracion(){
+    /**
+     * Se llama al CREAR un mundo: escribe en el perfil el valor de cada parámetro de generación que el creador no fijó expresamente y congela.
+     * Un valor fijado expresamente (por el creador o por el perfil de un modpack) manda sobre las propuestas de los mods. Si no hay valor fijado,
+     * se resuelven las propuestas registradas con la política del ajuste ({@link Resolucion}); sin propuestas, el valor por defecto.
+     * Como el resultado queda guardado, abrir el mundo después NO depende de qué mods estén cargados ni de su orden.
+     */
+    void sellarGeneracion(int semilla){
+        sellarGeneracion(semilla, null);
+    }
+
+    /** Igual, con las propuestas dadas en lugar de las registradas en el núcleo (pruebas). */
+    void sellarGeneracion(int semilla, java.util.List<? extends ContribucionParametro> propuestas){
         for(AjusteMundo a : RegistroAjustes.todos(AjusteMundo.Ambito.GENERACION)){
-            if(!valores.containsKey(a.id)) valores.put(a.id, a.defecto);
+            if(valores.containsKey(a.id)) continue;
+            final java.util.List<? extends ContribucionParametro> ps = propuestas != null ? propuestas : Nucleo.propuestasPara(a.id);
+            final Resolucion.Resultado r = Resolucion.resolver(a, ps, semilla);
+            valores.put(a.id, r.valor);
         }
         congelado = true;
     }

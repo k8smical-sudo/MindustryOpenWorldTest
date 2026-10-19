@@ -43,13 +43,13 @@ final class RegistroAjustes{
     static{
         registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_ALTURA_SERPULO, "Relieve de Serpulo",
             "Cuánto se estira el ruido de relieve hacia [0,1]. Más alto = montañas y mares más marcados. 1 = sin estirar.",
-            AjusteMundo.Ambito.GENERACION, Muestreo.K_ALTURA, 1.0, 4.0));
+            AjusteMundo.Ambito.GENERACION, Muestreo.K_ALTURA, 1.0, 4.0).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
         registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_TEMPERATURA_SERPULO, "Temperatura de Serpulo",
             "Cuánto se estira el ruido de temperatura hacia [0,1]. Más alto = zonas heladas y abrasadoras más extensas. 1 = sin estirar.",
-            AjusteMundo.Ambito.GENERACION, Muestreo.K_TEMP_S, 1.0, 4.0));
+            AjusteMundo.Ambito.GENERACION, Muestreo.K_TEMP_S, 1.0, 4.0).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
         registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_HUMEDAD_SERPULO, "Humedad de Serpulo",
             "Cuánto se estira el ruido de humedad hacia [0,1]. Más alto = desiertos y pantanos más extensos. 1 = sin estirar.",
-            AjusteMundo.Ambito.GENERACION, Muestreo.K_HUM_S, 1.0, 4.0));
+            AjusteMundo.Ambito.GENERACION, Muestreo.K_HUM_S, 1.0, 4.0).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
     }
 
     private RegistroAjustes(){}

@@ -10,7 +10,7 @@ package mundoinfinito;
  * Una contribución por tipo de aporte: ver {@link ContribucionTerreno}. Los demás tipos (fenómenos, estructuras) llegan en fases posteriores.
  */
 interface Contribucion{
-    enum Tipo{ TERRENO, FENOMENO, ESTRUCTURA }
+    enum Tipo{ TERRENO, FENOMENO, ESTRUCTURA, PARAMETRO }
 
     /** Identificador único con el formato "fuente:nombre". */
     String id();

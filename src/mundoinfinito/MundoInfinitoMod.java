@@ -2770,7 +2770,7 @@ public class MundoInfinitoMod extends Mod{
             m.limpio = true;                       // mundo base: sin generador de enemigos ni de estructuras
             m.mods = OpenWorldAPI.firmaMods();
             if(gamerules != null) for(java.util.Map.Entry<String, Boolean> e : gamerules.entrySet()) m.perfil.fijar(e.getKey(), Boolean.TRUE.equals(e.getValue()) ? 1.0 : 0.0);
-            m.perfil.sellarGeneracion();           // los parámetros de generación quedan guardados con el mundo y ya no cambian
+            m.perfil.sellarGeneracion(semilla);    // resuelve las propuestas de los mods; los parámetros de generación quedan guardados con el mundo y ya no cambian
             m.creado = m.ultimo = System.currentTimeMillis();
             Almacen.guardarMeta(m);
             Regiones.iniciar(m);

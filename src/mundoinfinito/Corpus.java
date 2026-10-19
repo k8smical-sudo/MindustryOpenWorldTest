@@ -24,6 +24,7 @@ import java.util.Set;
  * La ruta directa replica el bucle original de {@code ChunkData.generar}; la ruta del núcleo es la que usa el juego ahora ({@link Nucleo#terreno}).
  * "congelar" usa la ruta directa (referencia independiente del núcleo); "verificar" y la equivalencia de hilos usan la del núcleo.
  * Fase 3: "comprobar" además prueba las etapas por separado (suelo solo contra Muestreo.pisoBase, sin decoración, sin cada etapa).
+ * Fase 5: y las políticas de resolución (media ponderada, prioridad absoluta, elección ponderada con hash, fuera de rango, sin política).
  * Fase 4: y el perfil de mundo (valores por defecto, mundos antiguos, recorte fuera de rango, persistencia y que el perfil por defecto no cambia el terreno).
  * No cubre los hooks de la API (fenómenos, mods): necesitan el contenido del juego y entran en fases posteriores.
  *
@@ -393,7 +394,7 @@ public final class Corpus{
                 && ajustes.has("otro:num") && ajustes.get("otro:num").asDouble() == 7.5);
 
         final PerfilMundo nuevo = new PerfilMundo();
-        nuevo.sellarGeneracion();
+        nuevo.sellarGeneracion(12345);
         final PerfilMundo nuevoLeido = PerfilMundo.desde(archivoDe(nuevo));
         fallos += chequear("un mundo nuevo guarda sus parámetros de generación y no cambian al guardar y leer",
             nuevo.tiene(ParametrosGeneracion.ID_ALTURA_SERPULO) && nuevo.congelado() && iguales(nuevo.parametros(), def) && iguales(nuevoLeido.parametros(), def));
@@ -412,6 +413,133 @@ public final class Corpus{
         fallos += chequear("un mundo nuevo con el perfil por defecto da exactamente el terreno del corpus (" + es.size() + " chunks)", malosDefecto == 0);
         fallos += chequear("el parámetro actúa: con relieve 3.6 cambia el terreno de Serpulo (" + serpuloCambia + " chunks) y no el de Erekir (" + erekirCambia + ")",
             serpuloCambia > 0 && erekirCambia == 0);
+        return fallos;
+    }
+
+    // ================================================================== fase 5: contribuciones múltiples y políticas
+
+    private static <T> List<List<T>> permutaciones(List<T> l){
+        final List<List<T>> r = new ArrayList<List<T>>();
+        if(l.size() <= 1){
+            r.add(new ArrayList<T>(l));
+            return r;
+        }
+        for(int i = 0; i < l.size(); i++){
+            final List<T> resto = new ArrayList<T>(l);
+            final T x = resto.remove(i);
+            for(List<T> p : permutaciones(resto)){
+                p.add(0, x);
+                r.add(p);
+            }
+        }
+        return r;
+    }
+
+    private static PropuestaParametro prop(String fuente, String nombre, String parametro, double valor, double peso, int prioridad){
+        return PropuestaParametro.de(fuente, fuente + ":" + nombre, parametro, valor, peso, prioridad);
+    }
+
+    /** Resuelve con todas las permutaciones de entrada: todas deben dar el mismo valor, bit a bit, y el mismo origen y elegida. */
+    private static Resolucion.Resultado resolverEnTodosLosOrdenes(AjusteMundo a, List<PropuestaParametro> ps, int semilla, boolean[] identico){
+        Resolucion.Resultado ref = null;
+        identico[0] = true;
+        for(List<PropuestaParametro> p : permutaciones(ps)){
+            final Resolucion.Resultado r = Resolucion.resolver(a, p, semilla);
+            if(ref == null) ref = r;
+            else if(Double.doubleToLongBits(r.valor) != Double.doubleToLongBits(ref.valor) || r.origen != ref.origen
+                || (r.elegida == null ? ref.elegida != null : !r.elegida.equals(ref.elegida))) identico[0] = false;
+        }
+        return ref;
+    }
+
+    /** Políticas de resolución: media ponderada, prioridad absoluta, elección ponderada con hash, valores fuera de rango y ajustes sin política. */
+    static int comprobarResolucion(){
+        int fallos = 0;
+        final String P = "prueba:parametro";
+        final AjusteMundo media = AjusteMundo.decimal(P, "p", "", AjusteMundo.Ambito.GENERACION, 2.0, 1.0, 4.0).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA);
+        final boolean[] ident = new boolean[1];
+
+        // pesos 1 y 3: (2*1 + 4*3) / 4 = 3.5, con cualquier orden de carga
+        List<PropuestaParametro> dos = Arrays.asList(prop("aaa", "p1", P, 2.0, 1, 0), prop("bbb", "p2", P, 4.0, 3, 0));
+        Resolucion.Resultado r = resolverEnTodosLosOrdenes(media, dos, 1, ident);
+        fallos += chequear("media ponderada con pesos 1 y 3: 2.0 y 4.0 dan 3.5 con cualquier orden de carga", r.valor == 3.5 && r.origen == Resolucion.Origen.MEDIA && ident[0]);
+
+        List<PropuestaParametro> tres = Arrays.asList(prop("aaa", "p1", P, 1.0, 1, 0), prop("bbb", "p2", P, 2.5, 3, 0), prop("ccc", "p3", P, 4.0, 2, 0));
+        r = resolverEnTodosLosOrdenes(media, tres, 1, ident);
+        fallos += chequear("media ponderada de tres fuentes (pesos 1, 3 y 2) = 2.75 con las 6 ordenaciones", r.valor == 2.75 && ident[0]);
+
+        // la suma de decimales no es asociativa: el orden canónico hace que no cambie ni un bit
+        List<PropuestaParametro> raros = Arrays.asList(prop("aaa", "p1", P, 1.1, 0.1, 0), prop("bbb", "p2", P, 2.2, 0.2, 0), prop("ccc", "p3", P, 3.3, 0.3, 0), prop("ddd", "p4", P, 1.7, 0.7, 0));
+        r = resolverEnTodosLosOrdenes(media, raros, 1, ident);
+        fallos += chequear("con pesos y valores decimales el resultado es idéntico bit a bit en las 24 ordenaciones", ident[0]);
+
+        // un valor fuera de rango no se impone
+        final long recortesAntes = RegistroAjustes.totalRecortes();
+        List<PropuestaParametro> fuera = Arrays.asList(prop("aaa", "p1", P, 99.0, 1, 0), prop("bbb", "p2", P, 2.0, 3, 0));
+        r = resolverEnTodosLosOrdenes(media, fuera, 1, ident);
+        fallos += chequear("un valor fuera de rango no se impone: 99 (peso 1) y 2.0 (peso 3) dan 2.5, no 26.75, y queda anotado",
+            r.valor == 2.5 && r.valor <= media.max && RegistroAjustes.totalRecortes() > recortesAntes && ident[0]);
+
+        // varios contribuyentes sin política: se reporta y no se resuelve
+        final AjusteMundo sinPol = AjusteMundo.decimal("prueba:sinpolitica", "s", "", AjusteMundo.Ambito.GENERACION, 2.0, 1.0, 4.0);
+        final long conflictosAntes = Resolucion.conflictosSinPolitica();
+        List<PropuestaParametro> dosSin = Arrays.asList(prop("aaa", "p1", "prueba:sinpolitica", 3.0, 1, 0), prop("bbb", "p2", "prueba:sinpolitica", 4.0, 1, 0));
+        r = Resolucion.resolver(sinPol, dosSin, 1);
+        fallos += chequear("varios contribuyentes y sin política: no se resuelve, queda el valor por defecto y se reporta",
+            r.origen == Resolucion.Origen.SIN_POLITICA && !r.resuelto() && r.valor == sinPol.defecto && Resolucion.conflictosSinPolitica() == conflictosAntes + 1);
+        r = Resolucion.resolver(sinPol, Arrays.asList(prop("aaa", "p1", "prueba:sinpolitica", 3.0, 1, 0)), 1);
+        fallos += chequear("con un solo contribuyente no hace falta política", r.origen == Resolucion.Origen.UNICA && r.valor == 3.0);
+        r = Resolucion.resolver(sinPol, new ArrayList<PropuestaParametro>(), 1);
+        fallos += chequear("sin propuestas vale el valor por defecto", r.origen == Resolucion.Origen.DEFECTO && r.valor == sinPol.defecto);
+        r = Resolucion.resolver(media, Arrays.asList(prop("aaa", "p1", P, 3.0, 0, 0), prop("bbb", "p2", P, 4.0, -2, 0), prop("ccc", "p3", P, 2.0, 1, 0)), 1);
+        fallos += chequear("las propuestas con peso no válido (0, negativo) se ignoran", r.contribuyentes == 1 && r.valor == 2.0);
+
+        // prioridad absoluta: la primera en orden canónico (prioridad, fuente, id)
+        final AjusteMundo prio = AjusteMundo.decimal("prueba:prioridad", "p", "", AjusteMundo.Ambito.GENERACION, 2.0, 1.0, 4.0).conPolitica(AjusteMundo.Politica.PRIORIDAD_ABSOLUTA);
+        List<PropuestaParametro> pp = Arrays.asList(prop("bbb", "x", "prueba:prioridad", 3.0, 1, 5), prop("zzz", "y", "prueba:prioridad", 1.5, 1, 1), prop("aaa", "z", "prueba:prioridad", 2.5, 1, 1));
+        r = resolverEnTodosLosOrdenes(prio, pp, 1, ident);
+        fallos += chequear("prioridad absoluta: gana la de menor prioridad y, en empate, la de fuente 'aaa', con las 6 ordenaciones",
+            r.valor == 2.5 && "aaa:z".equals(r.elegida) && ident[0]);
+
+        // elección ponderada con hash: determinista, e independiente del orden
+        final AjusteMundo ele = AjusteMundo.decimal("prueba:eleccion", "e", "", AjusteMundo.Ambito.GENERACION, 2.0, 1.0, 4.0).conPolitica(AjusteMundo.Politica.ELECCION_PONDERADA);
+        List<PropuestaParametro> ab = Arrays.asList(prop("aaa", "a", "prueba:eleccion", 1.0, 1, 0), prop("bbb", "b", "prueba:eleccion", 3.0, 3, 0));
+        boolean determinista = true;
+        int eligeB = 0;
+        final int N = 10000;
+        for(int sem = 0; sem < N; sem++){
+            final Resolucion.Resultado x = Resolucion.resolver(ele, ab, sem);
+            final Resolucion.Resultado y = Resolucion.resolver(ele, Arrays.asList(ab.get(1), ab.get(0)), sem);
+            if(x.valor != y.valor || !x.elegida.equals(y.elegida)) determinista = false;
+            if("bbb:b".equals(x.elegida)) eligeB++;
+        }
+        final double proporcion = eligeB / (double)N;
+        fallos += chequear("elección ponderada: igual con cualquier orden de entrada y de la misma semilla", determinista);
+        fallos += chequear("elección ponderada con pesos 1 y 3 en " + N + " semillas: la de peso 3 sale el " + Math.round(proporcion * 1000) / 10.0 + " % (esperado 75 %, tolerancia 3 puntos)", Math.abs(proporcion - 0.75) < 0.03);
+
+        // integración con el perfil de un mundo nuevo
+        final String ALTURA = ParametrosGeneracion.ID_ALTURA_SERPULO;
+        final List<PropuestaParametro> alt = Arrays.asList(prop("aaa", "relieve", ALTURA, 2.0, 1, 0), prop("bbb", "relieve", ALTURA, 4.0, 3, 0));
+        final PerfilMundo mundo = new PerfilMundo();
+        mundo.sellarGeneracion(7, alt);
+        fallos += chequear("un mundo nuevo guarda el resultado de resolver las propuestas (relieve 3.5) y deja el resto por defecto",
+            mundo.parametros().estirarAlturaSerpulo == 3.5f && mundo.parametros().estirarTemperaturaSerpulo == ParametrosGeneracion.DEFECTO.estirarTemperaturaSerpulo && mundo.congelado());
+        fallos += chequear("al abrir el mundo después no se vuelve a resolver: el valor guardado manda aunque ya no estén las propuestas",
+            PerfilMundo.desde(archivoDe(mundo)).parametros().estirarAlturaSerpulo == 3.5f);
+        final PerfilMundo explicito = new PerfilMundo();
+        explicito.fijar(ALTURA, 1.5);
+        explicito.sellarGeneracion(7, alt);
+        fallos += chequear("un valor fijado expresamente por el creador manda sobre las propuestas de los mods", explicito.parametros().estirarAlturaSerpulo == 1.5f);
+
+        // registro de propuestas en el núcleo: el orden de registro no cuenta
+        final boolean a1 = Nucleo.registrarParametro(prop("ccc", "3", "prueba:zz", 1.0, 1, 0));
+        final boolean a2 = Nucleo.registrarParametro(prop("aaa", "1", "prueba:zz", 1.0, 1, 0));
+        final boolean a3 = Nucleo.registrarParametro(prop("bbb", "2", "prueba:zz", 1.0, 1, -1));
+        final boolean dup = Nucleo.registrarParametro(prop("ccc", "3", "prueba:zz", 9.0, 1, 0));
+        final StringBuilder orden = new StringBuilder();
+        for(ContribucionParametro c : Nucleo.propuestasPara("prueba:zz")) orden.append(c.id()).append(' ');
+        fallos += chequear("el registro de propuestas queda en orden canónico sea cual sea el orden de registro y rechaza ids repetidos",
+            a1 && a2 && a3 && !dup && orden.toString().trim().equals("bbb:2 aaa:1 ccc:3"));
         return fallos;
     }
 
@@ -449,6 +577,7 @@ public final class Corpus{
         fallos += comprobarSinCadaEtapa(es, a);
         olvidarCaches();
         fallos += comprobarAjustes(es, a);
+        fallos += comprobarResolucion();
 
         for(int n : new int[]{1, 2, 4}){
             olvidarCaches();

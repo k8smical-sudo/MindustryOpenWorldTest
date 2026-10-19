@@ -10,7 +10,7 @@ import static mundoinfinito.MundoInfinitoMod.Muestreo.sem;
  * ESTADO DE UNA CASILLA mientras la atraviesan las etapas del terreno base (fase 3). Un objeto por hilo, reutilizado.
  *
  * Servicio común de SOLO LECTURA (lo calcula {@link #iniciar} una vez por casilla; ninguna etapa lo modifica): semilla efectiva, spawn,
- * coordenadas, distancia al origen, deformación del ruido (wx, wy), dominio (Serpulo/Erekir) y buffer auxiliar.
+ * coordenadas, distancia al origen, deformación del ruido (wx, wy), dominio (Serpulo/Erekir), parámetros del perfil y buffer auxiliar.
  * Estado MUTABLE: lo que cada etapa deja para las siguientes (piso, mena, muro, decoración y las marcas que se pasan entre etapas).
  * Una etapa que falta deja su parte en el valor neutro de {@link #iniciar}.
  */
@@ -20,6 +20,8 @@ final class CeldaBase{
     Muestreo.Spawn sp;
     float[] aux;
     boolean nueva;
+    /** Parámetros de generación del mundo (perfil, fase 4). */
+    ParametrosGeneracion par;
     double dx0, dy0, wx, wy;
     float dist;
     boolean ere;

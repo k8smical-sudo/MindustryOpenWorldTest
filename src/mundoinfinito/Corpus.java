@@ -2,6 +2,7 @@ package mundoinfinito;
 
 import arc.func.Prov;
 import arc.struct.Seq;
+import arc.util.serialization.Jval;
 
 import java.io.BufferedReader;
 import java.io.FileReader;
@@ -23,6 +24,7 @@ import java.util.Set;
  * La ruta directa replica el bucle original de {@code ChunkData.generar}; la ruta del núcleo es la que usa el juego ahora ({@link Nucleo#terreno}).
  * "congelar" usa la ruta directa (referencia independiente del núcleo); "verificar" y la equivalencia de hilos usan la del núcleo.
  * Fase 3: "comprobar" además prueba las etapas por separado (suelo solo contra Muestreo.pisoBase, sin decoración, sin cada etapa).
+ * Fase 4: y el perfil de mundo (valores por defecto, mundos antiguos, recorte fuera de rango, persistencia y que el perfil por defecto no cambia el terreno).
  * No cubre los hooks de la API (fenómenos, mods): necesitan el contenido del juego y entran en fases posteriores.
  *
  * Uso:   java -cp build/classes/java/main:libs/MindustryX-Desktop.jar mundoinfinito.Corpus MODO [archivo]
@@ -90,6 +92,12 @@ public final class Corpus{
     static long hashChunkNucleo(int semilla, int dim, int cx, int cy){
         final int T = MundoInfinitoMod.TAM_CHUNK;
         return hashAporte(Nucleo.terreno(semilla, dim, cx * T, cy * T, cx, cy));
+    }
+
+    /** Lo mismo, con los parámetros de generación indicados (el perfil de un mundo). */
+    static long hashChunkNucleoCon(ParametrosGeneracion par, int semilla, int dim, int cx, int cy){
+        final int T = MundoInfinitoMod.TAM_CHUNK;
+        return hashAporte(Nucleo.terreno(par, semilla, dim, cx * T, cy * T, cx, cy));
     }
 
     /** Lo mismo, pero evaluando solo las etapas indicadas (en orden canónico). */
@@ -335,6 +343,78 @@ public final class Corpus{
         return fallos;
     }
 
+    // ================================================================== fase 4: ajustes y perfil
+
+    private static int chequear(String texto, boolean ok){
+        System.out.println("[Corpus] " + (ok ? "ok: " : "FALLO: ") + texto);
+        return ok ? 0 : 1;
+    }
+
+    private static boolean iguales(ParametrosGeneracion x, ParametrosGeneracion y){
+        return x.estirarAlturaSerpulo == y.estirarAlturaSerpulo && x.estirarTemperaturaSerpulo == y.estirarTemperaturaSerpulo
+            && x.estirarHumedadSerpulo == y.estirarHumedadSerpulo;
+    }
+
+    private static Jval archivoDe(PerfilMundo p){
+        final Jval raiz = Jval.newObject();
+        raiz.put("ajustes", p.aJson());
+        raiz.put("gamerules", p.aJsonReglas());
+        return raiz;
+    }
+
+    /** Perfil de mundo: valores por defecto, mundos antiguos, validación y recorte, persistencia, y que un perfil por defecto no cambia el terreno. */
+    static int comprobarAjustes(List<int[]> es, long[] directo){
+        int fallos = 0;
+        final ParametrosGeneracion def = ParametrosGeneracion.DEFECTO;
+
+        fallos += chequear("un perfil vacío da los parámetros por defecto", iguales(new PerfilMundo().parametros(), def));
+
+        final PerfilMundo antiguo = PerfilMundo.desde(Jval.read("{\"nombre\":\"viejo\",\"semilla\":5}"));
+        fallos += chequear("un mundo antiguo (sin ajustes ni gamerules) se abre con los valores por defecto", iguales(antiguo.parametros(), def) && antiguo.congelado());
+        fallos += chequear("el perfil abierto está congelado: no se cambian los parámetros de generación", !antiguo.fijar(ParametrosGeneracion.ID_ALTURA_SERPULO, 2.0));
+
+        final long antes = RegistroAjustes.totalRecortes();
+        final PerfilMundo malo = new PerfilMundo();
+        malo.fijar(ParametrosGeneracion.ID_ALTURA_SERPULO, 99.0);
+        malo.fijar(ParametrosGeneracion.ID_TEMPERATURA_SERPULO, -5.0);
+        malo.fijar(ParametrosGeneracion.ID_HUMEDAD_SERPULO, Double.NaN);
+        final ParametrosGeneracion pm = malo.parametros();
+        fallos += chequear("fuera de rango se recorta (99 -> 4, -5 -> 1, NaN -> por defecto) y queda registrado (3 recortes)",
+            pm.estirarAlturaSerpulo == 4.0f && pm.estirarTemperaturaSerpulo == 1.0f && pm.estirarHumedadSerpulo == def.estirarHumedadSerpulo
+                && RegistroAjustes.totalRecortes() - antes == 3L);
+
+        final PerfilMundo viejo = PerfilMundo.desde(Jval.read("{\"gamerules\":{\"mod:regla\":true,\"mod:otra\":false},\"ajustes\":{\"otro:num\":7.5}}"));
+        fallos += chequear("el formato antiguo de gamerules se lee y un ajuste desconocido se conserva",
+            viejo.bool("mod:regla", false) && !viejo.bool("mod:otra", true) && viejo.tiene("otro:num"));
+        final PerfilMundo ida = PerfilMundo.desde(archivoDe(viejo));
+        final Jval reglas = ida.aJsonReglas(), ajustes = ida.aJson();
+        fallos += chequear("guardar y volver a leer conserva reglas booleanas y valores desconocidos",
+            ida.bool("mod:regla", false) && reglas.has("mod:regla") && reglas.get("mod:regla").isBoolean() && reglas.get("mod:regla").asBool()
+                && ajustes.has("otro:num") && ajustes.get("otro:num").asDouble() == 7.5);
+
+        final PerfilMundo nuevo = new PerfilMundo();
+        nuevo.sellarGeneracion();
+        final PerfilMundo nuevoLeido = PerfilMundo.desde(archivoDe(nuevo));
+        fallos += chequear("un mundo nuevo guarda sus parámetros de generación y no cambian al guardar y leer",
+            nuevo.tiene(ParametrosGeneracion.ID_ALTURA_SERPULO) && nuevo.congelado() && iguales(nuevo.parametros(), def) && iguales(nuevoLeido.parametros(), def));
+
+        // el terreno con el perfil por defecto (vacío, sellado o leído) es idéntico a la ruta directa
+        final ParametrosGeneracion fuerte = new ParametrosGeneracion(3.6f, def.estirarTemperaturaSerpulo, def.estirarHumedadSerpulo);
+        int malosDefecto = 0, serpuloCambia = 0, erekirCambia = 0;
+        for(int i = 0; i < es.size(); i++){
+            final int[] e = es.get(i);
+            if(hashChunkNucleoCon(nuevoLeido.parametros(), e[0], e[1], e[2], e[3]) != directo[i]) malosDefecto++;
+            if(hashChunkNucleoCon(fuerte, e[0], e[1], e[2], e[3]) != directo[i]){
+                if(e[1] == 1) erekirCambia++;
+                else serpuloCambia++;
+            }
+        }
+        fallos += chequear("un mundo nuevo con el perfil por defecto da exactamente el terreno del corpus (" + es.size() + " chunks)", malosDefecto == 0);
+        fallos += chequear("el parámetro actúa: con relieve 3.6 cambia el terreno de Serpulo (" + serpuloCambia + " chunks) y no el de Erekir (" + erekirCambia + ")",
+            serpuloCambia > 0 && erekirCambia == 0);
+        return fallos;
+    }
+
     static int comprobar() throws Exception{
         final List<int[]> es = entradas();
         int fallos = 0;
@@ -367,6 +447,8 @@ public final class Corpus{
         olvidarCaches();
         fallos += comprobarSinDecoracion(es);
         fallos += comprobarSinCadaEtapa(es, a);
+        olvidarCaches();
+        fallos += comprobarAjustes(es, a);
 
         for(int n : new int[]{1, 2, 4}){
             olvidarCaches();

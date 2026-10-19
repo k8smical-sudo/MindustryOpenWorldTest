@@ -23,11 +23,14 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 final class Nucleo{
     /** Versión del contrato del núcleo (sube con cambios incompatibles). */
-    static final int VERSION = 2;
+    static final int VERSION = 3;
     /** Fase 7: mientras sea false solo se cuentan unidades y excesos; nunca se recorta ni se registra una degradación. */
     static final boolean DEGRADACION_ACTIVA = false;
     /** Nombre bajo el que se cuenta la tubería de etapas del terreno base. */
     static final String TUBERIA_BASE = "mundo-infinito:terreno-base";
+
+    /** Parámetros de generación del mundo abierto (perfil). Sin mundo abierto: los de por defecto. */
+    private static volatile ParametrosGeneracion parametros = ParametrosGeneracion.DEFECTO;
 
     private static final Object CERROJO = new Object();
     private static volatile ContribucionTerreno[] terreno = new ContribucionTerreno[0];   // siempre en orden canónico
@@ -83,9 +86,19 @@ final class Nucleo{
         }
     }
 
-    /** HILO PRINCIPAL, al abrir un mundo: cierra el registro y reinicia lo que es por mundo (degradaciones, contadores, avisos). */
-    static void alReiniciarMundo(){
+    /** Parámetros de generación del mundo abierto. */
+    static ParametrosGeneracion parametros(){
+        return parametros;
+    }
+
+    /**
+     * HILO PRINCIPAL, al abrir un mundo: cierra los registros (contribuciones y ajustes de generación), fija los parámetros de generación del
+     * perfil del mundo y reinicia lo que es por mundo (degradaciones, contadores, avisos).
+     */
+    static void alReiniciarMundo(ParametrosGeneracion par){
         cerrado = true;
+        RegistroAjustes.cerrarGeneracion();
+        parametros = par == null ? ParametrosGeneracion.DEFECTO : par;
         Degradaciones.limpiar();
         cuentas.clear();
         avisos.clear();
@@ -105,8 +118,13 @@ final class Nucleo{
      * usa la primera contribución de terreno aplicable; si tampoco, el chunk sale de piedra. (Combinar contribuciones de mods es la fase 5.)
      */
     static AporteTerreno terreno(int semilla, int dim, int x0, int y0, int vcx, int vcy){
+        return terreno(parametros, semilla, dim, x0, y0, vcx, vcy);
+    }
+
+    /** Igual, con los parámetros de generación indicados (pruebas y mundos que no son el abierto). */
+    static AporteTerreno terreno(ParametrosGeneracion par, int semilla, int dim, int x0, int y0, int vcx, int vcy){
         final AporteTerreno out = LOCAL.get();
-        final ContextoAporte ctx = new ContextoAporte(semilla, dim, x0, y0, vcx, vcy);
+        final ContextoAporte ctx = new ContextoAporte(semilla, dim, x0, y0, vcx, vcy, par);
         final ContribucionTerreno[] todas = terreno;
 
         int ne = 0;
@@ -155,7 +173,7 @@ final class Nucleo{
      */
     static AporteTerreno terrenoSolo(Set<String> ids, int semilla, int dim, int x0, int y0, int vcx, int vcy){
         final AporteTerreno out = LOCAL.get();
-        final ContextoAporte ctx = new ContextoAporte(semilla, dim, x0, y0, vcx, vcy);
+        final ContextoAporte ctx = new ContextoAporte(semilla, dim, x0, y0, vcx, vcy, parametros);
         final List<EtapaBase> l = new ArrayList<EtapaBase>();
         for(ContribucionTerreno c : terreno) if(c instanceof EtapaBase && ids.contains(c.id()) && c.aplicaA(dim)) l.add((EtapaBase)c);
         PipelineBase.ejecutar(ctx, out, l.toArray(new EtapaBase[0]));
@@ -200,6 +218,7 @@ final class Nucleo{
             if(k.excesos.get() > 0) sb.append(" excesos=").append(k.excesos.get());
         }
         if(Degradaciones.total() > 0) sb.append(" | degradaciones=").append(Degradaciones.total());
+        if(RegistroAjustes.totalRecortes() > 0) sb.append(" | ajustes recortados=").append(RegistroAjustes.totalRecortes());
         return sb.toString();
     }
 }

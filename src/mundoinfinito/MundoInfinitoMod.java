@@ -152,13 +152,12 @@ public class MundoInfinitoMod extends Mod{
         boolean limpio;
         /** Mods activos al crear el mundo (nombres separados por coma): permite avisar si falta alguno al volver a abrirlo. */
         String mods = "";
-        /** Valor elegido para cada gamerule (id -> valor) al crear el mundo. Lo que falta usa el valor por defecto de la regla. */
-        final java.util.TreeMap<String, Boolean> gamerules = new java.util.TreeMap<>();
+        /** Perfil del mundo (fase 4): el valor de cada ajuste (gamerules y parámetros de generación). Lo que falta usa el valor por defecto. */
+        PerfilMundo perfil = new PerfilMundo();
 
         /** Valor de una gamerule en este mundo. */
         boolean gameRule(GameRule g){
-            final Boolean v = gamerules.get(g.id);
-            return v == null ? g.porDefecto : v;
+            return perfil.bool(g.id, g.porDefecto);
         }
 
         Jval aJson(){
@@ -177,9 +176,8 @@ public class MundoInfinitoMod extends Mod{
             j.put("limY", limY);
             j.put("limpio", limpio);
             j.put("mods", mods == null ? "" : mods);
-            final Jval gr = Jval.newObject();
-            for(java.util.Map.Entry<String, Boolean> e : gamerules.entrySet()) gr.put(e.getKey(), e.getValue());
-            j.put("gamerules", gr);
+            j.put("ajustes", perfil.aJson());
+            j.put("gamerules", perfil.aJsonReglas());   // espejo para versiones anteriores del mod
             return j;
         }
 
@@ -210,10 +208,7 @@ public class MundoInfinitoMod extends Mod{
             m.limY = Math.max(0, j.getInt("limY", 0));
             m.limpio = j.getBool("limpio", false);
             m.mods = j.getString("mods", "");
-            if(j.has("gamerules") && j.get("gamerules").isObject()){
-                final Jval.JsonMap mp = j.get("gamerules").asObject();
-                for(int i = 0; i < mp.size; i++) m.gamerules.put(mp.getKeyAt(i), mp.getValueAt(i).asBool());
-            }
+            m.perfil = PerfilMundo.desde(j);   // mundos antiguos: sin perfil = valores por defecto
             return m;
         }
 
@@ -2410,7 +2405,7 @@ public class MundoInfinitoMod extends Mod{
             cursorPlan = 0;
             synchronized(cola){ cola.clear(); colaBaja.clear(); pendBaja.clear(); }
             Extensiones.alReiniciarMundo(m);   // cierra el registro, fija la versión de generación y limpia el estado por mundo
-            Nucleo.alReiniciarMundo();         // cierra el registro del núcleo y limpia degradaciones y contadores por mundo
+            Nucleo.alReiniciarMundo(m.perfil.parametros());   // cierra los registros y fija los parámetros de generación del perfil de este mundo
             CacheChunks.configurar(m.semilla, m.dimGen());
             vaciarListos();
             colaRestaurar.clear();
@@ -2774,7 +2769,8 @@ public class MundoInfinitoMod extends Mod{
             m.limY = Math.max(0, limY);
             m.limpio = true;                       // mundo base: sin generador de enemigos ni de estructuras
             m.mods = OpenWorldAPI.firmaMods();
-            if(gamerules != null) m.gamerules.putAll(gamerules);
+            if(gamerules != null) for(java.util.Map.Entry<String, Boolean> e : gamerules.entrySet()) m.perfil.fijar(e.getKey(), Boolean.TRUE.equals(e.getValue()) ? 1.0 : 0.0);
+            m.perfil.sellarGeneracion();           // los parámetros de generación quedan guardados con el mundo y ya no cambian
             m.creado = m.ultimo = System.currentTimeMillis();
             Almacen.guardarMeta(m);
             Regiones.iniciar(m);

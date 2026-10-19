@@ -14,6 +14,7 @@ final class PipelineBase{
         ce.sp = Muestreo.spawn(sd, c.dimension);   // el spawn del mundo está en el origen virtual (0,0)
         ce.aux = o.aux;
         ce.nueva = Extensiones.generacionNueva();
+        ce.par = c.params;
         o.aux[11] = 0f;   // caché de estructura de la celda: vacía al empezar el chunk
         final int T = AporteTerreno.T, lim = MundoInfinitoMod.LIMITE_MUNDO, ne = etapas.length;
         int unidades = 0;

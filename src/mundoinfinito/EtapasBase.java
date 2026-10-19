@@ -31,7 +31,7 @@ final class EtapasBase{
 
     // ================================================================== suelo (Serpulo y Erekir)
 
-    /** Serpulo: relieve, temperatura y humedad -> tabla climática -> salinas. (Primera parte de pisoSerpulo.) */
+    /** Serpulo: relieve, temperatura y humedad (con los estiramientos del perfil del mundo) -> tabla climática -> salinas. (Primera parte de pisoSerpulo.) */
     static final class SueloSerpulo extends EtapaBase{
         SueloSerpulo(){
             super("suelo-serpulo", -900);
@@ -45,9 +45,9 @@ final class EtapasBase{
             float hA = fbm(sem(s, 1), 190f, 4, wx, wy);
             float hB = fbm(sem(s, 2), 100f, 3, wx, wy);
             float wh = suave((fbm(sem(s, 14), 700f, 2, x, y) - 0.35f) * 3.3f);
-            float h = est(lerp(hA, hB, wh * 0.60f), K_ALTURA);
-            float t = est(fbm(sem(s, 11), 520f, 3, wx, wy), K_TEMP_S);
-            float m = est(fbm(sem(s, 12), 430f, 3, wx + 900.0, wy - 300.0), K_HUM_S);
+            float h = est(lerp(hA, hB, wh * 0.60f), ce.par.estirarAlturaSerpulo);
+            float t = est(fbm(sem(s, 11), 520f, 3, wx, wy), ce.par.estirarTemperaturaSerpulo);
+            float m = est(fbm(sem(s, 12), 430f, 3, wx + 900.0, wy - 300.0), ce.par.estirarHumedadSerpulo);
 
             int p = climaSerpulo(s, x, y, wx, wy, h, t, m);
             final float alt = Math.max(0f, h - 0.45f);

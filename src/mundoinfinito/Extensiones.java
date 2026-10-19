@@ -209,6 +209,7 @@ final class Extensiones{
             Log.err(LOG + "Gamerule duplicada: @", g.id);
             return false;
         }
+        RegistroAjustes.registrar(AjusteMundo.deGameRule(g));   // una gamerule es un ajuste booleano de ámbito JUEGO (fase 4)
         Log.info(LOG + "Gamerule registrada: @ (por defecto: @)", g.id, g.porDefecto);
         return true;
     }

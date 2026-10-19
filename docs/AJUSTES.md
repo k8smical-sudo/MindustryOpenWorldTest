@@ -42,15 +42,16 @@ Reglas comunes:
 - **Peso no válido** (0, negativo, NaN, infinito): la propuesta se ignora con un aviso.
 
 ## Parámetros de generación actuales
-Todos de ámbito `GENERACION`, rango 1.0 a 4.0, política `MEDIA_PONDERADA`, y su valor por defecto es la constante de siempre:
+Todos de ámbito `GENERACION` y política `MEDIA_PONDERADA`. El valor por defecto de los tres primeros es la constante de siempre:
 
-| Id | Por defecto | Qué hace |
-|---|---|---|
-| `mundo-infinito:serpulo-estiramiento-altura` | 2.3 | Relieve: montañas y mares más marcados al subir |
-| `mundo-infinito:serpulo-estiramiento-temperatura` | 3.1 | Zonas heladas y abrasadoras más extensas al subir |
-| `mundo-infinito:serpulo-estiramiento-humedad` | 2.7 | Desiertos y pantanos más extensos al subir |
+| Id | Por defecto | Rango | Qué hace |
+|---|---|---|---|
+| `mundo-infinito:serpulo-estiramiento-altura` | 2.3 | 1.0 a 4.0 | Relieve: montañas y mares más marcados al subir |
+| `mundo-infinito:serpulo-estiramiento-temperatura` | 3.1 | 1.0 a 4.0 | Zonas heladas y abrasadoras más extensas al subir |
+| `mundo-infinito:serpulo-estiramiento-humedad` | 2.7 | 1.0 a 4.0 | Desiertos y pantanos más extensos al subir |
+| `mundo-infinito:fenomenos-distancia-minima` | 0 | 0 a 512 | Distancia mínima en casillas entre fenómenos de **cualquier** mod. 0 = desactivada (ver `AREAS.md`) |
 
-Solo afectan a Serpulo (la etapa `suelo-serpulo`); Erekir no cambia.
+Los tres primeros solo afectan a Serpulo (la etapa `suelo-serpulo`); Erekir no cambia.
 
 ## Cómo añadir un parámetro
 1. Un id y un campo en `ParametrosGeneracion`, con su valor por defecto.

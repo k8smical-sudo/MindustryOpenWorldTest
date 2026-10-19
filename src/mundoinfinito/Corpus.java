@@ -18,7 +18,8 @@ import java.util.Map;
  *
  * Hashea el terreno base de un conjunto fijo de semillas, dimensiones y coordenadas de chunk. Solo usa {@code Muestreo}, que es
  * puro (no necesita el juego cargado), así que corre en una JVM normal, en CI, con el classpath de la mod compilada + el jar del motor.
- * Replica EXACTAMENTE el bucle de {@code ChunkData.generar} (mismo orden de casillas, mismo spawn, mismo aux[11] a cero por chunk).
+ * La ruta directa replica el bucle original de {@code ChunkData.generar}; la ruta del núcleo es la que usa el juego ahora ({@link Nucleo#terreno}).
+ * "congelar" usa la ruta directa (referencia independiente del núcleo); "verificar" y la equivalencia de hilos usan la del núcleo.
  * No cubre los hooks de la API (fenómenos, mods): necesitan el contenido del juego y entran en fases posteriores.
  *
  * Uso:   java -cp build/classes/java/main:libs/MindustryX-Desktop.jar mundoinfinito.Corpus MODO [archivo]
@@ -66,11 +67,38 @@ public final class Corpus{
         return h;
     }
 
+    /** Mismo hash, pero con el terreno base servido por el núcleo (el camino real de ChunkData.generar). Debe dar lo mismo que hashChunk. */
+    static long hashChunkNucleo(int semilla, int dim, int cx, int cy){
+        final int T = MundoInfinitoMod.TAM_CHUNK;
+        final AporteTerreno ap = Nucleo.terreno(semilla, dim, cx * T, cy * T, cx, cy);
+        long h = 0xcbf29ce484222325L;
+        for(int i = 0; i < AporteTerreno.N; i++){
+            h = (h ^ ap.piso[i]) * 0x100000001b3L;
+            h ^= h >>> 31;
+            h = (h ^ ap.mena[i]) * 0x100000001b3L;
+            h ^= h >>> 31;
+            h = (h ^ ap.muro[i]) * 0x100000001b3L;
+            h ^= h >>> 31;
+            h = (h ^ ap.prop[i]) * 0x100000001b3L;
+            h ^= h >>> 31;
+        }
+        return h;
+    }
+
     /** Todas las entradas en un orden fijo (semilla, dimensión, coordenada). */
     static List<int[]> entradas(){
         final List<int[]> l = new ArrayList<int[]>();
         for(int s : SEMILLAS) for(int d : DIMS) for(int[] c : COORDS) l.add(new int[]{s, d, c[0], c[1]});
         return l;
+    }
+
+    static long[] calcularNucleo(List<int[]> es){
+        final long[] r = new long[es.size()];
+        for(int i = 0; i < r.length; i++){
+            int[] e = es.get(i);
+            r[i] = hashChunkNucleo(e[0], e[1], e[2], e[3]);
+        }
+        return r;
     }
 
     static long[] calcularDirecto(List<int[]> es){
@@ -87,7 +115,7 @@ public final class Corpus{
         System.setProperty(Hilos.PROP_HILOS, String.valueOf(n));
         Hilos.configurar();
         final Seq<Prov<Long>> tareas = new Seq<Prov<Long>>(es.size());
-        for(final int[] e : es) tareas.add(() -> Long.valueOf(hashChunk(e[0], e[1], e[2], e[3])));
+        for(final int[] e : es) tareas.add(() -> Long.valueOf(hashChunkNucleo(e[0], e[1], e[2], e[3])));   // por el núcleo: el camino real
         final Seq<Long> res = Hilos.ordenado(Hilos.Carril.SIMULACION, "corpus", tareas);
         final long[] r = new long[es.size()];
         for(int i = 0; i < r.length; i++){
@@ -175,7 +203,7 @@ public final class Corpus{
         }
         final List<int[]> es = entradas();
         olvidarCaches();
-        final long[] hs = calcularDirecto(es);
+        final long[] hs = calcularNucleo(es);   // el terreno servido por el núcleo debe dar lo congelado
         int distintos = 0, faltan = 0;
         for(int i = 0; i < hs.length; i++){
             int[] e = es.get(i);
@@ -216,6 +244,15 @@ public final class Corpus{
             System.out.println("[Corpus] FALLO: dos pasadas seguidas dan resultados distintos (el terreno no es una función pura de la semilla).");
         }
 
+        olvidarCaches();
+        final long[] nu = calcularNucleo(es);
+        if(Arrays.equals(a, nu)){
+            System.out.println("[Corpus] el terreno servido por el núcleo es idéntico a la ruta directa (" + es.size() + " chunks).");
+        }else{
+            fallos++;
+            System.out.println("[Corpus] FALLO: el terreno servido por el núcleo difiere de la ruta directa.");
+        }
+
         for(int n : new int[]{1, 2, 4}){
             olvidarCaches();
             t0 = System.nanoTime();
@@ -238,6 +275,7 @@ public final class Corpus{
         }
         System.setProperty(Hilos.PROP_HILOS, "0");
         Hilos.configurar();
+        System.out.println("[Corpus] " + Nucleo.resumen());
         System.out.println(fallos == 0 ? "[Corpus] comprobación completa: OK" : "[Corpus] comprobación completa: " + fallos + " fallo(s)");
         return fallos == 0 ? 0 : 1;
     }

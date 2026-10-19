@@ -112,6 +112,7 @@ final class Perfil{
             Log.info("[Perfil] resumen 15 s: peor tick del mod = @ | tirones escritos = @", peorTexto.isEmpty() ? "ninguno" : peorTexto, tiradas);
             if(Hilos.activo()) Log.info("[Perfil] @", Hilos.resumen());
             resumenGeneracion();
+            if(Nucleo.activo()) Log.info("[Perfil] @", Nucleo.resumen());
             cuadros = 0;
             peorNs = 0L;
             peorTexto = "";

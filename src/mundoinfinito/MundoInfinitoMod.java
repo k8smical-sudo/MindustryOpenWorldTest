@@ -1762,33 +1762,28 @@ public class MundoInfinitoMod extends Mod{
                 }
                 return d;
             }
-            Muestreo.Spawn sp = Muestreo.spawn(sd, dim);   // el spawn del mundo está en el origen virtual (0,0)
-            d.aux[11] = 0f;   // caché de estructura de la celda: vacía al empezar el chunk
-            for(int ly = 0; ly < TAM_CHUNK; ly++){
-                for(int lx = 0; lx < TAM_CHUNK; lx++){
-                    int x = cx * TAM_CHUNK + lx, y = cy * TAM_CHUNK + ly;
-                    int i = ly * TAM_CHUNK + lx;
+            // El terreno base se pide al núcleo (Nucleo.terreno): mismas casillas, mismo orden y mismo resultado que el bucle que había aquí.
+            // El aporte trae códigos de Muestreo; aquí solo se traducen a ids de bloque con la paleta y se pone el muro del borde del mundo.
+            final AporteTerreno ap = Nucleo.terreno(semilla, dim, ox + cx * TAM_CHUNK, oy + cy * TAM_CHUNK, vcx, vcy);
+            for(int i = 0; i < AporteTerreno.N; i++){
+                final int pc = ap.piso[i];
+                if(pc == AporteTerreno.FUERA){
+                    // más allá del borde del mundo: muro sólido, como el world border de Minecraft
+                    d.piso[i] = (short)bordePiso;
                     d.mena[i] = 0;
-                    d.bloque[i] = 0;
-                    int vx = ox + x, vy = oy + y;
-                    if(vx < -LIMITE_MUNDO || vx > LIMITE_MUNDO || vy < -LIMITE_MUNDO || vy > LIMITE_MUNDO){
-                        // más allá del borde del mundo (±30 000 000): muro sólido, como el world border de Minecraft
-                        d.piso[i] = (short)bordePiso;
-                        d.bloque[i] = (short)bordeMuro;
-                        continue;
-                    }
-                    Muestreo.muestrear(sd, vx, vy, sp, d.aux, d.out);
-                    int[] out = d.out;
-                    d.piso[i] = (short)pal.idPiso[out[0]];
-                    d.mena[i] = (short)pal.idMena[out[1]];
-                    int b = 0;
-                    if(out[2] == 1) b = pal.idMuroDePiso[out[0]];
-                    else if(out[2] == 2) b = pal.idGrafito;
-                    else if(out[3] == 1) b = pal.idPropDePiso[out[0]];
-                    else if(out[3] == 2) b = pal.idCristal;
-                    else if(out[3] == 3) b = pal.idCristalVivo;
-                    d.bloque[i] = (short)b;
+                    d.bloque[i] = (short)bordeMuro;
+                    continue;
                 }
+                d.piso[i] = (short)pal.idPiso[pc];
+                d.mena[i] = (short)pal.idMena[ap.mena[i]];
+                final int mu = ap.muro[i], pr = ap.prop[i];
+                int b = 0;
+                if(mu == 1) b = pal.idMuroDePiso[pc];
+                else if(mu == 2) b = pal.idGrafito;
+                else if(pr == 1) b = pal.idPropDePiso[pc];
+                else if(pr == 2) b = pal.idCristal;
+                else if(pr == 3) b = pal.idCristalVivo;
+                d.bloque[i] = (short)b;
             }
             // Fenómenos, terreno de mods y escuchas (hilo de fondo, sobre el terreno base ya completo del chunk)
             if(!tocaBorde) Extensiones.aplicarTerreno(d, pal, semilla, dim, vcx, vcy);
@@ -2415,6 +2410,7 @@ public class MundoInfinitoMod extends Mod{
             cursorPlan = 0;
             synchronized(cola){ cola.clear(); colaBaja.clear(); pendBaja.clear(); }
             Extensiones.alReiniciarMundo(m);   // cierra el registro, fija la versión de generación y limpia el estado por mundo
+            Nucleo.alReiniciarMundo();         // cierra el registro del núcleo y limpia degradaciones y contadores por mundo
             CacheChunks.configurar(m.semilla, m.dimGen());
             vaciarListos();
             colaRestaurar.clear();

@@ -17,15 +17,18 @@ import java.util.concurrent.atomic.AtomicLong;
  * Es el único componente que conoce a los contribuyentes.
  *
  * Fase 3: el terreno base son 11 etapas independientes ({@link EtapasBase}) que se evalúan en una sola pasada por las casillas, en orden canónico.
- * Todo lo demás sigue en "modo vacío": se cuentan unidades y excesos, pero no se recorta a nadie (eso es la fase 7).
+ * Fase 7: presupuestos y degradación. Cada etapa (y cada contribución de terreno) gasta unidades contadas; si excede su presupuesto se le aplica su
+ * {@link ReglaDegradacion}, se registra en {@link Degradaciones} y la generación sigue. Nada se mide en tiempo.
  *
  * Hilos: {@link #terreno} se llama desde los hilos de generación (varios a la vez) y es seguro; el registro se cierra al abrir el primer mundo.
  */
 final class Nucleo{
     /** Versión del contrato del núcleo (sube con cambios incompatibles). */
-    static final int VERSION = 5;
-    /** Fase 7: mientras sea false solo se cuentan unidades y excesos; nunca se recorta ni se registra una degradación. */
-    static final boolean DEGRADACION_ACTIVA = false;
+    static final int VERSION = 6;
+    /** Fase 7: cuando una contribución excede su presupuesto se le aplica su regla de degradación y se registra. (false: solo se contaría.) */
+    static final boolean DEGRADACION_ACTIVA = true;
+    /** Una contribución es "sistemática" cuando se degrada en al menos la mitad de sus evaluaciones, y al menos en este número de chunks. */
+    static final int MINIMO_SISTEMATICO = 32;
     /** Nombre bajo el que se cuenta la tubería de etapas del terreno base. */
     static final String TUBERIA_BASE = "mundo-infinito:terreno-base";
 
@@ -66,6 +69,12 @@ final class Nucleo{
     private static volatile boolean cerrado;
     private static final ConcurrentHashMap<String, Cuenta> cuentas = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, Boolean> avisos = new ConcurrentHashMap<>();
+    /** Por contribución: cuántas veces se evaluó y cuántas se degradó, en este mundo (para el aviso de las sistemáticas). */
+    private static final ConcurrentHashMap<String, Evaluaciones> evaluaciones = new ConcurrentHashMap<>();
+
+    private static final class Evaluaciones{
+        final AtomicLong evaluadas = new AtomicLong(), degradadas = new AtomicLong();
+    }
 
     /** Un buffer de aporte por hilo (cero asignaciones por chunk). */
     private static final ThreadLocal<AporteTerreno> LOCAL = new ThreadLocal<AporteTerreno>(){
@@ -78,7 +87,7 @@ final class Nucleo{
     private static final class Cuenta{
         final int declaradas;
         final String unidad;
-        final AtomicLong chunks = new AtomicLong(), unidades = new AtomicLong(), ns = new AtomicLong(), excesos = new AtomicLong();
+        final AtomicLong chunks = new AtomicLong(), unidades = new AtomicLong(), ns = new AtomicLong();
 
         Cuenta(int declaradas, String unidad){
             this.declaradas = declaradas;
@@ -159,6 +168,7 @@ final class Nucleo{
         parametros = par == null ? ParametrosGeneracion.DEFECTO : par;
         Degradaciones.limpiar();
         cuentas.clear();
+        evaluaciones.clear();
         avisos.clear();
     }
 
@@ -186,19 +196,16 @@ final class Nucleo{
         final ContribucionTerreno[] todas = terreno;
 
         // candidatas: la tubería del terreno base (si hay etapas) y las contribuciones de terreno que no son etapas
-        int ne = 0, no = 0;
-        for(ContribucionTerreno c : todas){
-            if(!c.aplicaA(dim)) continue;
-            if(c instanceof EtapaBase) ne++;
-            else no++;
-        }
+        final EtapaBase[] etapas = etapasAplicables(todas, dim);
+        int no = 0;
+        for(ContribucionTerreno c : todas) if(c.aplicaA(dim) && !(c instanceof EtapaBase)) no++;
 
         // fase 6: si hay más de un candidato, la macrocélula (2x2 chunks) tiene UN dueño elegido por cuota de peso; todos sus chunks usan el mismo
         ContribucionTerreno otra = null;
-        boolean usaBase = ne > 0;
+        boolean usaBase = etapas.length > 0;
         if(no > 0){
             final List<Contribucion> cand = new ArrayList<Contribucion>();
-            if(ne > 0) cand.add(BASE);
+            if(etapas.length > 0) cand.add(BASE);
             for(ContribucionTerreno c : todas) if(c.aplicaA(dim) && !(c instanceof EtapaBase)) cand.add(c);
             final Contribucion dueno = Reparto.dueno(semilla, dim, Reparto.macro(vcx), Reparto.macro(vcy), cand);
             usaBase = dueno == BASE;
@@ -206,38 +213,120 @@ final class Nucleo{
         }
 
         if(usaBase){
-            final EtapaBase[] etapas = new EtapaBase[ne];
-            int k = 0, declaradas = 0;
-            for(ContribucionTerreno c : todas){
-                if(c instanceof EtapaBase && c.aplicaA(dim)){
-                    etapas[k++] = (EtapaBase)c;
-                    declaradas = Math.max(declaradas, c.presupuesto().unidadesChunk);
-                }
-            }
             final long t0 = System.nanoTime();
             final int unidades = PipelineBase.ejecutar(ctx, out, etapas);
-            contar(TUBERIA_BASE, declaradas, "casilla", vcx, vcy, unidades, System.nanoTime() - t0);
+            int declaradas = 0;
+            for(EtapaBase e : etapas) declaradas = Math.max(declaradas, e.presupuesto().unidadesChunk);
+            contar(TUBERIA_BASE, declaradas, "casilla", unidades, System.nanoTime() - t0);
+            registrarEtapas(etapas, out.informe, vcx, vcy);
             return out;
         }
-        if(otra != null){
-            final long t0 = System.nanoTime();
-            final int unidades = otra.aportar(ctx, out);
-            final PresupuestoTrabajo p = otra.presupuesto();
-            contar(otra.id(), p.unidadesChunk, p.unidad, vcx, vcy, unidades, System.nanoTime() - t0);
-            return out;
-        }
+        if(otra != null) return evaluarOtra(otra, etapas, ctx, out);
 
         // Degradar, nunca rechazar: sin contribución aplicable, el chunk sale de piedra y se avisa una vez por mundo
         if(avisos.putIfAbsent("sin:" + dim, Boolean.TRUE) == null){
             Log.err("[MundoInfinito] Núcleo: ninguna contribución de terreno se aplica a la dimensión @; se genera solo piedra.", dim);
         }
+        rellenarPiedra(out);
+        return out;
+    }
+
+    /** Las etapas del terreno base aplicables a la dimensión, en orden canónico. */
+    private static EtapaBase[] etapasAplicables(ContribucionTerreno[] todas, int dim){
+        int ne = 0;
+        for(ContribucionTerreno c : todas) if(c instanceof EtapaBase && c.aplicaA(dim)) ne++;
+        final EtapaBase[] etapas = new EtapaBase[ne];
+        int k = 0;
+        for(ContribucionTerreno c : todas) if(c instanceof EtapaBase && c.aplicaA(dim)) etapas[k++] = (EtapaBase)c;
+        return etapas;
+    }
+
+    private static void rellenarPiedra(AporteTerreno out){
         for(int i = 0; i < AporteTerreno.N; i++){
             out.piso[i] = MundoInfinitoMod.Muestreo.P_STONE;
             out.mena[i] = 0;
             out.muro[i] = 0;
             out.prop[i] = 0;
         }
+    }
+
+    // ================================================================== presupuestos y degradación (fase 7)
+
+    /**
+     * Evalúa una contribución de terreno que NO es una etapa (el caso de un mod), con su presupuesto. Su función no se puede detener a medias, así que si
+     * gasta más unidades de las permitidas, o si falla, se aplica la OMISIÓN: su aporte se descarta y el chunk lo genera el terreno base (o piedra si no hay
+     * base). Se registra, y la generación sigue. Mismas entradas, misma decisión: la cuenta es de unidades, no de tiempo.
+     * Package-private: lo usa también el corpus.
+     */
+    static AporteTerreno evaluarOtra(ContribucionTerreno c, EtapaBase[] respaldo, ContextoAporte ctx, AporteTerreno out){
+        final PresupuestoTrabajo p = c.presupuesto();
+        final int pct = ctx.params == null ? 100 : ctx.params.presupuestoTerrenoPct;
+        final int permitidas = (int)((long)p.unidadesChunk * pct / 100L);
+        final long t0 = System.nanoTime();
+        int unidades = 0;
+        boolean fallo = false;
+        try{
+            unidades = c.aportar(ctx, out);
+        }catch(Throwable e){
+            fallo = true;
+            if(avisos.putIfAbsent("fallo:" + c.id(), Boolean.TRUE) == null){
+                Log.err("[MundoInfinito] Núcleo: la contribución '" + c.id() + "' falló; su aporte se omite y el terreno base genera el chunk (aviso una vez por mundo).", e);
+            }
+        }
+        contar(c.id(), p.unidadesChunk, p.unidad, unidades, System.nanoTime() - t0);
+        final boolean excede = !fallo && unidades > permitidas;
+        anotarEvaluacion(c.id(), fallo || excede);
+        if(fallo || excede){
+            if(DEGRADACION_ACTIVA) Degradaciones.registrar(c.id(), ctx.vcx, ctx.vcy, unidades, permitidas, fallo ? "omision-por-fallo" : ReglaDegradacion.OMISION.nombre);
+            avisarSiSistematica(c.id(), unidades, permitidas, p.unidad, ReglaDegradacion.OMISION.nombre);
+            if(respaldo != null && respaldo.length > 0) PipelineBase.ejecutar(ctx, out, respaldo);
+            else rellenarPiedra(out);
+        }
         return out;
+    }
+
+    /** Anota lo que le pasó a cada etapa en el chunk recién evaluado: evaluaciones, degradaciones, registro y aviso de las sistemáticas. */
+    private static void registrarEtapas(EtapaBase[] etapas, PipelineBase.Informe inf, int vcx, int vcy){
+        for(int k = 0; k < etapas.length; k++){
+            final String id = etapas[k].id();
+            anotarEvaluacion(id, inf.degradada[k]);
+            if(!inf.degradada[k]) continue;
+            final String regla = inf.regla[k].nombre;
+            if(DEGRADACION_ACTIVA) Degradaciones.registrar(id, vcx, vcy, inf.pedidas[k], inf.permitidas[k], regla);
+            avisarSiSistematica(id, inf.pedidas[k], inf.permitidas[k], etapas[k].presupuesto().unidad, regla);
+        }
+    }
+
+    private static void anotarEvaluacion(String id, boolean degradada){
+        Evaluaciones e = evaluaciones.get(id);
+        if(e == null){
+            final Evaluaciones nueva = new Evaluaciones();
+            e = evaluaciones.putIfAbsent(id, nueva);
+            if(e == null) e = nueva;
+        }
+        e.evaluadas.incrementAndGet();
+        if(degradada) e.degradadas.incrementAndGet();
+    }
+
+    private static boolean esSistematica(Evaluaciones e){
+        final long d = e.degradadas.get();
+        return d >= MINIMO_SISTEMATICO && d * 2L >= e.evaluadas.get();
+    }
+
+    private static void avisarSiSistematica(String id, int pedidas, int permitidas, String unidad, String regla){
+        final Evaluaciones e = evaluaciones.get(id);
+        if(e == null || !esSistematica(e)) return;
+        if(avisos.putIfAbsent("sistematica:" + id, Boolean.TRUE) == null){
+            Log.warn("[MundoInfinito] Núcleo: '@' excede su presupuesto de forma sistemática: se degrada en @ de @ chunks (por ejemplo pide @ y se le permiten @ @; regla: @). "
+                + "Conviene subir su presupuesto declarado. Aviso una vez por mundo.", id, e.degradadas.get(), e.evaluadas.get(), pedidas, permitidas, unidad, regla);
+        }
+    }
+
+    /** Ids de las contribuciones que se degradan de forma sistemática en el mundo abierto, en orden alfabético. */
+    static List<String> sistematicas(){
+        final List<String> l = new ArrayList<String>();
+        for(Map.Entry<String, Evaluaciones> e : new TreeMap<String, Evaluaciones>(evaluaciones).entrySet()) if(esSistematica(e.getValue())) l.add(e.getKey());
+        return l;
     }
 
     /**
@@ -271,7 +360,7 @@ final class Nucleo{
         return out;
     }
 
-    private static void contar(String id, int declaradas, String unidad, int vcx, int vcy, int unidades, long ns){
+    private static void contar(String id, int declaradas, String unidad, int unidades, long ns){
         Cuenta k = cuentas.get(id);
         if(k == null){
             Cuenta nueva = new Cuenta(declaradas, unidad);
@@ -281,13 +370,6 @@ final class Nucleo{
         k.chunks.incrementAndGet();
         k.unidades.addAndGet(unidades);
         k.ns.addAndGet(ns);
-        if(unidades > declaradas){
-            k.excesos.incrementAndGet();
-            if(avisos.putIfAbsent("exceso:" + id, Boolean.TRUE) == null){
-                Log.warn("[MundoInfinito] Núcleo: '@' gastó @ unidades (@) en un chunk y declaró @. Aún no se recorta (fase 7); se avisa una vez por mundo.", id, unidades, unidad, declaradas);
-            }
-            if(DEGRADACION_ACTIVA) Degradaciones.registrar(id, vcx, vcy, unidades, declaradas, "recorte-canonico");
-        }
     }
 
     // ================================================================== diagnóstico
@@ -296,7 +378,7 @@ final class Nucleo{
         return !cuentas.isEmpty();
     }
 
-    /** Una línea para el log: por contribución evaluada, chunks, unidades medias frente a las declaradas, tiempo medio y excesos. */
+    /** Una línea para el log: por contribución evaluada, chunks, unidades medias frente a las declaradas, tiempo medio, degradaciones y sistemáticas. */
     static String resumen(){
         final StringBuilder sb = new StringBuilder(160);
         sb.append("núcleo v").append(VERSION).append(" etapas=").append(terreno.length);
@@ -306,9 +388,8 @@ final class Nucleo{
             final long d = (k.ns.get() / n) / 100_000L;   // décimas de ms
             sb.append(" | ").append(e.getKey()).append(" chunks=").append(k.chunks.get()).append(" unidades/chunk=").append(k.unidades.get() / n)
                 .append(" (declaradas ").append(k.declaradas).append(") calc=").append(d / 10).append('.').append(d % 10).append("ms");
-            if(k.excesos.get() > 0) sb.append(" excesos=").append(k.excesos.get());
         }
-        if(Degradaciones.total() > 0) sb.append(" | degradaciones=").append(Degradaciones.total());
+        if(Degradaciones.total() > 0) sb.append(" | degradaciones=").append(Degradaciones.total()).append(" sistemáticas=").append(sistematicas().size());
         if(RegistroAjustes.totalRecortes() > 0) sb.append(" | ajustes recortados=").append(RegistroAjustes.totalRecortes());
         if(Resolucion.conflictosSinPolitica() > 0) sb.append(" | ajustes sin política=").append(Resolucion.conflictosSinPolitica());
         return sb.toString();

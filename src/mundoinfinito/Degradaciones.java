@@ -10,8 +10,9 @@ import java.util.concurrent.atomic.AtomicLong;
  * REGISTRO DE DEGRADACIONES (plan, sección 5): quién fue recortado, en qué chunk, cuántas unidades pidió, cuántas se le permitieron y
  * qué regla se aplicó. Forma parte del resultado del mundo y se guarda por mundo (la persistencia llega en la fase 7).
  *
- * Fase 2: el registro existe y es seguro entre hilos, pero está VACÍO: todavía no se recorta a nadie ({@link Nucleo#DEGRADACION_ACTIVA}).
- * Guarda como máximo {@link #MAX} entradas; pasado el tope solo cuenta.
+ * Fase 7: lo llena el núcleo cuando una contribución excede su presupuesto y se le aplica una {@link ReglaDegradacion}. Es seguro entre hilos y se
+ * reinicia al abrir un mundo; como la degradación es determinista (unidades contadas, mismas entradas), reabrir el mundo y regenerar sus chunks lo
+ * reconstruye igual. Guarda como máximo {@link #MAX} entradas; pasado el tope solo cuenta.
  */
 final class Degradaciones{
     static final int MAX = 4096;

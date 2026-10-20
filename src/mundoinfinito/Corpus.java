@@ -24,6 +24,7 @@ import java.util.Set;
  * La ruta directa replica el bucle original de {@code ChunkData.generar}; la ruta del núcleo es la que usa el juego ahora ({@link Nucleo#terreno}).
  * "congelar" usa la ruta directa (referencia independiente del núcleo); "verificar" y la equivalencia de hilos usan la del núcleo.
  * Fase 3: "comprobar" además prueba las etapas por separado (suelo solo contra Muestreo.pisoBase, sin decoración, sin cada etapa).
+ * Fase 7: y los presupuestos (las tres reglas de degradación, misma salida degradada siempre, mundo reabierto, nada interrumpe la generación).
  * Fase 6: y el reparto de áreas (cuota de peso por macrocélula, distancia mínima global entre fuentes, conflictos ponderados, procedencia).
  * Fase 5: y las políticas de resolución (media ponderada, prioridad absoluta, elección ponderada con hash, fuera de rango, sin política).
  * Fase 4: y el perfil de mundo (valores por defecto, mundos antiguos, recorte fuera de rango, persistencia y que el perfil por defecto no cambia el terreno).
@@ -159,10 +160,14 @@ public final class Corpus{
 
     /** Lo mismo, repartido por el servicio de hilos con n hilos. Los resultados vuelven por posición. */
     static long[] calcularConHilos(List<int[]> es, int n){
+        return calcularConHilos(es, n, Nucleo.parametros());
+    }
+
+    static long[] calcularConHilos(List<int[]> es, int n, final ParametrosGeneracion par){
         System.setProperty(Hilos.PROP_HILOS, String.valueOf(n));
         Hilos.configurar();
         final Seq<Prov<Long>> tareas = new Seq<Prov<Long>>(es.size());
-        for(final int[] e : es) tareas.add(() -> Long.valueOf(hashChunkNucleo(e[0], e[1], e[2], e[3])));   // por el núcleo: el camino real
+        for(final int[] e : es) tareas.add(() -> Long.valueOf(hashChunkNucleoCon(par, e[0], e[1], e[2], e[3])));   // por el núcleo: el camino real
         final Seq<Long> res = Hilos.ordenado(Hilos.Carril.SIMULACION, "corpus", tareas);
         final long[] r = new long[es.size()];
         for(int i = 0; i < r.length; i++){
@@ -354,7 +359,8 @@ public final class Corpus{
 
     private static boolean iguales(ParametrosGeneracion x, ParametrosGeneracion y){
         return x.estirarAlturaSerpulo == y.estirarAlturaSerpulo && x.estirarTemperaturaSerpulo == y.estirarTemperaturaSerpulo
-            && x.estirarHumedadSerpulo == y.estirarHumedadSerpulo && x.distanciaMinimaFenomenos == y.distanciaMinimaFenomenos;
+            && x.estirarHumedadSerpulo == y.estirarHumedadSerpulo && x.distanciaMinimaFenomenos == y.distanciaMinimaFenomenos
+            && x.presupuestoTerrenoPct == y.presupuestoTerrenoPct;
     }
 
     private static Jval archivoDe(PerfilMundo p){
@@ -740,6 +746,211 @@ public final class Corpus{
         return fallos;
     }
 
+    // ================================================================== fase 7: presupuestos y degradación
+
+    /** Etapa de prueba: marca cada casilla que procesa, con el presupuesto y la regla de degradación que se le den. */
+    private static final class EtapaMarca extends EtapaBase{
+        private final int marca, unidades;
+        private final ReglaDegradacion regla;
+
+        EtapaMarca(String nombre, int marca, int unidades, ReglaDegradacion regla){
+            super(nombre, 0);
+            this.marca = marca;
+            this.unidades = unidades;
+            this.regla = regla;
+        }
+
+        @Override
+        public PresupuestoTrabajo presupuesto(){
+            return new PresupuestoTrabajo(unidades, 0, 1024, "casilla");
+        }
+
+        @Override
+        public ReglaDegradacion reglaDegradacion(){
+            return regla;
+        }
+
+        @Override
+        void celda(CeldaBase ce){
+            ce.prop = marca;
+        }
+    }
+
+    /** Contribución de terreno de prueba que no es una etapa: escribe un piso fijo, gasta las unidades que se le digan, o falla. */
+    private static final class OtraPrueba implements ContribucionTerreno{
+        private final int unidades, piso;
+        private final boolean falla;
+
+        OtraPrueba(int unidades, int piso, boolean falla){
+            this.unidades = unidades;
+            this.piso = piso;
+            this.falla = falla;
+        }
+
+        @Override public String id(){ return "prueba:otra"; }
+        @Override public String fuente(){ return "prueba"; }
+        @Override public int version(){ return 1; }
+
+        @Override
+        public int aportar(ContextoAporte ctx, AporteTerreno out){
+            if(falla) throw new IllegalStateException("fallo de prueba");
+            for(int i = 0; i < AporteTerreno.N; i++){
+                out.piso[i] = piso;
+                out.mena[i] = 0;
+                out.muro[i] = 0;
+                out.prop[i] = 0;
+            }
+            return unidades;
+        }
+    }
+
+    /** Ejecuta una sola etapa de prueba en el chunk de origen (x0, y0) y devuelve el aporte (un buffer nuevo) con su informe. */
+    private static AporteTerreno correrMarca(EtapaMarca e, int x0, int y0, int pct){
+        final AporteTerreno o = new AporteTerreno();
+        final int T = MundoInfinitoMod.TAM_CHUNK;
+        final ParametrosGeneracion par = new ParametrosGeneracion(2.3f, 3.1f, 2.7f, 0, pct);
+        PipelineBase.ejecutar(new ContextoAporte(1, 0, x0, y0, Math.floorDiv(x0, T), Math.floorDiv(y0, T), par), o, new EtapaBase[]{e});
+        return o;
+    }
+
+    private static int marcados(AporteTerreno o, int marca){
+        int n = 0;
+        for(int i = 0; i < AporteTerreno.N; i++) if(o.prop[i] == marca) n++;
+        return n;
+    }
+
+    private static String listaDegradaciones(){
+        final List<String> l = new ArrayList<String>();
+        for(Degradaciones.Entrada e : Degradaciones.copia()) l.add(e.contribuyente + "@" + e.vcx + "," + e.vcy + ":" + e.pedidas + "/" + e.permitidas + ":" + e.regla);
+        java.util.Collections.sort(l);
+        return l.toString();
+    }
+
+    /** Presupuestos y reglas de degradación: determinismo, reapertura del mundo, y que nada excedido interrumpe la generación. */
+    static int comprobarPresupuestos(List<int[]> es, long[] directo){
+        int fallos = 0;
+        final int T = MundoInfinitoMod.TAM_CHUNK;
+
+        // ---- las tres reglas, una a una, en chunks de coordenadas positivas y negativas
+        final int[][] origenes = {{0, 0}, {-64, -96}, {320, 128}};
+        boolean recorte = true, omision = true, reduccion = true, normal = true, escala = true;
+        for(int[] o : origenes){
+            // recorte canónico: las primeras 300 casillas, fila a fila
+            AporteTerreno a = correrMarca(new EtapaMarca("r", 7, 300, ReglaDegradacion.RECORTE_CANONICO), o[0], o[1], 100);
+            for(int i = 0; i < AporteTerreno.N; i++) if((a.prop[i] == 7) != (i < 300)) recorte = false;
+            if(!a.informe.degradada[0] || a.informe.pedidas[0] != 1024 || a.informe.permitidas[0] != 300 || a.informe.usadas[0] != 300) recorte = false;
+
+            // omisión: nada
+            a = correrMarca(new EtapaMarca("o", 8, 300, ReglaDegradacion.OMISION), o[0], o[1], 100);
+            if(marcados(a, 8) != 0 || !a.informe.degradada[0] || a.informe.usadas[0] != 0) omision = false;
+
+            // reducción de resolución: retícula 2x2 (256 casillas caben en 300), anclada a las coordenadas virtuales
+            a = correrMarca(new EtapaMarca("d", 9, 300, ReglaDegradacion.REDUCCION_DE_RESOLUCION), o[0], o[1], 100);
+            int esperadas = 0;
+            for(int ly = 0; ly < T; ly++) for(int lx = 0; lx < T; lx++){
+                final boolean enReticula = Math.floorMod(o[0] + lx, 2) == 0 && Math.floorMod(o[1] + ly, 2) == 0;
+                if(enReticula) esperadas++;
+                if((a.prop[ly * T + lx] == 9) != enReticula) reduccion = false;
+            }
+            if(esperadas != 256 || a.informe.usadas[0] != 256 || a.informe.paso[0] != 2) reduccion = false;
+            // presupuestos cada vez más bajos: paso 4 (64 <= 100), paso 16 (4 <= 10) y, sin presupuesto, omitida
+            if(PipelineBase.pasoReduccion(o[0], o[1], 100) != 4 || PipelineBase.pasoReduccion(o[0], o[1], 10) != 16 || PipelineBase.pasoReduccion(o[0], o[1], 0) != 0) reduccion = false;
+
+            // sin exceso: todo el trabajo, sin degradar
+            a = correrMarca(new EtapaMarca("n", 7, 1024, ReglaDegradacion.RECORTE_CANONICO), o[0], o[1], 100);
+            if(marcados(a, 7) != 1024 || a.informe.degradada[0]) normal = false;
+
+            // el porcentaje del perfil escala el presupuesto: 50 % de 1024 = 512
+            a = correrMarca(new EtapaMarca("p", 7, 1024, ReglaDegradacion.RECORTE_CANONICO), o[0], o[1], 50);
+            if(marcados(a, 7) != 512 || a.informe.permitidas[0] != 512) escala = false;
+        }
+        fallos += chequear("recorte canónico: con presupuesto 300 solo se hacen las 300 primeras casillas, fila a fila (3 chunks, coordenadas positivas y negativas)", recorte);
+        fallos += chequear("omisión: con presupuesto menor que lo pedido no se hace nada de esa etapa", omision);
+        fallos += chequear("reducción de resolución: con presupuesto 300 se hace 1 casilla de cada 2x2 anclada a coordenadas virtuales (256), y 4x4 con 100, 16x16 con 10", reduccion);
+        fallos += chequear("sin exceso no se degrada nada y se hace todo el trabajo (1024 casillas)", normal);
+        fallos += chequear("el porcentaje de presupuesto del perfil escala lo permitido (50 % de 1024 = 512)", escala);
+
+        // ---- el terreno de verdad con un presupuesto bajo: siempre la misma salida degradada
+        final ParametrosGeneracion p25 = new ParametrosGeneracion(2.3f, 3.1f, 2.7f, 0, 25);
+        Nucleo.alReiniciarMundo(p25);   // como abrir un mundo: contadores y registro de degradaciones a cero
+        olvidarCaches();
+        final long[] d1 = calcularConHilos(es, 1, p25);
+        final String reg1 = listaDegradaciones();
+        final long tot1 = Degradaciones.total();
+        final List<String> sist = Nucleo.sistematicas();
+        olvidarCaches();
+        final long[] d2 = calcularConHilos(es, 1, p25);
+        final long[] d4 = calcularConHilos(es, 4, p25);
+        fallos += chequear("con el 25 % del presupuesto el terreno cambia (no es el completo) pero es SIEMPRE el mismo: dos pasadas en frío y 4 hilos dan lo mismo",
+            !Arrays.equals(d1, directo) && Arrays.equals(d1, d2) && Arrays.equals(d1, d4));
+        fallos += chequear("el registro de degradaciones anota cada etapa recortada (" + tot1 + " entradas en " + es.size() + " chunks; pide 1024, se le permiten 256)",
+            tot1 >= 11L * es.size() && reg1.contains(":1024/256:"));
+        fallos += chequear("el aviso de contribuyente sistemático salta para las " + sist.size() + " etapas que se degradan en todos los chunks (esperado 11)", sist.size() == 11);
+
+        // ---- un mundo reabierto reproduce la misma degradación (el perfil guardado trae el porcentaje)
+        final PerfilMundo guardado = new PerfilMundo();
+        guardado.fijar(ParametrosGeneracion.ID_PRESUPUESTO_TERRENO, 25);
+        guardado.sellarGeneracion(7, new ArrayList<PropuestaParametro>());
+        final ParametrosGeneracion reabierto = PerfilMundo.desde(archivoDe(guardado)).parametros();
+        Nucleo.alReiniciarMundo(reabierto);
+        olvidarCaches();
+        final long[] r1 = calcularConHilos(es, 1, reabierto);
+        fallos += chequear("un mundo reabierto reproduce la misma degradación: mismo terreno y mismo registro (porcentaje guardado en el perfil: " + reabierto.presupuestoTerrenoPct + ")",
+            reabierto.presupuestoTerrenoPct == 25 && Arrays.equals(d1, r1) && listaDegradaciones().equals(reg1));
+
+        // ---- ningún presupuesto excedido interrumpe la generación
+        final ParametrosGeneracion p1 = new ParametrosGeneracion(2.3f, 3.1f, 2.7f, 0, 1);
+        Nucleo.alReiniciarMundo(p1);
+        boolean sinError = true;
+        try{
+            calcularNucleoCon(es, p1);
+        }catch(Throwable t){
+            sinError = false;
+            t.printStackTrace();
+        }
+        fallos += chequear("con el 1 % del presupuesto (10 casillas por etapa) los " + es.size() + " chunks se generan igual, sin ninguna excepción", sinError && Degradaciones.total() >= 11L * es.size());
+
+        // ---- una contribución que no es etapa: excede o falla -> omisión y respaldo del terreno base
+        Nucleo.alReiniciarMundo(null);
+        final int vcx = 3, vcy = -2, x0 = vcx * T, y0 = vcy * T;
+        final ParametrosGeneracion pd = ParametrosGeneracion.DEFECTO;
+        final EtapaBase[] base = EtapasBase.todas();
+        java.util.Arrays.sort(base, Orden.CANONICO);
+        final AporteTerreno ref = new AporteTerreno();
+        PipelineBase.ejecutar(new ContextoAporte(1, 0, x0, y0, vcx, vcy, pd), ref, base);
+        final long hashBase = hashAporte(ref);
+
+        final AporteTerreno bien = Nucleo.evaluarOtra(new OtraPrueba(1000, 3, false), base, new ContextoAporte(1, 0, x0, y0, vcx, vcy, pd), new AporteTerreno());
+        boolean suyo = true;
+        for(int i = 0; i < AporteTerreno.N; i++) if(bien.piso[i] != 3) suyo = false;
+        fallos += chequear("una contribución dentro de su presupuesto (1000 de 1024) aporta lo suyo y no se degrada", suyo && Degradaciones.total() == 0);
+
+        final AporteTerreno pasada = Nucleo.evaluarOtra(new OtraPrueba(5000, 3, false), base, new ContextoAporte(1, 0, x0, y0, vcx, vcy, pd), new AporteTerreno());
+        fallos += chequear("una contribución que gasta 5000 unidades con 1024 permitidas se omite y el chunk lo genera el terreno base (idéntico al terreno base solo)",
+            hashAporte(pasada) == hashBase && Degradaciones.total() == 1 && listaDegradaciones().contains("prueba:otra@3,-2:5000/1024:omision"));
+
+        final AporteTerreno rota = Nucleo.evaluarOtra(new OtraPrueba(0, 3, true), base, new ContextoAporte(1, 0, x0, y0, vcx, vcy, pd), new AporteTerreno());
+        fallos += chequear("una contribución que lanza una excepción no interrumpe la generación: su aporte se omite y lo genera el terreno base",
+            hashAporte(rota) == hashBase && Degradaciones.total() == 2 && listaDegradaciones().contains("omision-por-fallo"));
+
+        // ---- el parámetro del perfil
+        final PerfilMundo pp = new PerfilMundo();
+        pp.fijar(ParametrosGeneracion.ID_PRESUPUESTO_TERRENO, 0);
+        final int bajo = pp.parametros().presupuestoTerrenoPct;
+        final PerfilMundo pq = new PerfilMundo();
+        pq.fijar(ParametrosGeneracion.ID_PRESUPUESTO_TERRENO, 500);
+        fallos += chequear("el presupuesto de generación vale 100 por defecto (nada se degrada) y se recorta a su rango (0 -> 1, 500 -> 100)",
+            ParametrosGeneracion.DEFECTO.presupuestoTerrenoPct == 100 && new PerfilMundo().parametros().presupuestoTerrenoPct == 100 && bajo == 1 && pq.parametros().presupuestoTerrenoPct == 100);
+
+        // dejar el núcleo como al empezar: sin degradaciones y con el perfil por defecto
+        Nucleo.alReiniciarMundo(null);
+        return fallos;
+    }
+
+    private static void calcularNucleoCon(List<int[]> es, ParametrosGeneracion par){
+        for(int[] e : es) hashChunkNucleoCon(par, e[0], e[1], e[2], e[3]);
+    }
+
     static int comprobar() throws Exception{
         final List<int[]> es = entradas();
         int fallos = 0;
@@ -776,6 +987,7 @@ public final class Corpus{
         fallos += comprobarAjustes(es, a);
         fallos += comprobarResolucion();
         fallos += comprobarAreas();
+        fallos += comprobarPresupuestos(es, a);
 
         for(int n : new int[]{1, 2, 4}){
             olvidarCaches();

@@ -53,6 +53,9 @@ final class RegistroAjustes{
         registrar(AjusteMundo.entero(ParametrosGeneracion.ID_FENOMENOS_DISTANCIA, "Distancia mínima entre fenómenos",
             "Distancia mínima, en casillas, entre dos fenómenos de cualquier mod (respiraderos, pozos, cráteres...). 0 = cada generador solo respeta su propia distancia.",
             AjusteMundo.Ambito.GENERACION, 0, 0, 512).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
+        registrar(AjusteMundo.entero(ParametrosGeneracion.ID_PRESUPUESTO_TERRENO, "Presupuesto de generación del terreno (%)",
+            "Qué porcentaje del presupuesto de cada contribución de terreno se le permite gastar por chunk. 100 = todo (sin degradar). Menos = generación más barata y simple, siempre la misma para ese mundo.",
+            AjusteMundo.Ambito.GENERACION, 100, 1, 100).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
     }
 
     private RegistroAjustes(){}

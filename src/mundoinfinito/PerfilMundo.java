@@ -107,7 +107,8 @@ final class PerfilMundo{
             (float)valorDe(ParametrosGeneracion.ID_ALTURA_SERPULO, ParametrosGeneracion.DEFECTO.estirarAlturaSerpulo),
             (float)valorDe(ParametrosGeneracion.ID_TEMPERATURA_SERPULO, ParametrosGeneracion.DEFECTO.estirarTemperaturaSerpulo),
             (float)valorDe(ParametrosGeneracion.ID_HUMEDAD_SERPULO, ParametrosGeneracion.DEFECTO.estirarHumedadSerpulo),
-            (int)Math.rint(valorDe(ParametrosGeneracion.ID_FENOMENOS_DISTANCIA, ParametrosGeneracion.DEFECTO.distanciaMinimaFenomenos)));
+            (int)Math.rint(valorDe(ParametrosGeneracion.ID_FENOMENOS_DISTANCIA, ParametrosGeneracion.DEFECTO.distanciaMinimaFenomenos)),
+            (int)Math.rint(valorDe(ParametrosGeneracion.ID_PRESUPUESTO_TERRENO, ParametrosGeneracion.DEFECTO.presupuestoTerrenoPct)));
     }
 
     private double valorDe(String id, double respaldo){

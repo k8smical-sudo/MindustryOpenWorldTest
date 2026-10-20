@@ -38,6 +38,11 @@ interface Contribucion{
         return 0;
     }
 
+    /** Qué se hace cuando pide más unidades de las permitidas (fase 7). Por defecto, el recorte por orden canónico (D-N4). */
+    default ReglaDegradacion reglaDegradacion(){
+        return ReglaDegradacion.RECORTE_CANONICO;
+    }
+
     /** Presupuesto declarado por chunk. Si no declara nada recibe el conservador (decisión D-N4). */
     default PresupuestoTrabajo presupuesto(){
         return PresupuestoTrabajo.CONSERVADOR;

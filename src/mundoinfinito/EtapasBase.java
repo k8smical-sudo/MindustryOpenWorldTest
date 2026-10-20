@@ -384,6 +384,12 @@ final class EtapasBase{
             super("decoracion", -200);
         }
 
+        /** Con presupuesto corto la decoración sale más espaciada y repartida (retícula), no cortada a la mitad del chunk. */
+        @Override
+        public ReglaDegradacion reglaDegradacion(){
+            return ReglaDegradacion.REDUCCION_DE_RESOLUCION;
+        }
+
         @Override
         void celda(CeldaBase ce){
             final boolean liq = liquido(ce.p);

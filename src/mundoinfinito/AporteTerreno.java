@@ -23,4 +23,6 @@ final class AporteTerreno{
     final float[] aux = new float[14];
     /** Estado de la casilla que atraviesan las etapas del terreno base (uno por hilo, reutilizado). */
     final CeldaBase celda = new CeldaBase();
+    /** Qué ocurrió con el presupuesto de cada etapa en el último chunk evaluado en este hilo (fase 7). */
+    final PipelineBase.Informe informe = new PipelineBase.Informe();
 }

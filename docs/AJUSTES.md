@@ -50,6 +50,7 @@ Todos de ámbito `GENERACION` y política `MEDIA_PONDERADA`. El valor por defect
 | `mundo-infinito:serpulo-estiramiento-temperatura` | 3.1 | 1.0 a 4.0 | Zonas heladas y abrasadoras más extensas al subir |
 | `mundo-infinito:serpulo-estiramiento-humedad` | 2.7 | 1.0 a 4.0 | Desiertos y pantanos más extensos al subir |
 | `mundo-infinito:fenomenos-distancia-minima` | 0 | 0 a 512 | Distancia mínima en casillas entre fenómenos de **cualquier** mod. 0 = desactivada (ver `AREAS.md`) |
+| `mundo-infinito:terreno-presupuesto-pct` | 100 | 1 a 100 | Qué porcentaje del presupuesto de cada contribución de terreno se le permite gastar por chunk. 100 = sin degradar (ver `PRESUPUESTOS.md`) |
 
 Los tres primeros solo afectan a Serpulo (la etapa `suelo-serpulo`); Erekir no cambia.
 

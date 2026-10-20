@@ -13,7 +13,8 @@ Fases 2 y 3 del plan. El núcleo es el único componente que conoce a los contri
 | `PipelineBase` | Recorre las 1024 casillas **una vez** y aplica las etapas activas en orden canónico |
 | `PresupuestoTrabajo` | Unidades por chunk, consultas y memoria, en unidades **contadas** (nunca tiempo). Sin declarar: conservador (D-N4) |
 | `Orden` | Orden canónico: (prioridad, id de fuente, id) y (cy, cx) |
-| `Degradaciones` | Registro de recortes por mundo. **Vacío todavía** |
+| `ReglaDegradacion` | Las tres reglas de degradación: recorte canónico, reducción de resolución y omisión |
+| `Degradaciones` | Registro por mundo de lo que se recortó: contribución, chunk, unidades pedidas y permitidas, y regla |
 | `Nucleo` | Registro ordenado, evaluación en hilos de fondo, contadores y diagnóstico |
 
 ## Las etapas del terreno base
@@ -48,8 +49,14 @@ La función de una contribución es pura: su salida depende solo de semilla, dim
 
 Límite conocido: el corpus llega hasta el chunk ±990, así que no cubre el borde del mundo.
 
+## Presupuestos y degradación (fase 7)
+Cada contribución declara un presupuesto de unidades de trabajo por chunk. Si lo excede se le aplica su regla de degradación, se registra y la generación sigue. Ver `PRESUPUESTOS.md`.
+
+## Varias contribuciones (fases 5 y 6)
+Parámetros con varias propuestas: `AJUSTES.md`. Terreno disputado y fenómenos de varias fuentes: `AREAS.md`.
+
 ## Qué NO hace todavía
-No recorta a nadie (`DEGRADACION_ACTIVA = false`). Si se registran varias contribuciones de terreno, las etapas se aplican en pasada única y una contribución por chunk que no sea etapa solo se usa si no hay etapas; combinar contribuciones de mods y resolver conflictos es la fase 5.
+Combinar contribuciones de terreno de mods por capas (hoy una macrocélula tiene un solo dueño) ni exponerlas a los mods: llega con la API pública.
 
 ## Pendiente de limpieza
-`Muestreo.muestrear` y los pisos de `Muestreo` duplican ahora el código de las etapas. Se conservan como referencia hasta que el corpus pase en CI con `esperado.txt`; entonces se retiran y las etapas quedan como única fuente de verdad.
+`Muestreo.muestrear` y los pisos de `Muestreo` duplican ahora el código de las etapas. Se conservan como referencia del corpus; cuando `corpus/esperado.txt` esté en el repo y verificando en CI, se retiran y las etapas quedan como única fuente de verdad.

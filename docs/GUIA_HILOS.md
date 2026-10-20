@@ -21,8 +21,13 @@ Asíncrono: `Hilos.Futuro<T> f = Hilos.enviar(Carril.VISUAL, "malla", () -> prep
 Un `enviar` pendiente cuando el mundo cambia se descarta solo (`f.descartado()`).
 
 ## Ruta de un solo hilo
-`Core.settings` clave `ow-hilos`: `0` automático, `1` un solo hilo, `n` n hilos (máx. 8). Para CI: `-Dmow.hilos=1` (tiene prioridad).
+`Core.settings` clave `ow-hilos`: `0` automático, `1` un solo hilo, `n` n hilos (máx. 8). Para CI y escritorio: `-Dmow.hilos=1` (tiene prioridad).
 Con un núcleo, o con valor 1, `ordenado` ejecuta todo en orden en el hilo que llama. **El resultado de simulación debe ser idéntico** al paralelo: esa es la comprobación de la fase 8.
+
+Desde la fase 8 este ajuste gobierna **todos** los hilos del mod, no solo el pool: los hilos de generación de terreno (`Streamer`, vía `Ajustes.hilos()`) y los de cocinado de mallas. Con `1` todo el trabajo de fondo corre en un solo hilo; con `n > 1`, la generación de terreno usa `n` hilos. Se relee cada ~10 s y los hilos de generación lo aplican al abrir un mundo.
+
+## Comprobar el hilo (solo aviso)
+`Hilos.vigilarPrincipal("sitio")` anota en el log, una vez por sitio, si un punto que debe ir en el hilo principal (estado del juego o GPU) se ejecuta en otro. **No bloquea nada.** Si en un dispositivo no sale ningún aviso, ese punto se puede pasar a `Hilos.exigirPrincipal`. Ver `HILOS_REVISION.md`.
 
 ## Garantías
 - Resultado independiente del hilo que acabe antes (se recoge por posición).

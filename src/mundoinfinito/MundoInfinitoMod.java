@@ -2926,6 +2926,7 @@ public class MundoInfinitoMod extends Mod{
 
         static void finalizarApertura(Meta m, Datos datos, boolean nueva, Seq<ChunkData> chunks, int px, int py, int ep){
             if(ep != Streamer.epoca) return;
+            Hilos.vigilarPrincipal("Streamer.finalizarApertura");   // publica chunks en el mundo: solo el hilo principal
             Carga.texto("Construyendo mundo...");
             final IntSeq cargados = new IntSeq();
             for(ChunkData d : chunks){

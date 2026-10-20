@@ -35,6 +35,7 @@ import java.util.Set;
  *   verificar archivo   compara con lo congelado; sale con error si algo cambió
  *   comprobar           reproducibilidad (dos pasadas en frío) y equivalencia de hilos (1, 2 y 4 hilos contra la ruta directa)
  *   base archivo        línea base de coste por chunk (ms) por dimensión y por semilla
+ *   escala archivo      escalado de la generación con 1, 2, 4... hilos (fase 8): tiempo, chunks por segundo y aceleración
  * Regla del plan: si un cambio altera el resultado a propósito, se sube GEN_ACTUAL y se vuelve a congelar; si no, el corpus no se toca.
  */
 public final class Corpus{
@@ -1077,6 +1078,63 @@ public final class Corpus{
         return (d / 100) + "." + (d % 100 < 10 ? "0" : "") + (d % 100);
     }
 
+    /**
+     * Escalado de la generación con hilos (fase 8): cuánto tarda el corpus entero (terreno base por el núcleo, un chunk por tarea, igual que reparten
+     * los hilos de generación del juego) con 1, 2, 4 y, si hay más núcleos, todos hasta 8. Antes de medir se calienta (JIT) y de cada cifra se toma la
+     * mejor de 3 pasadas. Exige que TODOS los resultados sean idénticos al de un hilo; la aceleración solo se informa, nunca hace fallar: depende del
+     * equipo (núcleos compartidos o limitados). Si no hay aceleración, el veredicto lo dice y no se fuerza el paralelismo.
+     */
+    static int escala(String archivo) throws Exception{
+        final List<int[]> es = entradas();
+        final int nuc = Hilos.nucleos();
+        final List<Integer> hs = new ArrayList<Integer>();
+        hs.add(1);
+        if(nuc >= 2) hs.add(2);
+        if(nuc >= 4) hs.add(4);
+        if(nuc > 4) hs.add(Math.min(nuc, Hilos.MAX_HILOS));
+        final ParametrosGeneracion par = ParametrosGeneracion.DEFECTO;
+
+        olvidarCaches();
+        final long[] ref = calcularNucleo(es);
+        calcularConHilos(es, 1, par);                       // calentamiento
+        calcularConHilos(es, hs.get(hs.size() - 1), par);
+
+        final StringBuilder sb = new StringBuilder();
+        sb.append("# escalado de la generacion por chunk: terreno base por el nucleo, ").append(es.size()).append(" chunks, un chunk por tarea, mejor de 3 pasadas tras calentar\n");
+        sb.append("# nucleos=").append(nuc).append(" gen=").append(MundoInfinitoMod.GEN_ACTUAL).append('\n');
+        boolean identico = true;
+        long ns1 = 0L;
+        double mejorAcel = 1.0;
+        for(int h : hs){
+            long mejor = Long.MAX_VALUE;
+            for(int r = 0; r < 3; r++){
+                olvidarCaches();
+                final long t0 = System.nanoTime();
+                final long[] res = calcularConHilos(es, h, par);
+                mejor = Math.min(mejor, System.nanoTime() - t0);
+                if(!Arrays.equals(res, ref)) identico = false;
+            }
+            if(h == 1) ns1 = mejor;
+            final double acel = ns1 / (double)mejor;
+            if(h > 1) mejorAcel = Math.max(mejorAcel, acel);
+            final double ms = mejor / 1e6, porSeg = es.size() * 1e9 / mejor;
+            sb.append("hilos=").append(h).append(" ms=").append(Math.round(ms)).append(" chunks/s=").append(Math.round(porSeg)).append(" ms/chunk=").append(Math.round(ms / es.size() * 100) / 100.0)
+                .append(" aceleracion=").append(Math.round(acel * 100) / 100.0).append('\n');
+        }
+        System.setProperty(Hilos.PROP_HILOS, "0");
+        Hilos.configurar();
+        sb.append("# resultados identicos con todos los hilos: ").append(identico ? "si" : "NO").append('\n');
+        if(nuc < 2) sb.append("# veredicto: un solo nucleo, no hay nada que comparar\n");
+        else if(mejorAcel >= 1.2) sb.append("# veredicto: cumple, con varios hilos la generacion por chunk es mas rapida que con uno (x").append(Math.round(mejorAcel * 100) / 100.0).append(")\n");
+        else sb.append("# veredicto: no cumple en este equipo (x").append(Math.round(mejorAcel * 100) / 100.0)
+            .append("): no se fuerza el paralelismo; ver docs/HILOS_REVISION.md (nucleos compartidos o limitados del equipo, coste de reparto frente al de un chunk)\n");
+        final String texto = sb.toString();
+        System.out.print(texto);
+        final PrintWriter w = new PrintWriter(new FileWriter(archivo));
+        try{ w.print(texto); }finally{ w.close(); }
+        return identico ? 0 : 1;
+    }
+
     public static void main(String[] args){
         int rc = 2;
         try{
@@ -1085,7 +1143,8 @@ public final class Corpus{
             else if(modo.equals("verificar") && args.length > 1) rc = verificar(args[1]);
             else if(modo.equals("comprobar")) rc = comprobar();
             else if(modo.equals("base") && args.length > 1) rc = base(args[1]);
-            else System.out.println("Uso: Corpus congelar|verificar|base ARCHIVO   o   Corpus comprobar");
+            else if(modo.equals("escala") && args.length > 1) rc = escala(args[1]);
+            else System.out.println("Uso: Corpus congelar|verificar|base|escala ARCHIVO   o   Corpus comprobar");
         }catch(Throwable e){
             e.printStackTrace();
             rc = 3;

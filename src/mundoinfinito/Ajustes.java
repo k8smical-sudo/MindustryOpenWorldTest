@@ -83,7 +83,8 @@ final class Ajustes{
     }
 
     static int hilos(){
-        return Math.max(1, Math.min(3, Runtime.getRuntime().availableProcessors() - 2));
+        // "ow-hilos" (o -Dmow.hilos) gobierna todos los hilos del mod: 1 = ruta de un solo hilo, n = n hilos, 0 = automático
+        return Hilos.hilosTerreno(Math.max(1, Math.min(3, Runtime.getRuntime().availableProcessors() - 2)));
     }
 
     /** El render por chunks lee de esta caché todo lo que se ve fuera de la ventana: más holgura que antes (24 MB). */

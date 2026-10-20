@@ -570,6 +570,7 @@ final class ChunkMeshRenderer{
 
     // ================================================================== subida a la GPU (hilo principal, con presupuesto)
     private static void subirListos(int mid){
+        Hilos.vigilarPrincipal("ChunkMeshRenderer.subirListos");   // sube a la GPU: solo el hilo principal
         int subidas = 0;
         final long t0 = System.nanoTime();
         final long limite = Core.graphics != null && Core.graphics.getDeltaTime() > 0.033f ? SUBIDA_LENTO_NS : SUBIDA_NS;

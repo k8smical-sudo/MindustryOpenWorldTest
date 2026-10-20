@@ -157,6 +157,7 @@ final class Anillo{
      * soltó (se reintenta en el siguiente fotograma).
      */
     static boolean publicar(ChunkData d){
+        Hilos.vigilarPrincipal("Anillo.publicar");
         if(d.tiles == null) return true;
         if(!Vars.world.isRing()) return true;
         final Tiles ts = Vars.world.tiles;
@@ -387,6 +388,7 @@ final class Anillo{
      * @return true si el chunk se soltó.
      */
     private static boolean soltar(int cx, int cy, int pcx, int pcy, int carga, boolean forzar){
+        Hilos.vigilarPrincipal("Anillo.soltar");
         final Tiles ts = Vars.world.tiles;
         if(!ts.chunkLoaded(cx, cy)) return false;
         final int k = Streamer.clave(cx, cy);
@@ -586,6 +588,7 @@ final class Anillo{
     }
 
     static void trasladarProxy(int pcx, int pcy, boolean hayAnterior){
+        Hilos.vigilarPrincipal("Anillo.trasladarProxy");
         final int[][] cand = {{16, 16}, {-16, 16}, {16, -16}, {-16, -16}};
         final Tiles ts = Vars.world.tiles;
         for(int[] c : cand){

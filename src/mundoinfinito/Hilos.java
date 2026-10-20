@@ -58,6 +58,8 @@ final class Hilos{
     // ---- configuración
     private static volatile boolean configurado, unHilo;
     private static volatile int tam = 1;
+    /** Lo que pidió el jugador (0 = automático). Se relee con {@link #configurar}; no se consulta el ajuste en cada llamada. */
+    private static volatile int pedidos;
     private static int cuadros;
 
     // ---- pool
@@ -115,6 +117,7 @@ final class Hilos{
         final boolean uno = v == 1 || nuc <= 1;
         tam = uno ? 1 : (v > 1 ? Math.min(v, MAX_HILOS) : Math.max(1, Math.min(MAX_AUTO, nuc - 1)));
         unHilo = uno;
+        pedidos = v;
         configurado = true;
     }
 
@@ -122,6 +125,24 @@ final class Hilos{
     static boolean unHilo(){
         if(!configurado) configurar();
         return unHilo;
+    }
+
+    /**
+     * Hilos de GENERACIÓN DE TERRENO (los de {@code Streamer}). {@code auto} es lo que corresponde sin ajuste. Con la ruta de un solo hilo es 1; con un
+     * número pedido mayor que 1, ese número (hasta {@link #MAX_HILOS}); si no, {@code auto}. Así "ow-hilos" gobierna TODOS los hilos del mod y se puede
+     * comparar uno contra varios en el mismo dispositivo.
+     */
+    static int hilosTerreno(int auto){
+        if(!configurado) configurar();
+        if(unHilo) return 1;
+        final int p = pedidos;
+        return p > 1 ? Math.min(p, MAX_HILOS) : Math.max(1, auto);
+    }
+
+    /** Hilos de COCINADO de mallas (datos para la GPU, sin tocar la GPU). Con la ruta de un solo hilo es 1; si no, {@code auto}. */
+    static int hilosCocina(int auto){
+        if(!configurado) configurar();
+        return unHilo ? 1 : Math.max(1, auto);
     }
 
     /** Hilos de fondo que usa el pool con la configuración vigente. */
@@ -255,6 +276,19 @@ final class Hilos{
             Log.warn("[MundoInfinito] Hilos: '@' exige el hilo principal (mundo vivo / GPU) y se llamó desde '@'; se omite.", sitio, Thread.currentThread().getName());
         }
         return false;
+    }
+
+    /**
+     * SOLO AVISO (nunca bloquea): anota una vez por sitio, en el log, si este punto, que debe ejecutarse en el hilo principal (estado del juego o GPU),
+     * se ejecuta en otro. Sirve para comprobar en un dispositivo real la lista de puntos de enganche sin arriesgar nada; cuando no salga ningún aviso se
+     * puede cambiar por {@link #exigirPrincipal}.
+     */
+    static void vigilarPrincipal(String sitio){
+        final Thread p = principal;
+        if(p == null || Thread.currentThread() == p) return;
+        if(avisados.putIfAbsent("vigila:" + sitio, Boolean.TRUE) == null){
+            Log.warn("[MundoInfinito] Hilos: '@' se ejecutó en el hilo '@' y no en el principal (solo aviso: no se bloquea nada).", sitio, Thread.currentThread().getName());
+        }
     }
 
     // ================================================================== diagnóstico

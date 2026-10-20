@@ -89,6 +89,11 @@ jobs:
         run: |
           mkdir -p build/corpus
           java -cp "build/classes/java/main:libs/MindustryX-Desktop.jar" mundoinfinito.Corpus base build/corpus/linea-base.txt
+      - name: Corpus - escalado de la generacion con hilos
+        continue-on-error: true
+        run: |
+          mkdir -p build/corpus
+          java -cp "build/classes/java/main:libs/MindustryX-Desktop.jar" mundoinfinito.Corpus escala build/corpus/escalado.txt
       - name: Subir resultados del corpus
         if: always()
         uses: actions/upload-artifact@v7

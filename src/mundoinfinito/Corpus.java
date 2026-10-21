@@ -1,13 +1,17 @@
 package mundoinfinito;
 
+import arc.func.Boolp;
 import arc.func.Prov;
 import arc.struct.Seq;
 import arc.util.serialization.Jval;
 
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.PrintWriter;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -24,6 +28,7 @@ import java.util.Set;
  * La ruta directa replica el bucle original de {@code ChunkData.generar}; la ruta del núcleo es la que usa el juego ahora ({@link Nucleo#terreno}).
  * "congelar" usa la ruta directa (referencia independiente del núcleo); "verificar" y la equivalencia de hilos usan la del núcleo.
  * Fase 3: "comprobar" además prueba las etapas por separado (suelo solo contra Muestreo.pisoBase, sin decoración, sin cada etapa).
+ * Fase 9: y la capa visual (orden de capas, shaders, uniformes, fallos aislados, presupuestos, calidad, medición, separación de la simulación).
  * Fase 7: y los presupuestos (las tres reglas de degradación, misma salida degradada siempre, mundo reabierto, nada interrumpe la generación).
  * Fase 6: y el reparto de áreas (cuota de peso por macrocélula, distancia mínima global entre fuentes, conflictos ponderados, procedencia).
  * Fase 5: y las políticas de resolución (media ponderada, prioridad absoluta, elección ponderada con hash, fuera de rango, sin política).
@@ -952,6 +957,371 @@ public final class Corpus{
         for(int[] e : es) hashChunkNucleoCon(par, e[0], e[1], e[2], e[3]);
     }
 
+    // ================================================================== fase 9: capa visual
+
+    private static final class SalidaPrueba implements VisualSalida{
+        float z;
+
+        @Override public void z(float z){ this.z = z; }
+        @Override public void reiniciar(){}
+        @Override public void enCapa(float z, Runnable r){
+            this.z = z;
+            r.run();
+        }
+    }
+
+    private static final class ProgramaPrueba implements VisualPrograma{
+        final boolean falla;
+        int aplicado, liberado;
+
+        ProgramaPrueba(boolean falla){
+            this.falla = falla;
+        }
+
+        @Override
+        public void aplicar(Runnable d){
+            aplicado++;
+            if(falla) throw new IllegalStateException("shader roto de prueba");
+            d.run();
+        }
+
+        @Override public void liberar(){ liberado++; }
+    }
+
+    private static VisualDibujo dib(final SalidaPrueba sal, final List<String> log, String fuente, String nombre, VisualCapa capa, int prio, int coste, boolean esencial, String shader, Boolp activo){
+        final String id = fuente + ":" + nombre;
+        return VisualDibujo.de(fuente, id, capa, prio, coste, esencial, shader, activo, new Runnable(){
+            @Override public void run(){ log.add(id + "@" + sal.z); }
+        });
+    }
+
+    private static VisualDibujo dibQueFalla(String fuente, String nombre, VisualCapa capa, String shader){
+        return VisualDibujo.de(fuente, fuente + ":" + nombre, capa, 0, 1, false, shader, null, new Runnable(){
+            @Override public void run(){ throw new IllegalStateException("dibujo roto de prueba"); }
+        });
+    }
+
+    private static VisualPasada pasada(final List<String> log, String fuente, String nombre, int prio, int pasadas, long bytes){
+        final String id = fuente + ":" + nombre;
+        return VisualPasada.de(fuente, id, prio, pasadas, bytes, new Runnable(){
+            @Override public void run(){ log.add(id); }
+        });
+    }
+
+    private static List<String> ids(List<String> log){
+        final List<String> r = new ArrayList<String>();
+        for(String e : log) r.add(e.indexOf('@') < 0 ? e : e.substring(0, e.indexOf('@')));
+        return r;
+    }
+
+    private static VisualShaderDef shaderDe(String fuente, String nombre, int prio, String[] uniformes, final VisualPrograma p){
+        return VisualShaderDef.de(fuente, fuente + ":" + nombre, prio, uniformes, new Prov<VisualPrograma>(){
+            @Override public VisualPrograma get(){ return p; }
+        });
+    }
+
+    private static boolean referenciaVisual(byte[] b){
+        return new String(b, StandardCharsets.ISO_8859_1).contains("mundoinfinito/Visual");
+    }
+
+    private static byte[] leerClase(File f) throws Exception{
+        final java.io.FileInputStream in = new java.io.FileInputStream(f);
+        try{
+            final java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            final byte[] buf = new byte[8192];
+            int n;
+            while((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            return out.toByteArray();
+        }finally{
+            in.close();
+        }
+    }
+
+    /** Capa visual: orden declarado, shaders, conflictos de uniformes, fallos aislados, presupuestos, calidad, medición y separación de la simulación. */
+    static int comprobarVisual(List<int[]> es, long[] directo) throws Exception{
+        int fallos = 0;
+
+        // ---- orden declarado: (capa, prioridad, fuente, id), con cualquier orden de registro
+        final String[][] defs = {
+            {"zeta", "uno", "UNIDADES", "0"}, {"alfa", "dos", "UNIDADES", "0"}, {"alfa", "tres", "UNIDADES", "-5"}, {"mid", "suelo", "SUELO", "9"},
+            {"mid", "ui", "INTERFAZ", "0"}, {"beta", "bloque", "BLOQUES", "3"}, {"beta", "sobre", "SOBRE_BLOQUES", "0"}
+        };
+        final List<String[]> lista = Arrays.asList(defs);
+        final String esperadoOrden = "[mid:suelo, beta:bloque, beta:sobre, alfa:tres, alfa:dos, zeta:uno, mid:ui]";
+        boolean ordenOk = true;
+        int permus = 0;
+        for(List<String[]> p : permutaciones(lista)){
+            final VisualRegistro r = new VisualRegistro();
+            final SalidaPrueba sal = new SalidaPrueba();
+            final List<String> log = new ArrayList<String>();
+            for(String[] d : p) r.registrarDibujo(dib(sal, log, d[0], d[1], VisualCapa.valueOf(d[2]), Integer.parseInt(d[3]), 1, false, null, null));
+            if(!r.ordenDibujo().toString().equals(esperadoOrden)) ordenOk = false;
+            permus++;
+        }
+        fallos += chequear("el orden de dibujo (capa, prioridad, fuente, id) es el mismo con las " + permus + " ordenaciones de registro", ordenOk && permus == 5040);
+
+        final VisualRegistro rz = new VisualRegistro();
+        final SalidaPrueba sz = new SalidaPrueba();
+        final List<String> lz = new ArrayList<String>();
+        for(int i = defs.length - 1; i >= 0; i--) rz.registrarDibujo(dib(sz, lz, defs[i][0], defs[i][1], VisualCapa.valueOf(defs[i][2]), Integer.parseInt(defs[i][3]), 1, false, null, null));
+        rz.configurar(VisualCalidad.ALTA, false);
+        rz.dibujarFotograma(sz, 16f);
+        boolean zOk = true;
+        float anterior = -1f;
+        for(String e : lz){
+            final float z = Float.parseFloat(e.substring(e.indexOf('@') + 1));
+            if(z < anterior) zOk = false;
+            anterior = z;
+        }
+        fallos += chequear("al dibujar, las capas salen en el orden declarado y con la z de la capa (+ un desplazamiento mínimo dentro de ella): " + lz,
+            ids(lz).toString().equals(esperadoOrden) && zOk && lz.get(3).endsWith("@60.0") && lz.get(4).endsWith("@60.001") && lz.get(5).endsWith("@60.002"));
+        fallos += chequear("las capas siguen el orden real del motor (z creciente)",
+            VisualCapa.SUELO.z < VisualCapa.BLOQUES.z && VisualCapa.BLOQUES.z < VisualCapa.SOBRE_BLOQUES.z && VisualCapa.SOBRE_BLOQUES.z < VisualCapa.UNIDADES.z
+                && VisualCapa.UNIDADES.z < VisualCapa.BALAS.z && VisualCapa.BALAS.z < VisualCapa.SOBRE_UNIDADES.z && VisualCapa.SOBRE_UNIDADES.z < VisualCapa.INTERFAZ.z);
+
+        // ---- un shader se registra, se aplica y se desactiva sin afectar a nada más
+        final VisualRegistro rs = new VisualRegistro();
+        final SalidaPrueba ss = new SalidaPrueba();
+        final List<String> ls = new ArrayList<String>();
+        final ProgramaPrueba azul = new ProgramaPrueba(false);
+        rs.registrarShader(shaderDe("t", "azul", 0, new String[]{"t_fuerza"}, azul));
+        rs.registrarDibujo(dib(ss, ls, "t", "con-shader", VisualCapa.BLOQUES, 0, 1, false, "t:azul", null));
+        rs.registrarDibujo(dib(ss, ls, "t", "sin-shader", VisualCapa.BLOQUES, 1, 1, false, null, null));
+        rs.configurar(VisualCalidad.ALTA, false);
+        rs.dibujarFotograma(ss, 16f);
+        final boolean aplicadoUna = azul.aplicado == 1 && ids(ls).toString().equals("[t:con-shader, t:sin-shader]");
+        rs.desactivar("t:azul", "prueba");
+        ls.clear();
+        rs.dibujarFotograma(ss, 16f);
+        final boolean desactivado = azul.aplicado == 1 && ids(ls).toString().equals("[t:con-shader, t:sin-shader]") && !rs.activo("t:azul");
+        rs.reactivar("t:azul");
+        ls.clear();
+        rs.dibujarFotograma(ss, 16f);
+        fallos += chequear("un shader se registra y se aplica (1 vez), se desactiva (los dibujos salen igual sin él) y se reactiva (2 aplicaciones), sin afectar a los demás dibujos",
+            aplicadoUna && desactivado && azul.aplicado == 2 && rs.activo("t:azul") && ids(ls).toString().equals("[t:con-shader, t:sin-shader]"));
+
+        // ---- dos shaders que escriben el mismo uniforme: aviso y resultado definido, sea cual sea el orden de carga
+        boolean conflictoOk = true;
+        for(int orden = 0; orden < 2; orden++){
+            final VisualRegistro rc = new VisualRegistro();
+            final VisualShaderDef a = shaderDe("aaa", "s1", 0, new String[]{"u_x"}, new ProgramaPrueba(false));
+            final VisualShaderDef b = shaderDe("bbb", "s2", 0, new String[]{"u_x", "u_y"}, new ProgramaPrueba(false));
+            if(orden == 0){
+                rc.registrarShader(a);
+                rc.registrarShader(b);
+            }else{
+                rc.registrarShader(b);
+                rc.registrarShader(a);
+            }
+            if(!"aaa:s1".equals(rc.duenoDeUniforme("u_x")) || !rc.activo("aaa:s1") || rc.activo("bbb:s2") || rc.conflictosUniforme() != 1
+                || !"conflicto de uniforme".equals(rc.motivoDesactivado("bbb:s2"))) conflictoOk = false;
+        }
+        fallos += chequear("dos shaders que escriben el mismo uniforme: aviso, gana el primero en orden canónico y el otro se desactiva, con cualquier orden de registro", conflictoOk);
+
+        final VisualRegistro rc3 = new VisualRegistro();
+        rc3.registrarShader(shaderDe("aaa", "s1", 0, new String[]{"u_x"}, new ProgramaPrueba(false)));
+        rc3.registrarShader(shaderDe("bbb", "s2", 0, new String[]{"u_y"}, new ProgramaPrueba(false)));
+        final boolean sinConflicto = rc3.conflictosUniforme() == 0 && rc3.activo("aaa:s1") && rc3.activo("bbb:s2");
+        rc3.registrarShader(shaderDe("zzz", "s3", -1, new String[]{"u_x"}, new ProgramaPrueba(false)));
+        fallos += chequear("uniformes distintos no chocan; si llega después uno de mayor prioridad que escribe uno ya usado, pasa a ser el dueño y el anterior se desactiva",
+            sinConflicto && "zzz:s3".equals(rc3.duenoDeUniforme("u_x")) && !rc3.activo("aaa:s1") && rc3.activo("zzz:s3") && rc3.activo("bbb:s2") && rc3.conflictosUniforme() == 1);
+
+        // ---- un shader que falla al crearse se desactiva y el dibujo sale igual
+        final VisualRegistro rf = new VisualRegistro();
+        final SalidaPrueba sf = new SalidaPrueba();
+        final List<String> lf = new ArrayList<String>();
+        final int[] creaciones = new int[1];
+        rf.registrarShader(VisualShaderDef.de("t", "t:roto", 0, new String[0], new Prov<VisualPrograma>(){
+            @Override public VisualPrograma get(){
+                creaciones[0]++;
+                throw new IllegalArgumentException("el shader no compila");
+            }
+        }));
+        final ProgramaPrueba sano = new ProgramaPrueba(false);
+        rf.registrarShader(shaderDe("t", "sano", 0, new String[]{"t_sano"}, sano));
+        rf.registrarDibujo(dib(sf, lf, "t", "d-roto", VisualCapa.BLOQUES, 0, 1, false, "t:roto", null));
+        rf.registrarDibujo(dib(sf, lf, "t", "d-sano", VisualCapa.BLOQUES, 1, 1, false, "t:sano", null));
+        rf.configurar(VisualCalidad.ALTA, false);
+        rf.dibujarFotograma(sf, 16f);
+        rf.dibujarFotograma(sf, 16f);
+        fallos += chequear("un shader que no compila se desactiva con aviso, su dibujo sale igual sin él, no se vuelve a intentar y el resto sigue (2 fotogramas)",
+            creaciones[0] == 1 && !rf.activo("t:roto") && "fallo".equals(rf.motivoDesactivado("t:roto")) && rf.activo("t:sano") && sano.aplicado == 2
+                && ids(lf).toString().equals("[t:d-roto, t:d-sano, t:d-roto, t:d-sano]"));
+
+        // ---- un shader que falla al aplicarse
+        final VisualRegistro ra = new VisualRegistro();
+        final SalidaPrueba sa = new SalidaPrueba();
+        final List<String> la = new ArrayList<String>();
+        final ProgramaPrueba roto = new ProgramaPrueba(true);
+        ra.registrarShader(shaderDe("t", "roto", 0, new String[0], roto));
+        ra.registrarDibujo(dib(sa, la, "t", "d", VisualCapa.BLOQUES, 0, 1, false, "t:roto", null));
+        ra.configurar(VisualCalidad.ALTA, false);
+        ra.dibujarFotograma(sa, 16f);
+        ra.dibujarFotograma(sa, 16f);
+        fallos += chequear("un shader que lanza una excepción al aplicarse se desactiva (se libera y no se vuelve a usar) y el dibujo sale sin él en ese mismo fotograma",
+            roto.aplicado == 1 && roto.liberado == 1 && !ra.activo("t:roto") && ids(la).toString().equals("[t:d, t:d]"));
+
+        // ---- un dibujo que falla no se atribuye al shader, y no arrastra a los demás
+        final VisualRegistro rd = new VisualRegistro();
+        final SalidaPrueba sd = new SalidaPrueba();
+        final List<String> ld = new ArrayList<String>();
+        final ProgramaPrueba ok1 = new ProgramaPrueba(false);
+        rd.registrarShader(shaderDe("t", "ok", 0, new String[0], ok1));
+        rd.registrarDibujo(dibQueFalla("t", "malo-con-shader", VisualCapa.BLOQUES, "t:ok"));
+        rd.registrarDibujo(dibQueFalla("t", "malo", VisualCapa.UNIDADES, null));
+        rd.registrarDibujo(dib(sd, ld, "t", "bueno", VisualCapa.INTERFAZ, 0, 1, false, null, null));
+        rd.registrarDibujo(dib(sd, ld, "t", "condicion-rota", VisualCapa.INTERFAZ, 1, 1, false, null, new Boolp(){
+            @Override public boolean get(){ throw new IllegalStateException("condición rota"); }
+        }));
+        rd.configurar(VisualCalidad.ALTA, false);
+        rd.dibujarFotograma(sd, 16f);
+        rd.dibujarFotograma(sd, 16f);
+        fallos += chequear("un dibujo (o su condición) que lanza una excepción se desactiva con aviso; el shader en el que iba sigue activo y los demás dibujos salen en los 2 fotogramas",
+            !rd.activo("t:malo-con-shader") && !rd.activo("t:malo") && !rd.activo("t:condicion-rota") && rd.activo("t:ok") && ok1.aplicado == 1
+                && ids(ld).toString().equals("[t:bueno, t:bueno]"));
+
+        // ---- presupuesto de la calidad: se omite lo opcional de atrás hacia delante; lo esencial no se omite nunca
+        boolean presOk = true;
+        String ultimo = "";
+        for(List<String[]> p : permutaciones(Arrays.asList(
+            new String[]{"e1", "SUELO", "0", "30", "true"}, new String[]{"o1", "BLOQUES", "0", "5", "false"},
+            new String[]{"o2", "BLOQUES", "1", "5", "false"}, new String[]{"o3", "UNIDADES", "0", "20", "false"}))){
+            final VisualRegistro rp = new VisualRegistro();
+            final SalidaPrueba sp = new SalidaPrueba();
+            final List<String> lp = new ArrayList<String>();
+            for(String[] d : p) rp.registrarDibujo(dib(sp, lp, "t", d[0], VisualCapa.valueOf(d[1]), Integer.parseInt(d[2]), Integer.parseInt(d[3]), Boolean.parseBoolean(d[4]), null, null));
+            rp.configurar(VisualCalidad.BAJA, false);   // 40 unidades: 60 pedidas
+            rp.dibujarFotograma(sp, 16f);
+            ultimo = ids(lp).toString();
+            if(!ultimo.equals("[t:e1, t:o1, t:o2]") || rp.ultimoCoste() != 40 || rp.ultimosOmitidos() != 1) presOk = false;
+        }
+        fallos += chequear("con calidad baja (40 unidades) y 60 pedidas se omite lo opcional empezando por el último en orden canónico (queda " + ultimo + "), con las 24 ordenaciones", presOk);
+
+        final VisualRegistro rg = new VisualRegistro();
+        final SalidaPrueba sg = new SalidaPrueba();
+        final List<String> lg = new ArrayList<String>();
+        rg.registrarDibujo(dib(sg, lg, "t", "grande-esencial", VisualCapa.BLOQUES, 0, 100, true, null, null));
+        rg.registrarDibujo(dib(sg, lg, "t", "inactivo", VisualCapa.BLOQUES, 1, 500, false, null, new Boolp(){
+            @Override public boolean get(){ return false; }
+        }));
+        rg.configurar(VisualCalidad.BAJA, false);
+        rg.dibujarFotograma(sg, 16f);
+        fallos += chequear("un dibujo esencial nunca se omite aunque exceda el presupuesto, y uno cuya condición es falsa no cuenta en el coste", ids(lg).toString().equals("[t:grande-esencial]") && rg.ultimoCoste() == 100);
+        rg.configurar(VisualCalidad.ALTA, false);
+
+        // ---- cadena de post-procesado con coste declarado
+        boolean pasOk = true;
+        for(List<String[]> p : permutaciones(Arrays.asList(
+            new String[]{"p1", "0", "1", "4194304"}, new String[]{"p2", "1", "1", "4194304"}, new String[]{"p3", "2", "1", "1048576"}))){
+            final VisualRegistro rq = new VisualRegistro();
+            final List<String> lq = new ArrayList<String>();
+            for(String[] d : p) rq.registrarPasada(pasada(lq, "t", d[0], Integer.parseInt(d[1]), Integer.parseInt(d[2]), Long.parseLong(d[3])));
+            rq.configurar(VisualCalidad.MEDIA, false);   // 2 pasadas y 8 MB
+            rq.ejecutarPasadas();
+            if(!lq.toString().equals("[t:p1, t:p2]") || rq.ultimasPasadas() != 2 || rq.ultimasPasadasOmitidas() != 1 || rq.ultimosBytes() != 8L * 1024 * 1024) pasOk = false;
+            lq.clear();
+            rq.configurar(VisualCalidad.BAJA, false);
+            rq.ejecutarPasadas();
+            if(!lq.isEmpty() || rq.ultimasPasadasOmitidas() != 3) pasOk = false;
+            lq.clear();
+            rq.configurar(VisualCalidad.ALTA, false);
+            rq.ejecutarPasadas();
+            if(!lq.toString().equals("[t:p1, t:p2, t:p3]")) pasOk = false;
+        }
+        fallos += chequear("las pasadas de post-procesado salen en orden canónico y solo mientras quepan: media (2 pasadas, 8 MB) deja la tercera fuera, baja ninguna, alta todas (6 ordenaciones)", pasOk);
+
+        final VisualRegistro rr = new VisualRegistro();
+        final List<String> lr = new ArrayList<String>();
+        rr.registrarPasada(VisualPasada.de("t", "t:mala", 0, 1, 1L, new Runnable(){
+            @Override public void run(){ throw new IllegalStateException("pasada rota"); }
+        }));
+        rr.registrarPasada(pasada(lr, "t", "buena", 1, 1, 1L));
+        rr.configurar(VisualCalidad.ALTA, false);
+        rr.ejecutarPasadas();
+        rr.ejecutarPasadas();
+        fallos += chequear("una pasada que falla se desactiva con aviso y las demás siguen", !rr.activo("t:mala") && lr.toString().equals("[t:buena, t:buena]"));
+
+        // ---- registros inválidos
+        final VisualRegistro rv = new VisualRegistro();
+        final boolean rechaza = !rv.registrarDibujo(VisualDibujo.de("t", "sin-formato", VisualCapa.BLOQUES, 0, 1, false, null, null, new Runnable(){ @Override public void run(){} }))
+            && !rv.registrarShader(VisualShaderDef.de("t", "t:x", 0, null, null)) && !rv.registrarPasada(null);
+        final VisualDibujo duplicable = dib(new SalidaPrueba(), new ArrayList<String>(), "t", "uno", VisualCapa.BLOQUES, 0, 1, false, null, null);
+        fallos += chequear("se rechazan los registros sin formato de id, sin función o duplicados", rechaza && rv.registrarDibujo(duplicable) && !rv.registrarDibujo(duplicable));
+
+        // ---- medición automática de fotogramas
+        final VisualMonitor mon = new VisualMonitor();
+        for(int i = 0; i < VisualMonitor.IGNORAR; i++) mon.muestra(500f);
+        final boolean ignoraCarga = mon.niveles() == 0;
+        for(int i = 0; i < VisualMonitor.VENTANA; i++) mon.muestra(40f);
+        final VisualCalidad tras1 = mon.efectiva(VisualCalidad.ALTA);
+        for(int i = 0; i < VisualMonitor.VENTANA; i++) mon.muestra(40f);
+        final VisualCalidad tras2 = mon.efectiva(VisualCalidad.ALTA);
+        for(int i = 0; i < VisualMonitor.VENTANA; i++) mon.muestra(40f);
+        final boolean noPasaDeBaja = mon.niveles() == 2 && mon.efectiva(VisualCalidad.ALTA) == VisualCalidad.BAJA && mon.efectiva(VisualCalidad.MEDIA) == VisualCalidad.BAJA && mon.efectiva(VisualCalidad.BAJA) == VisualCalidad.BAJA;
+        for(int i = 0; i < VisualMonitor.VENTANA * VisualMonitor.VENTANAS_PARA_SUBIR; i++) mon.muestra(10f);
+        final int trasMejora1 = mon.niveles();
+        for(int i = 0; i < VisualMonitor.VENTANA * VisualMonitor.VENTANAS_PARA_SUBIR; i++) mon.muestra(10f);
+        final int trasMejora2 = mon.niveles();
+        final boolean nuncaSobreElegida = mon.efectiva(VisualCalidad.MEDIA) == VisualCalidad.MEDIA && mon.efectiva(VisualCalidad.BAJA) == VisualCalidad.BAJA;
+        for(int i = 0; i < VisualMonitor.VENTANA * 3; i++) mon.muestra(25f);   // entre los dos umbrales: no cambia nada
+        final boolean intermedio = mon.niveles() == 0;
+        final VisualMonitor tiron = new VisualMonitor();
+        for(int i = 0; i < VisualMonitor.IGNORAR; i++) tiron.muestra(10f);
+        tiron.muestra(5000f);
+        for(int i = 1; i < VisualMonitor.VENTANA; i++) tiron.muestra(10f);
+        fallos += chequear("la medición automática ignora la carga, baja un nivel por ventana lenta hasta baja, no sube por encima de lo elegido, recupera tras 5 ventanas rápidas y un tirón suelto no decide",
+            ignoraCarga && tras1 == VisualCalidad.MEDIA && tras2 == VisualCalidad.BAJA && noPasaDeBaja && trasMejora1 == 1 && trasMejora2 == 0 && nuncaSobreElegida && intermedio && tiron.niveles() == 0);
+
+        final VisualRegistro rm = new VisualRegistro();
+        rm.configurar(VisualCalidad.ALTA, true);
+        final SalidaPrueba sm = new SalidaPrueba();
+        for(int i = 0; i < VisualMonitor.IGNORAR + VisualMonitor.VENTANA; i++) rm.dibujarFotograma(sm, 50f);
+        final VisualCalidad conAuto = rm.calidad();
+        rm.configurar(VisualCalidad.ALTA, false);
+        fallos += chequear("con la medición automática activada el registro baja de alta a media con fotogramas lentos; desactivada, queda en la elegida", conAuto == VisualCalidad.MEDIA && rm.calidad() == VisualCalidad.ALTA && VisualCalidad.deIndice(-3) == VisualCalidad.BAJA && VisualCalidad.deIndice(9) == VisualCalidad.ALTA);
+
+        // ---- la calidad visual no cambia el mundo
+        boolean mismoMundo = true;
+        for(VisualCalidad q : VisualCalidad.values()){
+            VisualRegistro.global().configurar(q, false);
+            olvidarCaches();
+            if(!Arrays.equals(directo, calcularNucleo(es)) || VisualRegistro.global().calidad() != q) mismoMundo = false;
+        }
+        VisualRegistro.global().configurar(VisualCalidad.ALTA, true);
+        fallos += chequear("cambiar la calidad visual (baja, media, alta) no cambia ni un chunk del corpus (" + es.size() + " chunks, 3 calidades)", mismoMundo);
+
+        // ---- la simulación y la generación no pueden referenciar la capa visual (se mira el código compilado)
+        final java.util.Set<String> sim = new HashSet<String>(Arrays.asList("Nucleo", "PipelineBase", "CeldaBase", "EtapaBase", "EtapasBase", "Reparto", "Resolucion", "Fenomenos",
+            "Procedencia", "Orden", "Contribucion", "ContribucionTerreno", "ContribucionParametro", "PropuestaParametro", "PresupuestoTrabajo", "Degradaciones", "PerfilMundo",
+            "RegistroAjustes", "AjusteMundo", "ParametrosGeneracion", "ReglaDegradacion", "ContextoAporte", "AporteTerreno", "Extensiones", "Hilos", "ContextoFenomeno",
+            "ContextoTerreno", "GeneradorFenomeno", "GeneradorTerreno", "Estructuras"));
+        final URL url = Corpus.class.getResource("Corpus.class");
+        if(url == null || !"file".equals(url.getProtocol())){
+            fallos += chequear("separación simulación / capa visual: no verificable (el código no está en un directorio de clases)", true);
+        }else{
+            final File dir = new File(url.toURI()).getParentFile();
+            final File[] clases = dir.listFiles();
+            int mirados = 0;
+            final List<String> infractoras = new ArrayList<String>();
+            boolean detectorFunciona = false;
+            if(clases != null){
+                for(File f : clases){
+                    final String n = f.getName();
+                    if(!n.endsWith(".class")) continue;
+                    final String base = n.substring(0, n.length() - 6);
+                    final String top = base.indexOf('$') < 0 ? base : base.substring(0, base.indexOf('$'));
+                    if(base.equals("VisualRegistro")) detectorFunciona = referenciaVisual(leerClase(f));
+                    if(!sim.contains(top)) continue;
+                    mirados++;
+                    if(referenciaVisual(leerClase(f))) infractoras.add(base);
+                }
+            }
+            fallos += chequear("la simulación y la generación no referencian la capa visual: " + mirados + " clases revisadas en el código compilado, " + infractoras.size() + " infractoras " + infractoras
+                + " (el detector ve las referencias de VisualRegistro: " + detectorFunciona + ")", infractoras.isEmpty() && mirados >= 25 && detectorFunciona);
+        }
+        return fallos;
+    }
+
     static int comprobar() throws Exception{
         final List<int[]> es = entradas();
         int fallos = 0;
@@ -989,6 +1359,7 @@ public final class Corpus{
         fallos += comprobarResolucion();
         fallos += comprobarAreas();
         fallos += comprobarPresupuestos(es, a);
+        fallos += comprobarVisual(es, a);
 
         for(int n : new int[]{1, 2, 4}){
             olvidarCaches();

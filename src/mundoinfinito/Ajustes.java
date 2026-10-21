@@ -13,12 +13,15 @@ import mindustry.gen.Icon;
  *   distancia de simulación  radio (REDONDO) dentro del cual viven las unidades; más lejos duermen (ver Entidades)
  *   niebla de guerra         activada = lo no explorado se oculta; desactivada = se ve todo lo cargado (como "fogofwar" en Mindustry v4)
  *   visión del dron          radio (en chunks) que el dron del jugador revela a su alrededor (0 = automático: la distancia de carga)
+ *   calidad visual           baja, media o alta (solo dibujo: nunca afecta a la simulación ni al mundo) y si la medición de fotogramas puede bajarla sola
+ *   prueba visual            dos casillas, apagadas por defecto, para comprobar el shader de prueba y el aislamiento de un shader que falla
  *
  * El resto (hilos, caché, presupuesto por frame, reubicación circular/anticipada, modo estricto) ya no es configurable: los
  * métodos se conservan con valores fijos para que el resto del mod compile sin tocarlo, y el render por chunks no los necesita.
  */
 final class Ajustes{
     static final String K_CARGA = "ow-carga", K_SIM = "ow-sim", K_NIEBLA = "ow-niebla", K_VISION = "ow-vision";
+    static final String K_CALIDAD = "ow-calidad", K_CALIDAD_AUTO = "ow-calidad-auto", K_PRUEBA = "ow-visual-prueba", K_PRUEBA_FALLA = "ow-visual-prueba-falla";
     /** Con visión automática el dron nunca revela más de esto (la niebla se actualiza por cada casilla que se mueve el dron). */
     static final int VISION_AUTO_MAX = 12;
     /** Menor distancia de chunks permitida (antes 3): con 1 solo se carga el chunk del jugador y sus vecinos inmediatos. */
@@ -41,6 +44,24 @@ final class Ajustes{
      */
     static int cargaPorDefecto(){
         return Vars.mobile ? 6 : 8;
+    }
+
+    /** Calidad visual elegida (0 baja, 1 media, 2 alta; por defecto alta). Solo la lee la capa visual. */
+    static VisualCalidad calidadVisual(){
+        return VisualCalidad.deIndice(Core.settings.getInt(K_CALIDAD, 2));
+    }
+
+    /** ¿Puede la medición de fotogramas bajar la calidad visual por sí sola? (por defecto sí) */
+    static boolean calidadAuto(){
+        return Core.settings.getBool(K_CALIDAD_AUTO, true);
+    }
+
+    static boolean pruebaVisual(){
+        return Core.settings.getBool(K_PRUEBA, false);
+    }
+
+    static boolean pruebaVisualFalla(){
+        return Core.settings.getBool(K_PRUEBA_FALLA, false);
     }
 
     static int simPorDefecto(){
@@ -131,11 +152,19 @@ final class Ajustes{
             p.put("setting." + K_SIM + ".name", "Distancia de simulación (chunks)");
             p.put("setting." + K_NIEBLA + ".name", "Niebla de guerra (ocultar lo no explorado)");
             p.put("setting." + K_VISION + ".name", "Visión del dron (chunks que revela)");
+            p.put("setting." + K_CALIDAD + ".name", "Calidad visual (solo dibujo)");
+            p.put("setting." + K_CALIDAD_AUTO + ".name", "Bajar la calidad visual sola si hay pocos FPS");
+            p.put("setting." + K_PRUEBA + ".name", "Prueba visual: shader de prueba (solo para comprobar)");
+            p.put("setting." + K_PRUEBA_FALLA + ".name", "Prueba visual: shader que falla (solo para comprobar)");
             Vars.ui.settings.addCategory("OpenWorld", Icon.map, t -> {
                 t.sliderPref(K_CARGA, Math.min(cargaPorDefecto(), maxCarga()), MIN_CARGA, maxCarga(), v -> v + " chunks (" + (v * MundoInfinitoMod.TAM_CHUNK) + " tiles, redondo)");
                 t.sliderPref(K_SIM, simPorDefecto(), MIN_CARGA, maxCarga(), v -> v + " chunks (redondo)");
                 t.checkPref(K_NIEBLA, true);
                 t.sliderPref(K_VISION, 0, 0, maxCarga(), v -> v <= 0 ? "Automática (según la distancia de carga)" : v + " chunks (" + (v * MundoInfinitoMod.TAM_CHUNK) + " tiles)");
+                t.sliderPref(K_CALIDAD, 2, 0, 2, v -> VisualCalidad.deIndice(v).nombre);
+                t.checkPref(K_CALIDAD_AUTO, true);
+                t.checkPref(K_PRUEBA, false);
+                t.checkPref(K_PRUEBA_FALLA, false);
             });
         }catch(Throwable e){
             Log.err("[MundoInfinito] No se pudo crear la sección OpenWorld en Ajustes", e);

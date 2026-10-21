@@ -112,6 +112,7 @@ public class MundoInfinitoMod extends Mod{
         FenomenosBase.registrar();
         GameRulesBase.registrar();   // gamerules del mod base (misma API que las de otros mods)
         Visuales.registrar();   // dibuja el cuerpo de los bloques drawCached (puentes, muros, nodos...) que el modo anillo deja sin caché
+        VisualArc.registrar();  // capa visual (fase 9): registro de dibujos, shaders y pasadas con calidad y aislamiento de fallos
 
         // Botón en el menú principal cuando el cliente terminó de cargar.
         Events.on(ClientLoadEvent.class, e -> Time.runTask(10f, () -> { MenuUI.inyectarBoton(); Hud.crear(); MapaVista.crear(); Ajustes.registrar(); }));

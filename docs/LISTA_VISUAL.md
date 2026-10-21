@@ -14,3 +14,7 @@ Se revisa en cada rebase de MX-TEST y en cada cambio de la capa visual (plan, se
 | 6 | Un shader | Agua profunda cerca del origen (o el shader de prueba de la fase 9) | Sin artefactos | pendiente |
 | 7 | Un post-procesado | Bloom activo con luz cerca de unos bloques | Brillo suave, sin cortes en los bordes de chunk | pendiente |
 | 8 | Niebla y oscuridad | Alejarse del claro hacia un macizo | Niebla y oscuridad sin costuras en el borde del anillo | pendiente |
+| 9 | Capa visual sin mods | Repetir las escenas 1 a 8 con la capa visual instalada, sin activar ninguna prueba | Idénticas a las capturas anteriores: sin ningún mod visual la capa no dibuja nada | pendiente |
+| 10 | Shader de prueba | Ajustes -> OpenWorld -> "Prueba visual: shader de prueba" activada, junto al dron | Un cuadrado teñido de naranja que pulsa sobre el dron; al apagarla desaparece y nada más cambia | pendiente |
+| 11 | Shader que falla | Activar "Prueba visual: shader que falla" (con la anterior también activada) | El cuadrado de abajo sale blanco, sin tinte; el log avisa una sola vez; el cuadrado naranja y la partida siguen | pendiente |
+| 12 | Calidad visual | Cambiar la calidad a baja, media y alta con la escena 10 activa | El terreno y los bloques no cambian; la prueba sigue saliendo | pendiente |

@@ -4,6 +4,7 @@ import arc.func.Boolp;
 import arc.func.Prov;
 import arc.struct.Seq;
 import arc.util.serialization.Jval;
+import mindustry.world.meta.Env;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -1289,6 +1290,11 @@ public final class Corpus{
         }
         VisualRegistro.global().configurar(VisualCalidad.ALTA, true);
         fallos += chequear("cambiar la calidad visual (baja, media, alta) no cambia ni un chunk del corpus (" + es.size() + " chunks, 3 calidades)", mismoMundo);
+
+        // ---- regresión de un dispositivo real: el entorno combinado no puede incluir el calor abrasador (mataba a las unidades de Serpulo)
+        fallos += chequear("el entorno combinado de los mundos con construcción global no incluye el calor abrasador (Env.scorching), que mata a las unidades de Serpulo al aparecer; incluye los de ambos planetas",
+            (MundoInfinitoMod.ENTORNO_COMBINADO & Env.scorching) == 0
+                && (MundoInfinitoMod.ENTORNO_COMBINADO & (Env.terrestrial | Env.spores | Env.groundOil | Env.groundWater | Env.oxygen)) == (Env.terrestrial | Env.spores | Env.groundOil | Env.groundWater | Env.oxygen));
 
         // ---- la simulación y la generación no pueden referenciar la capa visual (se mira el código compilado)
         final java.util.Set<String> sim = new HashSet<String>(Arrays.asList("Nucleo", "PipelineBase", "CeldaBase", "EtapaBase", "EtapasBase", "Reparto", "Resolucion", "Fenomenos",

@@ -57,23 +57,39 @@ final class VisualArc{
         }
     };
 
-    /** Un shader de Arc como programa del registro visual. */
-    static final class ArcPrograma implements VisualPrograma{
-        private final Shader shader;
+    /**
+     * Shader de Arc cuyos uniformes se escriben en {@link #apply()}. Es OBLIGATORIO hacerlo ahí: {@code Draw.shader(...)} solo anota qué shader se
+     * usará; el lote lo enlaza ({@code bind}) más tarde, al volcar, y justo después llama a {@code apply()}. Escribir un uniforme antes, con otro programa
+     * activo, da "GL_INVALID_OPERATION" en cada fotograma (así lo mostró el primer log de un dispositivo real). Los shaders de Mindustry hacen lo mismo.
+     */
+    static final class ShaderPropio extends Shader{
         private final Cons<Shader> uniformes;
 
-        ArcPrograma(Shader shader, Cons<Shader> uniformes){
-            this.shader = shader;
+        ShaderPropio(String vertice, String fragmento, Cons<Shader> uniformes){
+            super(vertice, fragmento);
             this.uniformes = uniformes;
         }
 
         @Override
+        public void apply(){
+            if(uniformes != null) uniformes.get(this);   // el programa ya está enlazado
+        }
+    }
+
+    /** Un shader de Arc como programa del registro visual. */
+    static final class ArcPrograma implements VisualPrograma{
+        private final Shader shader;
+
+        ArcPrograma(Shader shader){
+            this.shader = shader;
+        }
+
+        @Override
         public void aplicar(Runnable dibujo){
-            Draw.shader(shader);
+            Draw.shader(shader);   // solo anota el shader: el lote lo enlaza y llama a shader.apply() al volcar
             try{
-                if(uniformes != null) uniformes.get(shader);   // los uniformes que este shader declaró como suyos
                 dibujo.run();
-                Draw.flush();
+                Draw.flush();      // vuelca con este shader activo
             }finally{
                 Draw.shader();
             }
@@ -91,7 +107,7 @@ final class VisualArc{
      * @param uniformes lo que se escribe en el shader cada vez que se aplica (null = nada)
      */
     static VisualPrograma crear(String vertice, String fragmento, Cons<Shader> uniformes){
-        return new ArcPrograma(new Shader(vertice, fragmento), uniformes);
+        return new ArcPrograma(new ShaderPropio(vertice, fragmento, uniformes));
     }
 
     /** Engancha el registro visual al dibujo del motor. Una sola vez; no hace nada en servidores. */

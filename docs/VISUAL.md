@@ -53,6 +53,7 @@ VisualRegistro.global().registrarShader(VisualShaderDef.de(
     new String[]{"minmod_fuerza"},                     // uniformes que ESCRIBE: cada uno tiene un solo dueño
     () -> VisualArc.crear(VisualArc.VERTICE, FRAGMENTO, sh -> sh.setUniformf("minmod_fuerza", 0.7f))));
 ```
+- Los uniformes (la función que se pasa a `VisualArc.crear`) se escriben en `Shader.apply()`, que el lote llama justo después de enlazar el programa. **No hay que escribirlos en ningún otro sitio:** `Draw.shader(...)` solo anota qué shader se usará, y escribir un uniforme antes, con otro programa activo, da `GL_INVALID_OPERATION` en cada fotograma (así falló el primer intento en un dispositivo real).
 - El programa se crea la primera vez que se usa, en el hilo de render. Si el GLSL no compila, Arc lanza una excepción: el shader se desactiva con aviso y los dibujos salen sin él.
 - **Propiedad de uniformes:** si dos shaders declaran escribir el mismo uniforme, hay aviso y gana el primero en orden canónico (prioridad, fuente, id); el otro queda desactivado. Pasa igual con cualquier orden de carga. Conviene prefijar los uniformes con el id del mod.
 - Para sprites, `VisualArc.VERTICE` es el vértice por defecto de Arc.

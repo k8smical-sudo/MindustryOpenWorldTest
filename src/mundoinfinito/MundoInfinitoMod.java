@@ -113,18 +113,6 @@ public class MundoInfinitoMod extends Mod{
         GameRulesBase.registrar();   // gamerules del mod base (misma API que las de otros mods)
         Visuales.registrar();   // dibuja el cuerpo de los bloques drawCached (puentes, muros, nodos...) que el modo anillo deja sin caché
         VisualArc.registrar();  // capa visual (fase 9): registro de dibujos, shaders y pasadas con calidad y aislamiento de fallos
-        // Diagnóstico: si el dron del jugador muere, el log dice por qué puede ser (tipo, entorno que soporta, posición). Pocas líneas por sesión.
-        Events.on(mindustry.game.EventType.UnitDestroyEvent.class, e -> {
-            try{
-                if(diagMuertes >= 8 || Vars.player == null || e.unit == null || e.unit != Vars.player.unit()) return;
-                diagMuertes++;
-                final int env = Vars.state.rules.env;
-                Log.warn("[MundoInfinito] Murió el dron del jugador: tipo=@, soporta el entorno=@, env=@, planeta=@, posición=(@, @).",
-                    e.unit.type.name, e.unit.type.supportsEnv(env), env, Vars.state.rules.planet == null ? "?" : Vars.state.rules.planet.name, (int)(e.unit.x / 8f), (int)(e.unit.y / 8f));
-            }catch(Throwable t){
-                // el diagnóstico nunca debe causar un problema
-            }
-        });
 
         // Botón en el menú principal cuando el cliente terminó de cargar.
         Events.on(ClientLoadEvent.class, e -> Time.runTask(10f, () -> { MenuUI.inyectarBoton(); Hud.crear(); MapaVista.crear(); Ajustes.registrar(); }));
@@ -147,16 +135,8 @@ public class MundoInfinitoMod extends Mod{
         SiloInterdimensional.cargar();
     }
 
-    /**
-     * Entorno combinado: así el menú de construcción ofrece bloques de AMBOS planetas.
-     * SIN {@code Env.scorching} (calor abrasador): ningún bloque lo necesita, pero el tipo de unidad por defecto lo tiene en {@code envDisabled}, así que
-     * con él TODAS las unidades de Serpulo (el dron alpha, beta, gamma...) mueren al aparecer ("unitEnvDeath") y el jugador se queda en un bucle de
-     * autodestrucción. Las unidades de Erekir lo toleran (envDisabled = 0), de modo que quitarlo no les afecta.
-     */
-    static final int ENTORNO_COMBINADO = Env.terrestrial | Env.spores | Env.groundOil | Env.groundWater | Env.oxygen;
-
-    /** Cuántas muertes del dron del jugador se han escrito ya en el log (diagnóstico, con tope). */
-    private static int diagMuertes;
+    /** Entorno combinado: así el menú de construcción ofrece bloques de AMBOS planetas. */
+    static final int ENTORNO_COMBINADO = Env.terrestrial | Env.spores | Env.groundOil | Env.groundWater | Env.oxygen | Env.scorching;
 
     // ==================================================================
     // Meta de un mundo guardado
@@ -3072,12 +3052,7 @@ public class MundoInfinitoMod extends Mod{
                     CoreBlock.CoreBuild c = Vars.state.teams.closestCore(px * 8f, py * 8f, Team.sharded);
                     tipo = c != null ? ((CoreBlock)c.block).unitType : ((CoreBlock)Streamer.meta.nucleoBlock()).unitType;
                 }
-                if(!tipo.supportsEnv(Vars.state.rules.env)){
-                    // el tipo guardado no soporta este entorno: se busca uno que sí (alpha en Serpulo, evoke en un mundo con calor abrasador)
-                    final UnitType alt = UnitTypes.alpha.supportsEnv(Vars.state.rules.env) ? UnitTypes.alpha : UnitTypes.evoke;
-                    Log.warn("[MundoInfinito] El dron guardado (@) no soporta el entorno del mundo (env=@); se usa @.", tipo.name, Vars.state.rules.env, alt.name);
-                    tipo = alt;
-                }
+                if(!tipo.supportsEnv(Vars.state.rules.env)) tipo = UnitTypes.alpha;
                 Unit u = tipo.spawn(Team.sharded, px * 8f, py * 8f);
                 u.spawnedByCore = true;   // como los avatares reales: el límite de unidades no debe eliminarlo
                 Vars.player.unit(u);
@@ -3137,7 +3112,6 @@ public class MundoInfinitoMod extends Mod{
             }
             Extensiones.aplicarGameRules(actual, r);   // gamerules elegidas al crear el mundo (las del base y las de otros mods)
             OpenWorldAPI.aplicarReglas(r);   // los mods que dependen de este ajustan las reglas aquí (enemigos, oleadas, equipos...)
-            Log.info("[MundoInfinito] Reglas del mundo: planeta=@, env=@ (calor abrasador: @)", r.planet == null ? "?" : r.planet.name, r.env, (r.env & Env.scorching) != 0 ? "sí" : "no");
         }
 
         /** Reinicio completo (solo al entrar, continuar o cruzar un portal): vacía entidades y suelta el arreglo de tiles. */

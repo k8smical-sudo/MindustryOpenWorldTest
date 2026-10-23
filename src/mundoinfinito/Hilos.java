@@ -177,6 +177,14 @@ final class Hilos{
     }
 
     /**
+     * Como {@link #enviar}, pero la tarea NO caduca al cambiar de mundo: para trabajo que no pertenece a un mundo (preparar la malla o la textura de un mod).
+     * Sigue siendo una tarea pura: nada del mundo vivo ni de la GPU.
+     */
+    static <T> Futuro<T> enviarSiempre(Carril carril, String etiqueta, Prov<T> tarea){
+        return poner(carril, etiqueta, tarea, -1);
+    }
+
+    /**
      * Ejecuta un lote de tareas puras y devuelve sus valores EN EL MISMO ORDEN en que se entregaron, sea cual sea el hilo que acabe
      * antes. Una tarea fallida deja null en su posición. Bloquea al que llama hasta que todas terminen (ayudando a ejecutarlas):
      * NO llamar desde el hilo principal con trabajo pesado; sí desde hilos de generación, de cocinado o del propio pool.

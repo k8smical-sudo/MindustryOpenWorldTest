@@ -1,6 +1,7 @@
 package mundoinfinito;
 
 import arc.func.Boolp;
+import arc.func.Cons;
 import arc.func.Prov;
 import arc.struct.Seq;
 import arc.util.serialization.Jval;
@@ -29,6 +30,7 @@ import java.util.Set;
  * La ruta directa replica el bucle original de {@code ChunkData.generar}; la ruta del núcleo es la que usa el juego ahora ({@link Nucleo#terreno}).
  * "congelar" usa la ruta directa (referencia independiente del núcleo); "verificar" y la equivalencia de hilos usan la del núcleo.
  * Fase 3: "comprobar" además prueba las etapas por separado (suelo solo contra Muestreo.pisoBase, sin decoración, sin cada etapa).
+ * Fase 10: y los efectos con pool, el color ambiental con política y las mallas preparadas fuera del hilo de render.
  * Fase 9: y la capa visual (orden de capas, shaders, uniformes, fallos aislados, presupuestos, calidad, medición, separación de la simulación).
  * Fase 7: y los presupuestos (las tres reglas de degradación, misma salida degradada siempre, mundo reabierto, nada interrumpe la generación).
  * Fase 6: y el reparto de áreas (cuota de peso por macrocélula, distancia mínima global entre fuentes, conflictos ponderados, procedencia).
@@ -1328,6 +1330,329 @@ public final class Corpus{
         return fallos;
     }
 
+    // ================================================================== fase 10: efectos, ambiente y mallas
+
+    private static VisualEfectoDef efectoPrueba(final List<float[]> log, final SalidaPrueba sal, String fuente, String nombre, VisualCapa capa, int prio, float dur, int coste, boolean esencial){
+        final String id = fuente + ":" + nombre;
+        return VisualEfectoDef.de(fuente, id, capa, prio, dur, coste, esencial, new Cons<VisualEfectoInst>(){
+            @Override public void get(VisualEfectoInst i){ log.add(new float[]{i.x, i.y, sal.z, i.fin(), i.seq}); }
+        });
+    }
+
+    private static boolean emitirSimple(VisualEfectos ef, String id, float x){
+        return ef.emitir(id, x, 0f, 0f, 1f, 1f, 1f, 1f, null);
+    }
+
+    private static int[] bits(float[] c){
+        return new int[]{Float.floatToIntBits(c[0]), Float.floatToIntBits(c[1]), Float.floatToIntBits(c[2]), Float.floatToIntBits(c[3])};
+    }
+
+    /** Efectos con pool, color ambiental con política y mallas preparadas fuera del hilo de render. */
+    static int comprobarVisual10() throws Exception{
+        int fallos = 0;
+
+        // ---- un efecto aparece en la posición y la capa declaradas y desaparece al terminar su duración
+        final VisualEfectos ef = new VisualEfectos(512);
+        final SalidaPrueba se = new SalidaPrueba();
+        final List<float[]> le = new ArrayList<float[]>();
+        fallos += chequear("se rechazan los efectos sin formato de id, sin duración positiva o duplicados",
+            !ef.registrarEfecto(VisualEfectoDef.de("t", "sin-formato", VisualCapa.BLOQUES, 0, 10f, 1, false, new Cons<VisualEfectoInst>(){ @Override public void get(VisualEfectoInst i){} }))
+                && !ef.registrarEfecto(VisualEfectoDef.de("t", "t:cero", VisualCapa.BLOQUES, 0, 0f, 1, false, new Cons<VisualEfectoInst>(){ @Override public void get(VisualEfectoInst i){} }))
+                && ef.registrarEfecto(efectoPrueba(le, se, "t", "anillo", VisualCapa.SOBRE_BLOQUES, 0, 60f, 1, false))
+                && !ef.registrarEfecto(efectoPrueba(le, se, "t", "anillo", VisualCapa.SOBRE_BLOQUES, 0, 60f, 1, false)));
+        ef.configurar(VisualCalidad.ALTA);
+        final boolean emitido = ef.emitir("t:anillo", 10f, 20f, 0f, 1f, 1f, 1f, 1f, null);
+        for(int t = 1; t <= 59; t++) ef.dibujar(se, 1f);
+        final boolean vivoA59 = ef.vivos() == 1 && le.size() == 59;
+        ef.dibujar(se, 1f);   // tick 60: la duración se cumple
+        final boolean terminado = ef.vivos() == 0 && ef.libres() == 512 && le.size() == 59;
+        boolean posOk = true, creciente = true;
+        final float zEsperada = VisualCapa.SOBRE_BLOQUES.z + VisualEfectos.Z_EFECTO;
+        for(int i = 0; i < le.size(); i++){
+            final float[] d = le.get(i);
+            if(d[0] != 10f || d[1] != 20f || d[2] != zEsperada) posOk = false;
+            if(d[3] != (i + 1) / 60f) creciente = false;
+        }
+        fallos += chequear("un efecto de 60 ticks aparece en (10, 20) y en la z de su capa (" + zEsperada + "), se dibuja 59 fotogramas con progreso creciente y al cumplirse la duración desaparece y su instancia vuelve al pool",
+            emitido && vivoA59 && terminado && posOk && creciente);
+
+        // ---- en cada capa, la suya; las capas salen en orden
+        final VisualEfectos e2 = new VisualEfectos(512);
+        final SalidaPrueba s2 = new SalidaPrueba();
+        final List<float[]> l2 = new ArrayList<float[]>();
+        e2.registrarEfecto(efectoPrueba(l2, s2, "t", "ui", VisualCapa.INTERFAZ, 0, 10f, 1, false));
+        e2.registrarEfecto(efectoPrueba(l2, s2, "t", "suelo", VisualCapa.SUELO, 0, 10f, 1, false));
+        e2.registrarEfecto(efectoPrueba(l2, s2, "t", "unidad", VisualCapa.UNIDADES, 0, 10f, 1, false));
+        e2.configurar(VisualCalidad.ALTA);
+        emitirSimple(e2, "t:ui", 1f);
+        emitirSimple(e2, "t:suelo", 2f);
+        emitirSimple(e2, "t:unidad", 3f);
+        e2.dibujar(s2, 1f);
+        fallos += chequear("los efectos de capas distintas salen en la z de su capa y por orden de capa (suelo, unidades, interfaz)",
+            l2.size() == 3 && l2.get(0)[2] == VisualCapa.SUELO.z + VisualEfectos.Z_EFECTO && l2.get(1)[2] == VisualCapa.UNIDADES.z + VisualEfectos.Z_EFECTO
+                && l2.get(2)[2] == VisualCapa.INTERFAZ.z + VisualEfectos.Z_EFECTO && l2.get(0)[0] == 2f && l2.get(1)[0] == 3f && l2.get(2)[0] == 1f);
+
+        // ---- pool: tamaño fijo, sin asignaciones al emitir
+        final VisualEfectos e3 = new VisualEfectos(64);
+        final SalidaPrueba s3 = new SalidaPrueba();
+        e3.registrarEfecto(efectoPrueba(new ArrayList<float[]>(), s3, "t", "p", VisualCapa.BLOQUES, 0, 5f, 1, false));
+        e3.configurar(VisualCalidad.ALTA);
+        int aceptadas3 = 0, maxVivos = 0;
+        for(int i = 0; i < 20000; i++){
+            if(emitirSimple(e3, "t:p", i)) aceptadas3++;
+            maxVivos = Math.max(maxVivos, e3.vivos());
+            if(i % 7 == 0) e3.dibujar(s3, 1f);
+        }
+        fallos += chequear("el pool es de tamaño fijo: tras 20000 emisiones hay como mucho " + maxVivos + " vivos de 64 y las instancias creadas siguen siendo " + e3.creadas() + " (" + aceptadas3 + " aceptadas)",
+            maxVivos <= 64 && e3.creadas() == 64 && aceptadas3 > 0 && e3.vivos() + e3.libres() == 64);
+
+        // ---- densidad por calidad (determinista) y los esenciales no se adelgazan
+        final int[] esperadas = {500, 750, 1000};
+        boolean densidadOk = true;
+        String detalle = "";
+        for(VisualCalidad q : VisualCalidad.values()){
+            final VisualEfectos e4 = new VisualEfectos(512);
+            final SalidaPrueba s4 = new SalidaPrueba();
+            e4.registrarEfecto(efectoPrueba(new ArrayList<float[]>(), s4, "t", "opcional", VisualCapa.BLOQUES, 0, 10f, 1, false));
+            e4.registrarEfecto(efectoPrueba(new ArrayList<float[]>(), s4, "t", "esencial", VisualCapa.BLOQUES, 0, 10f, 1, true));
+            e4.configurar(q);
+            int op = 0, es4 = 0;
+            for(int i = 0; i < 1000; i++){
+                if(emitirSimple(e4, "t:opcional", i)) op++;
+                if(emitirSimple(e4, "t:esencial", i)) es4++;
+                e4.dibujar(s4, 1000f);
+            }
+            detalle += q.nombre + "=" + op + " ";
+            if(op != esperadas[q.ordinal()] || es4 != 1000) densidadOk = false;
+        }
+        fallos += chequear("la densidad de efectos sigue a la calidad sin azar: de 1000 emisiones opcionales entran " + detalle + "(esperado 500, 750 y 1000) y los esenciales entran todos", densidadOk);
+
+        // ---- tope por calidad y desalojo por prioridad
+        final VisualEfectos e5 = new VisualEfectos(512);
+        final SalidaPrueba s5 = new SalidaPrueba();
+        final List<float[]> l5 = new ArrayList<float[]>();
+        e5.registrarEfecto(efectoPrueba(l5, s5, "t", "lento", VisualCapa.BLOQUES, 5, 1e6f, 1, true));
+        e5.registrarEfecto(efectoPrueba(l5, s5, "t", "mejor", VisualCapa.BLOQUES, 1, 1e6f, 1, true));
+        e5.registrarEfecto(efectoPrueba(l5, s5, "t", "peor", VisualCapa.BLOQUES, 9, 1e6f, 1, true));
+        e5.configurar(VisualCalidad.BAJA);   // 32 efectos como máximo
+        int entran = 0;
+        for(int i = 0; i < 100; i++) if(emitirSimple(e5, "t:lento", i)) entran++;
+        final boolean tope = e5.vivos() == 32 && entran == 32;
+        final boolean mejorEntra = emitirSimple(e5, "t:mejor", 500f);
+        final boolean peorNo = !emitirSimple(e5, "t:peor", 600f);
+        final boolean igualNo = !emitirSimple(e5, "t:lento", 700f);
+        e5.dibujar(s5, 0f);
+        boolean esta1 = false, estaMejor = false;
+        for(float[] d : l5){
+            if(d[0] == 0f) esta1 = true;
+            if(d[0] == 500f) estaMejor = true;
+        }
+        fallos += chequear("con calidad baja (32 efectos) no entran más; uno de mejor prioridad desaloja al peor y más antiguo, y uno peor o igual no entra",
+            tope && mejorEntra && peorNo && igualNo && e5.vivos() == 32 && !esta1 && estaMejor && l5.size() == 32);
+
+        // ---- un efecto que falla se desactiva sin afectar a los demás
+        final VisualEfectos e6 = new VisualEfectos(512);
+        final SalidaPrueba s6 = new SalidaPrueba();
+        final List<float[]> l6 = new ArrayList<float[]>();
+        e6.registrarEfecto(VisualEfectoDef.de("t", "t:malo", VisualCapa.BLOQUES, 0, 100f, 1, false, new Cons<VisualEfectoInst>(){
+            @Override public void get(VisualEfectoInst i){ throw new IllegalStateException("efecto roto de prueba"); }
+        }));
+        e6.registrarEfecto(efectoPrueba(l6, s6, "t", "bueno", VisualCapa.BLOQUES, 1, 100f, 1, false));
+        e6.configurar(VisualCalidad.ALTA);
+        emitirSimple(e6, "t:malo", 1f);
+        emitirSimple(e6, "t:bueno", 2f);
+        emitirSimple(e6, "t:malo", 3f);
+        e6.dibujar(s6, 1f);
+        final boolean desactivado = !e6.activo("t:malo") && l6.size() == 1;
+        e6.dibujar(s6, 1f);
+        fallos += chequear("un efecto que lanza una excepción al dibujar se desactiva con aviso, sus instancias se liberan, ya no se puede emitir y el bueno sigue",
+            desactivado && e6.vivos() == 1 && !emitirSimple(e6, "t:malo", 4f) && e6.activo("t:bueno") && l6.size() == 2);
+
+        // ---- presupuesto de coste de dibujo
+        final VisualEfectos e7 = new VisualEfectos(512);
+        final SalidaPrueba s7 = new SalidaPrueba();
+        final List<float[]> l7 = new ArrayList<float[]>();
+        e7.registrarEfecto(efectoPrueba(l7, s7, "t", "caro", VisualCapa.BLOQUES, 0, 1e6f, 10, false));
+        e7.configurar(VisualCalidad.ALTA);   // presupuesto 1024: caben 102 de coste 10
+        for(int i = 0; i < 120; i++) emitirSimple(e7, "t:caro", i);
+        e7.dibujar(s7, 0f);
+        boolean primeros = true;
+        for(float[] d : l7) if(d[0] > 101f) primeros = false;
+        fallos += chequear("el coste declarado de los efectos vivos se limita al presupuesto de la calidad: de 120 se dibujan " + e7.ultimosDibujados() + " (los más antiguos) y se omiten " + e7.ultimosOmitidos(),
+            e7.ultimosDibujados() == 102 && e7.ultimosOmitidos() == 18 && l7.size() == 102 && primeros && e7.vivos() == 120);
+
+        final VisualEfectos e8 = new VisualEfectos(512);
+        final SalidaPrueba s8 = new SalidaPrueba();
+        final List<float[]> l8 = new ArrayList<float[]>();
+        e8.registrarEfecto(efectoPrueba(l8, s8, "t", "grande", VisualCapa.BLOQUES, 0, 100f, 500, true));
+        e8.configurar(VisualCalidad.BAJA);
+        emitirSimple(e8, "t:grande", 1f);
+        for(int i = 0; i < 10; i++) e8.dibujar(s8, 0f);   // en pausa (delta 0) no envejece
+        fallos += chequear("un efecto esencial se dibuja aunque exceda el presupuesto, y con el juego en pausa (delta 0) se queda quieto: 10 fotogramas, mismo progreso",
+            l8.size() == 10 && e8.vivos() == 1 && l8.get(0)[3] == 0f && l8.get(9)[3] == 0f);
+
+        // ---- color ambiental: política declarada por el canal
+        boolean media = true;
+        for(int orden = 0; orden < 2; orden++){
+            final VisualAmbiente amb = new VisualAmbiente(VisualAmbiente.Politica.MEDIA_PONDERADA);
+            if(orden == 0){
+                amb.registrar("a", "a:uno", 0, 1f);
+                amb.registrar("b", "b:dos", 0, 3f);
+            }else{
+                amb.registrar("b", "b:dos", 0, 3f);
+                amb.registrar("a", "a:uno", 0, 1f);
+            }
+            amb.fijar("a:uno", 1f, 0f, 0.5f, 0.25f);
+            amb.fijar("b:dos", 0f, 1f, 0.5f, 0.75f);
+            final float[] c = amb.combinar();
+            if(c == null || c[0] != 0.25f || c[1] != 0.75f || c[2] != 0.5f || c[3] != 0.625f) media = false;
+        }
+        fallos += chequear("un cambio de iluminación de dos mods con política de media ponderada (pesos 1 y 3) da (0.25, 0.75, 0.5, 0.625) con cualquier orden de registro", media);
+
+        final float[] pesosAmb = {0.7f, 1.3f, 0.1f, 2.9f};
+        final float[][] coloresAmb = {{0.1f, 0.2f, 0.3f, 0.4f}, {0.9f, 0.8f, 0.7f, 0.6f}, {0.33f, 0.66f, 0.99f, 0.11f}, {0.5f, 0.25f, 0.125f, 0.0625f}};
+        final String[] fuentesAmb = {"a", "b", "c", "d"};
+        int[] primero = null;
+        boolean identico = true;
+        int ordenaciones = 0;
+        for(List<Integer> p : permutaciones(Arrays.asList(0, 1, 2, 3))){
+            final VisualAmbiente amb = new VisualAmbiente(VisualAmbiente.Politica.MEDIA_PONDERADA);
+            for(int i : p) amb.registrar(fuentesAmb[i], fuentesAmb[i] + ":x", 0, pesosAmb[i]);
+            for(int k = p.size() - 1; k >= 0; k--){
+                final int i = p.get(k);
+                amb.fijar(fuentesAmb[i] + ":x", coloresAmb[i][0], coloresAmb[i][1], coloresAmb[i][2], coloresAmb[i][3]);
+            }
+            final int[] b = bits(amb.combinar());
+            if(primero == null) primero = b;
+            else if(!Arrays.equals(primero, b)) identico = false;
+            ordenaciones++;
+        }
+        fallos += chequear("con pesos y colores decimales el resultado de la media es idéntico bit a bit con las " + ordenaciones + " ordenaciones de registro y de fijado", identico && ordenaciones == 24);
+
+        boolean prioridad = true;
+        for(int orden = 0; orden < 2; orden++){
+            final VisualAmbiente amb = new VisualAmbiente(VisualAmbiente.Politica.PRIORIDAD_ABSOLUTA);
+            if(orden == 0){
+                amb.registrar("z", "z:x", 5, 1f);
+                amb.registrar("y", "y:w", 1, 1f);
+            }else{
+                amb.registrar("y", "y:w", 1, 1f);
+                amb.registrar("z", "z:x", 5, 1f);
+            }
+            amb.fijar("z:x", 1f, 0f, 0f, 1f);
+            amb.fijar("y:w", 0f, 0f, 1f, 0.5f);
+            final float[] c = amb.combinar();
+            if(c == null || c[0] != 0f || c[2] != 1f || c[3] != 0.5f) prioridad = false;
+        }
+        fallos += chequear("con política de prioridad absoluta manda la contribución de menor prioridad, sea cual sea el orden de registro", prioridad);
+
+        final VisualAmbiente am4 = new VisualAmbiente(VisualAmbiente.Politica.MEDIA_PONDERADA);
+        am4.registrar("x", "x:a", 0, 1f);
+        am4.registrar("y", "y:nan", 0, 1f);
+        am4.registrar("z", "z:cero", 0, 0f);
+        am4.fijar("x:a", 2f, -1f, 0.5f, 0.5f);
+        am4.fijar("y:nan", Float.NaN, 0f, 0f, 0f);
+        am4.fijar("z:cero", 0f, 0f, 0f, 1f);
+        final float[] c4 = am4.combinar();
+        fallos += chequear("un color fuera de rango se recorta a [0, 1], y uno no numérico o con peso 0 se ignora: no se impone nada inválido",
+            c4 != null && c4[0] == 1f && c4[1] == 0f && c4[2] == 0.5f && c4[3] == 0.5f);
+
+        final VisualAmbiente am5 = new VisualAmbiente(VisualAmbiente.Politica.MEDIA_PONDERADA);
+        am5.registrar("a", "a:uno", 0, 1f);
+        final boolean sinColor = am5.combinar() == null;
+        am5.fijar("a:uno", 0.1f, 0.2f, 0.3f, 0.4f);
+        final boolean conColor = am5.combinar() != null && am5.activas() == 1;
+        am5.quitar("a:uno");
+        fallos += chequear("sin contribuciones activas no hay ningún cambio (null) y al quitarlas no queda nada residual", sinColor && conColor && am5.combinar() == null && am5.activas() == 0);
+
+        // ---- mallas: se preparan en otro hilo y se suben solo en el hilo de render
+        Hilos.cuadro();   // este hilo es el principal (el de render) para las pruebas
+        final String hiloRender = Thread.currentThread().getName();
+        final VisualMallas m1 = new VisualMallas(16);
+        final List<String> hilosTrabajo = java.util.Collections.synchronizedList(new ArrayList<String>());
+        final List<String> hilosSubida = new ArrayList<String>();
+        final List<Integer> subidos = new ArrayList<Integer>();
+        for(int i = 0; i < 6; i++){
+            final int k = i;
+            m1.preparar("malla" + i, new Prov<Integer>(){
+                @Override public Integer get(){
+                    hilosTrabajo.add(Thread.currentThread().getName());
+                    return k;
+                }
+            }, new Cons<Integer>(){
+                @Override public void get(Integer v){
+                    hilosSubida.add(Thread.currentThread().getName());
+                    subidos.add(v);
+                }
+            });
+        }
+        esperarMallas(m1);
+        final boolean nadaAntes = subidos.isEmpty();
+        final int subidas1 = m1.subirListos(10);
+        boolean fondo = hilosTrabajo.size() == 6, render = hilosSubida.size() == 6;
+        for(String h : hilosTrabajo) if(!h.startsWith("MundoInfinito-Pool-") || h.equals(hiloRender)) fondo = false;
+        for(String h : hilosSubida) if(!h.equals(hiloRender)) render = false;
+        fallos += chequear("una malla preparada en un hilo de fondo (" + (hilosTrabajo.isEmpty() ? "?" : hilosTrabajo.get(0)) + ") no se sube hasta que el hilo de render lo pide y entonces se sube en él, 6 de 6, en orden de petición",
+            nadaAntes && subidas1 == 6 && fondo && render && subidos.toString().equals("[0, 1, 2, 3, 4, 5]") && m1.subidas() == 6 && m1.pendientes() == 0);
+
+        final VisualMallas m2 = new VisualMallas(16);
+        for(int i = 0; i < 10; i++){
+            final int k = i;
+            m2.preparar("lote" + i, new Prov<Integer>(){ @Override public Integer get(){ return k; } }, new Cons<Integer>(){ @Override public void get(Integer v){} });
+        }
+        esperarMallas(m2);
+        final int a1 = m2.subirListos(VisualCalidad.ALTA.subidasMalla), a2 = m2.subirListos(VisualCalidad.ALTA.subidasMalla), a3 = m2.subirListos(VisualCalidad.ALTA.subidasMalla), a4 = m2.subirListos(VisualCalidad.ALTA.subidasMalla);
+        fallos += chequear("la subida respeta el máximo por fotograma de la calidad (alta: " + VisualCalidad.ALTA.subidasMalla + "): 10 mallas se suben como " + a1 + ", " + a2 + ", " + a3 + " y " + a4, a1 == 4 && a2 == 4 && a3 == 2 && a4 == 0);
+
+        final VisualMallas m3 = new VisualMallas(16);
+        final int[] cuentaSubidas = new int[1];
+        for(int i = 0; i < 3; i++){
+            m3.preparar("fuera" + i, new Prov<Integer>(){ @Override public Integer get(){ return 1; } }, new Cons<Integer>(){ @Override public void get(Integer v){ cuentaSubidas[0]++; } });
+        }
+        esperarMallas(m3);
+        final int[] desdeOtro = {-1};
+        final Thread otro = new Thread(new Runnable(){ @Override public void run(){ desdeOtro[0] = m3.subirListos(10); } }, "hilo-que-no-es-el-de-render");
+        otro.start();
+        otro.join();
+        final boolean nadaFuera = desdeOtro[0] == 0 && cuentaSubidas[0] == 0 && m3.pendientes() == 3;
+        final int dentro = m3.subirListos(10);
+        fallos += chequear("si se pide subir desde un hilo que no es el de render no se sube nada (ninguna llamada de GPU fuera de él); desde el de render se suben las 3", nadaFuera && dentro == 3 && cuentaSubidas[0] == 3);
+
+        final VisualMallas m4 = new VisualMallas(16);
+        final List<Integer> buenas = new ArrayList<Integer>();
+        m4.preparar("falla-trabajo", new Prov<Integer>(){ @Override public Integer get(){ throw new IllegalStateException("trabajo roto de prueba"); } }, new Cons<Integer>(){ @Override public void get(Integer v){ buenas.add(-1); } });
+        m4.preparar("sin-datos", new Prov<Integer>(){ @Override public Integer get(){ return null; } }, new Cons<Integer>(){ @Override public void get(Integer v){ buenas.add(-2); } });
+        m4.preparar("buena-1", new Prov<Integer>(){ @Override public Integer get(){ return 1; } }, new Cons<Integer>(){ @Override public void get(Integer v){ buenas.add(v); } });
+        m4.preparar("falla-subida", new Prov<Integer>(){ @Override public Integer get(){ return 2; } }, new Cons<Integer>(){ @Override public void get(Integer v){ throw new IllegalStateException("subida rota de prueba"); } });
+        m4.preparar("buena-2", new Prov<Integer>(){ @Override public Integer get(){ return 3; } }, new Cons<Integer>(){ @Override public void get(Integer v){ buenas.add(v); } });
+        esperarMallas(m4);
+        final int tratadas = m4.subirListos(10);
+        fallos += chequear("un trabajo que falla, uno sin datos y una subida que falla se descartan con aviso y las demás mallas se suben (5 tratadas, 2 subidas, 3 fallos)",
+            tratadas == 5 && m4.subidas() == 2 && m4.fallos() == 3 && buenas.toString().equals("[1, 3]") && m4.pendientes() == 0);
+
+        final VisualMallas m5 = new VisualMallas(2);
+        final boolean[] r5 = new boolean[3];
+        for(int i = 0; i < 3; i++) r5[i] = m5.preparar("cap" + i, new Prov<Integer>(){ @Override public Integer get(){ return 1; } }, new Cons<Integer>(){ @Override public void get(Integer v){} });
+        esperarMallas(m5);
+        m5.subirListos(10);
+        fallos += chequear("la cola de mallas tiene un tope: con capacidad 2 la tercera petición se rechaza, y tras subir se vuelve a aceptar",
+            r5[0] && r5[1] && !r5[2] && m5.preparar("cap-otra", new Prov<Integer>(){ @Override public Integer get(){ return 1; } }, new Cons<Integer>(){ @Override public void get(Integer v){} }));
+        esperarMallas(m5);
+        m5.subirListos(10);
+
+        fallos += chequear("los presupuestos de efectos y de subida de mallas crecen con la calidad (efectos 32/128/512, subidas 1/2/4)",
+            VisualCalidad.BAJA.efectosMax == 32 && VisualCalidad.MEDIA.efectosMax == 128 && VisualCalidad.ALTA.efectosMax == 512
+                && VisualCalidad.BAJA.subidasMalla == 1 && VisualCalidad.MEDIA.subidasMalla == 2 && VisualCalidad.ALTA.subidasMalla == 4
+                && VisualCalidad.BAJA.costeEfectos < VisualCalidad.MEDIA.costeEfectos && VisualCalidad.MEDIA.costeEfectos < VisualCalidad.ALTA.costeEfectos);
+        return fallos;
+    }
+
+    /** Espera (hasta 5 s) a que los trabajos de preparación de las mallas terminen. */
+    private static void esperarMallas(VisualMallas m) throws Exception{
+        final long limite = System.nanoTime() + 5_000_000_000L;
+        while(!m.todoListo() && System.nanoTime() < limite) Thread.sleep(2);
+    }
+
     static int comprobar() throws Exception{
         final List<int[]> es = entradas();
         int fallos = 0;
@@ -1366,6 +1691,7 @@ public final class Corpus{
         fallos += comprobarAreas();
         fallos += comprobarPresupuestos(es, a);
         fallos += comprobarVisual(es, a);
+        fallos += comprobarVisual10();
 
         for(int n : new int[]{1, 2, 4}){
             olvidarCaches();

@@ -3,9 +3,11 @@ package mundoinfinito;
 import arc.Core;
 import arc.Events;
 import arc.func.Cons;
+import arc.graphics.Color;
 import arc.graphics.g2d.Draw;
 import arc.graphics.gl.Shader;
 import arc.util.Log;
+import arc.util.Time;
 import mindustry.Vars;
 import mindustry.game.EventType.Trigger;
 
@@ -15,7 +17,8 @@ import mindustry.game.EventType.Trigger;
  * La lógica (orden, presupuestos, conflictos de uniformes, fallos) vive en {@link VisualRegistro} y se comprueba sin GPU.
  */
 final class VisualArc{
-    private static boolean registrado, aviso;
+    private static boolean registrado, aviso, ambienteAplicado;
+    private static final Color ambienteOriginal = new Color();
 
     private VisualArc(){}
 
@@ -114,6 +117,7 @@ final class VisualArc{
     static void registrar(){
         if(registrado || Vars.headless) return;
         registrado = true;
+        Events.run(Trigger.preDraw, VisualArc::alPreparar);      // antes de dibujar el mundo: color ambiental combinado
         Events.run(Trigger.draw, VisualArc::alDibujar);          // dentro de Renderer.draw(), con el dibujo ordenado activo
         Events.run(Trigger.postDraw, VisualArc::alPostProcesar);
         VisualPrueba.registrar();
@@ -124,15 +128,48 @@ final class VisualArc{
         try{
             final VisualRegistro r = VisualRegistro.global();
             r.configurar(Ajustes.calidadVisual(), Ajustes.calidadAuto());
+            // 1) mallas y texturas preparadas en otros hilos: se suben aquí, en el hilo de render, unas pocas por fotograma
+            VisualMallas.global().subirListos(r.calidad().subidasMalla);
+            // 2) los dibujos registrados
             r.dibujarFotograma(SALIDA, Core.graphics.getDeltaTime() * 1000f);
+            // 3) los efectos vivos, por encima de los dibujos de su capa; con el juego en pausa no envejecen
+            final VisualEfectos ef = VisualEfectos.global();
+            ef.configurar(r.calidad());
+            VisualPrueba.alFotograma(Vars.state.isPaused() ? 0f : Time.delta);
+            ef.dibujar(SALIDA, Vars.state.isPaused() ? 0f : Time.delta);
         }catch(Throwable t){
             avisar(t);   // la capa visual nunca debe romper el fotograma
         }
     }
 
-    private static void alPostProcesar(){
-        if(Vars.state == null || !Vars.state.isGame()) return;
+    /**
+     * Aplica el color ambiental combinado de todas las contribuciones, SOLO mientras se dibuja el fotograma: se restaura en {@link #alPostProcesar}, de modo
+     * que nunca llega a las reglas guardadas del mundo y, sin contribuciones, no cambia nada. Solo tiene efecto en mundos con iluminación activada.
+     */
+    private static void alPreparar(){
         try{
+            restaurarAmbiente();   // por si el fotograma anterior no llegó a restaurarlo
+            if(Vars.state == null || !Vars.state.isGame() || !Vars.state.rules.lighting) return;
+            final float[] c = VisualAmbiente.global().combinar();
+            if(c == null) return;
+            ambienteOriginal.set(Vars.state.rules.ambientLight);
+            Vars.state.rules.ambientLight.set(c[0], c[1], c[2], c[3]);
+            ambienteAplicado = true;
+        }catch(Throwable t){
+            avisar(t);
+        }
+    }
+
+    private static void restaurarAmbiente(){
+        if(!ambienteAplicado) return;
+        ambienteAplicado = false;
+        if(Vars.state != null) Vars.state.rules.ambientLight.set(ambienteOriginal);
+    }
+
+    private static void alPostProcesar(){
+        try{
+            restaurarAmbiente();
+            if(Vars.state == null || !Vars.state.isGame()) return;
             VisualRegistro.global().ejecutarPasadas();
         }catch(Throwable t){
             avisar(t);

@@ -1,6 +1,6 @@
-# Capa visual, base (fase 9)
+# Capa visual (fases 9 y 10)
 
-Registro de dibujos, shaders y pasadas de post-procesado, con orden declarado, propiedad de uniformes, coste declarado, calidad configurable y aislamiento de fallos. **Es solo dibujo: nada de aquí puede cambiar la simulación ni el mundo.**
+Registro de dibujos, shaders y pasadas de post-procesado (fase 9) y, en la fase 10, efectos con pool, color ambiental con política y mallas preparadas fuera del hilo de render, con orden declarado, propiedad de uniformes, coste declarado, calidad configurable y aislamiento de fallos. **Es solo dibujo: nada de aquí puede cambiar la simulación ni el mundo.**
 
 > Todavía es interno de la mod (`VisualRegistro.global()`). Se expone a otros mods en la fase de API pública; el código de un addon se ve igual que el de `VisualPrueba`.
 
@@ -26,13 +26,13 @@ Registro de dibujos, shaders y pasadas de post-procesado, con orden declarado, p
 El plan enumera las balas después de "sobre unidades"; en el motor las balas (z 100) se pintan antes que las unidades voladoras (z 115), así que se sigue el orden real. Dentro de una capa cada dibujo recibe un desplazamiento de 0.001 por posición para conservar el orden (hasta 0.09).
 
 ## Calidad
-| Calidad | Llamadas de dibujo | Pasadas | Texturas | Densidad de efectos |
-|---|---|---|---|---|
-| Baja | 40 | 0 | 0 | 0.5 |
-| Media | 120 | 2 | 8 MB | 0.75 |
-| Alta (por defecto) | 400 | 6 | 64 MB | 1.0 |
+| Calidad | Llamadas de dibujo | Pasadas | Texturas | Densidad de efectos | Efectos vivos | Coste de efectos | Mallas subidas por fotograma |
+|---|---|---|---|---|---|---|---|
+| Baja | 40 | 0 | 0 | 0.5 | 32 | 64 | 1 |
+| Media | 120 | 2 | 8 MB | 0.75 | 128 | 256 | 2 |
+| Alta (por defecto) | 400 | 6 | 64 MB | 1.0 | 512 | 1024 | 4 |
 
-La unidad de "llamada de dibujo" es la que declara cada contribución. La densidad de efectos la leerán las contribuciones de efectos (fase 10).
+La unidad de "llamada de dibujo" es la que declara cada contribución.
 
 **Medición automática** (activada por defecto, desactivable): ventanas de 120 fotogramas; una ventana de más de 33.4 ms de media baja un nivel; 5 ventanas seguidas de menos de 20 ms suben uno. Los primeros 180 fotogramas (la carga) no cuentan y un tirón suelto está limitado a 1000 ms. Solo afecta al dibujo.
 
@@ -66,10 +66,56 @@ VisualRegistro.global().registrarPasada(VisualPasada.de(
 ```
 Se ejecutan al final del dibujo (`Trigger.postDraw`), en orden canónico y solo mientras quepan en el presupuesto de la calidad (la que no cabe se omite). La pasada se ocupa de sus propios `FrameBuffer`; este registro solo la ordena, la mide y la aísla.
 
+## Efectos y partículas (fase 10)
+Un efecto es algo que se dispara en una posición, con su capa y su duración, y se dibuja cada fotograma mientras vive.
+```java
+VisualEfectos.global().registrarEfecto(VisualEfectoDef.de(
+    "minmod", "minmod:chispa", VisualCapa.SOBRE_BLOQUES, /* prioridad */ 0, /* duración en ticks */ 30f, /* coste */ 1, /* esencial */ false,
+    e -> { Draw.color(e.r, e.g, e.b, e.a * e.fout()); Lines.circle(e.x, e.y, 4f + 10f * e.fin()); }));
+
+VisualEfectos.global().emitir("minmod:chispa", x, y, rotacion, r, g, b, a, datos);   // devuelve false si se descartó
+```
+- **Pool de tamaño fijo** (512 instancias): emitir no crea objetos. La instancia que recibe el dibujo solo vale durante esa llamada; no hay que guardarla.
+- **Duración:** `fin()` va de 0 a 1 y `fout()` de 1 a 0. Al cumplirse la duración el efecto desaparece y su instancia vuelve al pool. Con el juego en pausa no envejece.
+- **Capa:** se dibuja en la z de su capa más 0.095, por encima de los dibujos normales de esa capa.
+- **Densidad:** de las emisiones de un efecto **opcional** solo entra la fracción que dice la calidad (media 0.75 = tres de cada cuatro), con un acumulador, sin azar. Los **esenciales** no se adelgazan.
+- **Tope y prioridad:** la calidad fija cuántos efectos pueden estar vivos. Si está lleno, entra un efecto de **mejor** prioridad (número menor) que el peor vivo, al que desaloja (el más antiguo de esa prioridad); uno peor o igual no entra.
+- **Coste:** si el coste declarado de los vivos excede el presupuesto de la calidad, no se dibujan los opcionales que no caben (por prioridad, los más antiguos primero). Siguen vivos y envejeciendo.
+- **Fallos:** un efecto cuyo dibujo lanza una excepción se desactiva con aviso para la sesión, sus instancias se liberan y el juego sigue.
+
+## Color ambiental y luz (fase 10)
+Varios mods pueden aportar un color ambiental (RGBA; en Mindustry el alfa es cuánta oscuridad añade). El **canal** declara la política que los combina.
+```java
+VisualAmbiente.global().registrar("minmod", "minmod:atardecer", /* prioridad */ 0, /* peso */ 1f);
+VisualAmbiente.global().fijar("minmod:atardecer", 1f, 0.5f, 0.2f, 0.3f);   // cada fotograma, o cuando cambie
+VisualAmbiente.global().quitar("minmod:atardecer");                         // deja de aportar
+```
+| Política | Resultado |
+|---|---|
+| `MEDIA_PONDERADA` (la del canal del juego) | Media de los colores ponderada por el peso, en orden canónico: idéntica bit a bit con cualquier orden de carga |
+| `PRIORIDAD_ABSOLUTA` | Manda la contribución de menor prioridad |
+
+- Un valor fuera de [0, 1] se recorta (aviso una vez); un color no numérico o un peso menor o igual que 0 se ignora.
+- Sin contribuciones activas no se cambia nada. El color combinado se aplica **solo mientras se dibuja el fotograma** y se restaura al terminar: nunca llega a las reglas guardadas del mundo, así que al quitar un mod no queda ningún efecto residual.
+- **Solo se nota en mundos con la iluminación activada** (`rules.lighting`).
+
+## Mallas y texturas preparadas fuera del hilo de render (fase 10)
+```java
+VisualMallas.global().preparar("minmod:malla-nube",
+    () -> calcularVertices(),                 // corre en un hilo de fondo: puro, sin GPU ni mundo vivo; no puede devolver null
+    vertices -> new Mesh(...).setVertices(vertices));   // corre SOLO en el hilo de render: aquí va la GPU
+```
+- `preparar` devuelve false si hay demasiados pendientes (256); se puede volver a pedir.
+- Cada fotograma el enlace llama a `subirListos(max)`, con el máximo de la calidad: sube **en orden de petición** los trabajos ya terminados. El primero que no está listo detiene la cola.
+- `subirListos` desde cualquier hilo que no sea el de render **no sube nada** y avisa: ninguna llamada de GPU se ejecuta fuera de él.
+- Un trabajo que falla, que no devuelve datos o una subida que falla se descartan con aviso; las demás mallas siguen.
+- La malla de terreno del propio mod (`ChunkGeometryCooker`) usa el mismo reparto con su propia cola.
+
 ## Probar en un dispositivo, sin mods
 En Ajustes -> OpenWorld hay dos casillas apagadas por defecto:
 - **Prueba visual: shader de prueba.** Un cuadrado sobre el dron teñido de naranja con un shader que pulsa. Al apagarla desaparece sin afectar a nada.
 - **Prueba visual: shader que falla.** Un cuadrado bajo el dron con un shader escrito mal a propósito. Debe salir **igual, sin tinte**, el log debe avisar **una sola vez** (`Visual: el shader '...' falló`) y la partida debe seguir.
+- **Prueba visual: efecto y luz ambiental.** Cada 1,5 s sale a la izquierda del dron un anillo amarillo que se expande y se apaga en 1 segundo, y desaparece solo. Además aporta un color ambiental naranja, que solo se nota en un mundo con iluminación activada.
 
 ## Qué se comprueba (`Corpus comprobar`)
 - Mismo orden de dibujo con las 5040 ordenaciones de registro de 7 dibujos en varias capas; la z sale creciente.
@@ -79,10 +125,14 @@ En Ajustes -> OpenWorld hay dos casillas apagadas por defecto:
 - Presupuesto: con calidad baja se omite lo opcional de atrás hacia delante (24 ordenaciones); lo esencial no se omite; las pasadas salen en orden mientras quepan.
 - Medición automática: ignora la carga, baja, recupera, no pasa de lo elegido, y un tirón suelto no decide.
 - Cambiar la calidad no cambia ni un chunk del corpus.
+- Efectos: aparecen en la posición y la z declaradas, duran sus 60 ticks y desaparecen devolviendo la instancia al pool; pool de tamaño fijo tras 20000 emisiones; densidad 500, 750 y 1000 de 1000 según la calidad; tope y desalojo por prioridad; presupuesto de coste; un efecto que falla se desactiva sin afectar a los demás.
+- Color ambiental: pesos 1 y 3 dan (0.25, 0.75, 0.5, 0.625); idéntico bit a bit con las 24 ordenaciones; prioridad absoluta; recorte, valores no numéricos y peso 0; sin contribuciones no hay cambio ni residuo.
+- Mallas: se preparan en un hilo del pool y se suben en el de render, en orden y con el máximo por fotograma; desde otro hilo no se sube nada; los fallos se descartan; la cola tiene tope.
 - La simulación y la generación no referencian ninguna clase `Visual*` (se mira el código compilado).
 
 ## Qué NO hace todavía
-- No hay efectos ni partículas con presupuesto y pooling: es la fase 10.
 - El registro ordena y aísla las pasadas de post-procesado, pero no trae ayudas para escribirlas (framebuffers, ping-pong).
 - No hay API pública para otros mods ni puntos de extensión de interfaz.
+- La luz puntual (focos de luz en posiciones) no está: solo el color ambiental. Se añadiría como otro tipo de contribución.
+- El color ambiental solo se ve donde el mundo tiene la iluminación activada; la casilla de prueba no la activa por su cuenta.
 - Los fallos que solo ocurren al compilar el GLSL se detectan; los errores de GL que no lanzan excepción no.

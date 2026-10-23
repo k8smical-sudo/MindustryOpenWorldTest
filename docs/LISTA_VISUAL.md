@@ -18,3 +18,6 @@ Se revisa en cada rebase de MX-TEST y en cada cambio de la capa visual (plan, se
 | 10 | Shader de prueba | Ajustes -> OpenWorld -> "Prueba visual: shader de prueba" activada, junto al dron | Un cuadrado teñido de naranja que pulsa sobre el dron; al apagarla desaparece y nada más cambia | pendiente |
 | 11 | Shader que falla | Activar "Prueba visual: shader que falla" (con la anterior también activada) | El cuadrado de abajo sale blanco, sin tinte; el log avisa una sola vez; el cuadrado naranja y la partida siguen | pendiente |
 | 12 | Calidad visual | Cambiar la calidad a baja, media y alta con la escena 10 activa | El terreno y los bloques no cambian; la prueba sigue saliendo | pendiente |
+| 13 | Efecto de prueba | Ajustes -> OpenWorld -> "Prueba visual: efecto y luz ambiental" activada, junto al dron | Cada 1,5 s sale a la izquierda del dron un anillo amarillo que se expande y se apaga en 1 s; desaparece solo y no se acumulan | pendiente |
+| 14 | Luz ambiental | La misma casilla activa, en un mundo con iluminación activada | Un tinte naranja suave sobre todo el mundo; al apagar la casilla se va y nada queda | pendiente |
+| 15 | Calidad y efectos | Con la escena 13, cambiar la calidad a baja y a alta | En baja salen menos anillos (uno de cada dos); en alta, todos; el terreno no cambia | pendiente |

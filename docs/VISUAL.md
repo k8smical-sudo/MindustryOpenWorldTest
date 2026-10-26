@@ -34,6 +34,8 @@ El plan enumera las balas después de "sobre unidades"; en el motor las balas (z
 
 La unidad de "llamada de dibujo" es la que declara cada contribución.
 
+**Qué afecta hoy la calidad:** los dibujos, pasadas, efectos y subidas de mallas **registrados con esta capa**, y las variantes de shaders del juego según su rango de calidad. Los shaders de Mindustry no cambian por sí solos con la calidad: hace falta registrar una variante más barata para baja o media (un mod, o el propio Mundo Infinito más adelante, cuando se mida dónde está el coste). El control de calidad de Ajustes sigue considerándose de prueba.
+
 **Medición automática** (activada por defecto, desactivable): ventanas de 120 fotogramas; una ventana de más de 33.4 ms de media baja un nivel; 5 ventanas seguidas de menos de 20 ms suben uno. Los primeros 180 fotogramas (la carga) no cuentan y un tirón suelto está limitado a 1000 ms. Solo afecta al dibujo.
 
 ## Registrar un dibujo
@@ -111,10 +113,18 @@ VisualMallas.global().preparar("minmod:malla-nube",
 - Un trabajo que falla, que no devuelve datos o una subida que falla se descartan con aviso; las demás mallas siguen.
 - La malla de terreno del propio mod (`ChunkGeometryCooker`) usa el mismo reparto con su propia cola.
 
+## Shaders del juego: puntos de sustitución
+Los shaders de superficie de Mindustry (agua, barro, brea, escoria, arkycita, criofluido y espacio) se pueden sustituir sin pisarse con otros mods, y elegir por calidad cuál usar. Detalle y reglas de convivencia en `API.md`. Resumen:
+- **Cómo funciona el juego:** cada capa de suelo líquido dibuja el terreno en un búfer y lo vuelca a pantalla completa con su shader (`CacheLayer.ShaderLayer.shader`, un campo público). Aquí se cambia ese campo solo durante el dibujo de cada fotograma y se restaura al terminar; sin variantes registradas no se toca nada. No hace falta ningún parche en MX-TEST.
+- **Variante:** un shader alternativo para un punto y un rango de calidades. Si dos compiten por el mismo punto y calidad, gana la primera en orden canónico y la otra avisa y no se aplica. Variantes de calidades distintas no compiten.
+- **Límite de zoom:** a partir de un ancho de cámara los shaders de superficie no se animan (el suelo líquido se dibuja plano). Varios mods se combinan por media ponderada.
+
 ## Probar en un dispositivo, sin mods
 En Ajustes -> OpenWorld hay dos casillas apagadas por defecto:
 - **Prueba visual: shader de prueba.** Un cuadrado sobre el dron teñido de naranja con un shader que pulsa. Al apagarla desaparece sin afectar a nada.
 - **Prueba visual: shader que falla.** Un cuadrado bajo el dron con un shader escrito mal a propósito. Debe salir **igual, sin tinte**, el log debe avisar **una sola vez** (`Visual: el shader '...' falló`) y la partida debe seguir.
+- **Prueba visual: sustituir el shader del agua.** El agua se dibuja con una variante de prueba (tinte turquesa, sin la distorsión de siempre). Al apagarla vuelve el agua del juego.
+- **Prueba visual: sin shaders de superficie al alejar el zoom.** Al alejar la cámara más allá de un ancho de 600 unidades de mundo, el suelo líquido se dibuja plano.
 - **Prueba visual: efecto y luz ambiental.** Cada 1,5 s sale a la izquierda del dron un anillo amarillo que se expande y se apaga en 1 segundo, y desaparece solo. Además aporta un color ambiental naranja, que solo se nota en un mundo con iluminación activada.
 
 ## Qué se comprueba (`Corpus comprobar`)

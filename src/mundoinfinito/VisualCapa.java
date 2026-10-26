@@ -9,7 +9,7 @@ import mindustry.graphics.Layer;
  * Las capas están en el orden real en que el motor las pinta, que no coincide con el orden en que el plan las enumera: las balas (z 100) quedan por debajo
  * de las unidades voladoras (z 115). Se usan las constantes de {@code Layer}, que son valores fijos y no cargan la clase en ejecución.
  */
-enum VisualCapa{
+public enum VisualCapa{
     /** Marcas sobre el suelo, bajo los escombros y los bloques. */
     SUELO(Layer.scorch),
     /** Con los bloques normales. */

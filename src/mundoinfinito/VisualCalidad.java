@@ -6,7 +6,7 @@ package mundoinfinito;
  * Los presupuestos se miden en unidades visuales declaradas por cada contribución: llamadas de dibujo (la unidad que ella misma cuenta), pasadas de
  * post-procesado y bytes de textura. Si se exceden, el registro visual omite lo opcional empezando por lo último en orden canónico.
  */
-enum VisualCalidad{
+public enum VisualCalidad{
     BAJA("Baja", 40, 0, 0L, 0.5f, 32, 64, 1),
     MEDIA("Media", 120, 2, 8L << 20, 0.75f, 128, 256, 2),
     ALTA("Alta", 400, 6, 64L << 20, 1f, 512, 1024, 4);
@@ -36,6 +36,21 @@ enum VisualCalidad{
         this.efectosMax = efectosMax;
         this.costeEfectos = costeEfectos;
         this.subidasMalla = subidasMalla;
+    }
+
+    /** Nombre para mostrar ("Baja", "Media", "Alta"). */
+    public String nombre(){
+        return nombre;
+    }
+
+    /** Fracción de las emisiones de efectos opcionales que se aceptan. */
+    public float densidadEfectos(){
+        return densidadEfectos;
+    }
+
+    /** 0 = baja, 1 = media, 2 = alta. */
+    public int indice(){
+        return ordinal();
     }
 
     /** 0 = baja, 1 = media, 2 = alta. Cualquier otro valor se recorta. */

@@ -21,7 +21,8 @@ import mindustry.gen.Icon;
  */
 final class Ajustes{
     static final String K_CARGA = "ow-carga", K_SIM = "ow-sim", K_NIEBLA = "ow-niebla", K_VISION = "ow-vision";
-    static final String K_CALIDAD = "ow-calidad", K_CALIDAD_AUTO = "ow-calidad-auto", K_PRUEBA = "ow-visual-prueba", K_PRUEBA_FALLA = "ow-visual-prueba-falla", K_PRUEBA_EFECTO = "ow-visual-prueba-efecto";
+    static final String K_CALIDAD = "ow-calidad", K_CALIDAD_AUTO = "ow-calidad-auto", K_PRUEBA = "ow-visual-prueba", K_PRUEBA_FALLA = "ow-visual-prueba-falla", K_PRUEBA_EFECTO = "ow-visual-prueba-efecto",
+        K_PRUEBA_AGUA = "ow-visual-prueba-agua", K_PRUEBA_ZOOM = "ow-visual-prueba-zoom";
     /** Con visión automática el dron nunca revela más de esto (la niebla se actualiza por cada casilla que se mueve el dron). */
     static final int VISION_AUTO_MAX = 12;
     /** Menor distancia de chunks permitida (antes 3): con 1 solo se carga el chunk del jugador y sus vecinos inmediatos. */
@@ -66,6 +67,14 @@ final class Ajustes{
 
     static boolean pruebaEfecto(){
         return Core.settings.getBool(K_PRUEBA_EFECTO, false);
+    }
+
+    static boolean pruebaAgua(){
+        return Core.settings.getBool(K_PRUEBA_AGUA, false);
+    }
+
+    static boolean pruebaZoom(){
+        return Core.settings.getBool(K_PRUEBA_ZOOM, false);
     }
 
     static int simPorDefecto(){
@@ -156,11 +165,13 @@ final class Ajustes{
             p.put("setting." + K_SIM + ".name", "Distancia de simulación (chunks)");
             p.put("setting." + K_NIEBLA + ".name", "Niebla de guerra (ocultar lo no explorado)");
             p.put("setting." + K_VISION + ".name", "Visión del dron (chunks que revela)");
-            p.put("setting." + K_CALIDAD + ".name", "Calidad visual (solo dibujo)");
+            p.put("setting." + K_CALIDAD + ".name", "Calidad visual (de momento solo afecta a los efectos y a las pruebas visuales)");
             p.put("setting." + K_CALIDAD_AUTO + ".name", "Bajar la calidad visual sola si hay pocos FPS");
             p.put("setting." + K_PRUEBA + ".name", "Prueba visual: shader de prueba (solo para comprobar)");
             p.put("setting." + K_PRUEBA_FALLA + ".name", "Prueba visual: shader que falla (solo para comprobar)");
             p.put("setting." + K_PRUEBA_EFECTO + ".name", "Prueba visual: efecto y luz ambiental (solo para comprobar)");
+            p.put("setting." + K_PRUEBA_AGUA + ".name", "Prueba visual: sustituir el shader del agua (solo para comprobar)");
+            p.put("setting." + K_PRUEBA_ZOOM + ".name", "Prueba visual: sin shaders de superficie al alejar el zoom (solo para comprobar)");
             Vars.ui.settings.addCategory("OpenWorld", Icon.map, t -> {
                 t.sliderPref(K_CARGA, Math.min(cargaPorDefecto(), maxCarga()), MIN_CARGA, maxCarga(), v -> v + " chunks (" + (v * MundoInfinitoMod.TAM_CHUNK) + " tiles, redondo)");
                 t.sliderPref(K_SIM, simPorDefecto(), MIN_CARGA, maxCarga(), v -> v + " chunks (redondo)");
@@ -171,6 +182,8 @@ final class Ajustes{
                 t.checkPref(K_PRUEBA, false);
                 t.checkPref(K_PRUEBA_FALLA, false);
                 t.checkPref(K_PRUEBA_EFECTO, false);
+                t.checkPref(K_PRUEBA_AGUA, false);
+                t.checkPref(K_PRUEBA_ZOOM, false);
             });
         }catch(Throwable e){
             Log.err("[MundoInfinito] No se pudo crear la sección OpenWorld en Ajustes", e);

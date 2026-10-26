@@ -9,6 +9,7 @@ import arc.graphics.gl.Shader;
 import arc.util.Log;
 import arc.util.Time;
 import mindustry.Vars;
+import mindustry.graphics.CacheLayer;
 import mindustry.game.EventType.Trigger;
 
 /**
@@ -17,8 +18,11 @@ import mindustry.game.EventType.Trigger;
  * La lógica (orden, presupuestos, conflictos de uniformes, fallos) vive en {@link VisualRegistro} y se comprueba sin GPU.
  */
 final class VisualArc{
-    private static boolean registrado, aviso, ambienteAplicado;
+    private static boolean registrado, aviso, ambienteAplicado, capasListas, superficiesAplicadas, aguaAnimadaGuardada;
     private static final Color ambienteOriginal = new Color();
+    /** Las capas de suelo líquido del juego cuyo shader se puede sustituir (ver {@link VisualShaderPuntos}). */
+    private static final java.util.EnumMap<VisualShaderPuntos.Punto, VisualShaderPuntos.Capa> CAPAS =
+        new java.util.EnumMap<VisualShaderPuntos.Punto, VisualShaderPuntos.Capa>(VisualShaderPuntos.Punto.class);
 
     private VisualArc(){}
 
@@ -142,14 +146,74 @@ final class VisualArc{
         }
     }
 
+    private static void enlazar(VisualShaderPuntos.Punto p, CacheLayer capa){
+        if(!(capa instanceof CacheLayer.ShaderLayer)) return;
+        final CacheLayer.ShaderLayer sl = (CacheLayer.ShaderLayer)capa;
+        final Object original = sl.shader;   // lo que tenía la capa al enlazar (si otro mod ya lo cambió, se respeta como original)
+        CAPAS.put(p, new VisualShaderPuntos.Capa(){
+            @Override
+            public Object original(){
+                return original;
+            }
+
+            @Override
+            public void poner(Object shader){
+                sl.shader = (Shader)shader;
+            }
+        });
+    }
+
+    private static void prepararCapas(){
+        if(capasListas) return;
+        capasListas = true;
+        enlazar(VisualShaderPuntos.Punto.AGUA, CacheLayer.water);
+        enlazar(VisualShaderPuntos.Punto.BARRO, CacheLayer.mud);
+        enlazar(VisualShaderPuntos.Punto.BREA, CacheLayer.tar);
+        enlazar(VisualShaderPuntos.Punto.ESCORIA, CacheLayer.slag);
+        enlazar(VisualShaderPuntos.Punto.ARKYCITA, CacheLayer.arkycite);
+        enlazar(VisualShaderPuntos.Punto.CRIOFLUIDO, CacheLayer.cryofluid);
+        enlazar(VisualShaderPuntos.Punto.ESPACIO, CacheLayer.space);
+    }
+
+    /**
+     * Pone, solo mientras se dibuja el fotograma, el shader de la variante ganadora de cada punto y, si el zoom pasa el límite combinado, desactiva la
+     * animación de los shaders de superficie (el suelo líquido se dibuja plano). Se restaura todo en {@link #restaurarSuperficies}. Sin variantes ni
+     * límites registrados no se toca nada.
+     */
+    private static void aplicarSuperficies(){
+        final VisualShaderPuntos sp = VisualShaderPuntos.global();
+        if(sp.variantes() == 0 && Float.isNaN(sp.limiteZoom())) return;
+        prepararCapas();
+        sp.aplicar(CAPAS, VisualRegistro.global().calidad());
+        superficiesAplicadas = true;
+        if(Vars.renderer.animateWater && sp.omitirSuperficies(Core.camera.width)){
+            aguaAnimadaGuardada = true;
+            Vars.renderer.animateWater = false;   // el juego lo vuelve a leer de los ajustes en cada fotograma; aquí solo vale para este dibujo
+        }
+    }
+
+    private static void restaurarSuperficies(){
+        if(superficiesAplicadas){
+            superficiesAplicadas = false;
+            VisualShaderPuntos.global().restaurar(CAPAS);
+        }
+        if(aguaAnimadaGuardada){
+            aguaAnimadaGuardada = false;
+            Vars.renderer.animateWater = true;
+        }
+    }
+
     /**
      * Aplica el color ambiental combinado de todas las contribuciones, SOLO mientras se dibuja el fotograma: se restaura en {@link #alPostProcesar}, de modo
      * que nunca llega a las reglas guardadas del mundo y, sin contribuciones, no cambia nada. Solo tiene efecto en mundos con iluminación activada.
      */
     private static void alPreparar(){
         try{
-            restaurarAmbiente();   // por si el fotograma anterior no llegó a restaurarlo
-            if(Vars.state == null || !Vars.state.isGame() || !Vars.state.rules.lighting) return;
+            restaurarAmbiente();       // por si el fotograma anterior no llegó a restaurarlo
+            restaurarSuperficies();
+            if(Vars.state == null || !Vars.state.isGame()) return;
+            aplicarSuperficies();
+            if(!Vars.state.rules.lighting) return;
             final float[] c = VisualAmbiente.global().combinar();
             if(c == null) return;
             ambienteOriginal.set(Vars.state.rules.ambientLight);
@@ -169,6 +233,7 @@ final class VisualArc{
     private static void alPostProcesar(){
         try{
             restaurarAmbiente();
+            restaurarSuperficies();
             if(Vars.state == null || !Vars.state.isGame()) return;
             VisualRegistro.global().ejecutarPasadas();
         }catch(Throwable t){

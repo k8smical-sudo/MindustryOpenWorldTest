@@ -5,6 +5,9 @@ import arc.graphics.g2d.Fill;
 import arc.graphics.g2d.Lines;
 import arc.util.Time;
 import mindustry.Vars;
+import arc.func.Prov;
+import arc.graphics.gl.Shader;
+import mindustry.graphics.Shaders;
 
 /**
  * SHADER DE PRUEBA de la capa visual (fase 9): sirve para comprobar en un dispositivo, sin ningún mod, que un shader se registra, se aplica y se
@@ -14,6 +17,9 @@ import mindustry.Vars;
  *  - "Prueba visual: shader de prueba": un cuadrado sobre el dron, teñido de naranja con un shader que pulsa.
  *  - "Prueba visual: shader que falla": un cuadrado con un shader a propósito mal escrito: debe salir igual (sin shader), el log debe avisar una sola vez y
  *    el resto de dibujos debe seguir.
+ *  - "Prueba visual: sustituir el shader del agua": pone una variante de prueba (el agua con un tinte turquesa y sin distorsión) en el punto AGUA del
+ *    juego; al apagarla vuelve el agua de siempre. Comprueba que los shaders del juego se pueden sustituir sin dejarlos cambiados.
+ *  - "Prueba visual: sin shaders de superficie al alejar el zoom": con el zoom lejano (ancho de cámara mayor que 600) el suelo líquido se dibuja plano.
  *  - "Prueba visual: efecto y luz ambiental": cada 1,5 s sale un anillo amarillo que se expande y se apaga a la izquierda del dron, en la capa declarada,
  *    y desaparece solo a los 60 ticks. Además aporta un color ambiental naranja (solo se nota en mundos con iluminación activada).
  */
@@ -42,6 +48,17 @@ final class VisualPrueba{
 
     static final String EFECTO = "mundo-infinito:prueba-efecto", AMBIENTE = "mundo-infinito:prueba-ambiente";
 
+    static final String VARIANTE_AGUA = "mundo-infinito:prueba-agua", LIMITE_ZOOM = "mundo-infinito:prueba-zoom";
+
+    /** Variante del agua (pantalla completa): el búfer del suelo con un tinte turquesa, sin la distorsión del original. */
+    private static final String FRAGMENTO_AGUA =
+        "uniform sampler2D u_texture;\n" +
+        "varying vec2 v_texCoords;\n" +
+        "void main(){\n" +
+        "  vec4 c = texture2D(u_texture, v_texCoords);\n" +
+        "  gl_FragColor = vec4(c.rgb * vec3(0.4, 1.0, 1.0), min(c.a * 100.0, 1.0));\n" +
+        "}";
+
     private static boolean registrado;
     private static float contador;
 
@@ -63,6 +80,14 @@ final class VisualPrueba{
             Lines.circle(e.x, e.y, 6f + 26f * e.fin());
         }));
         VisualAmbiente.global().registrar(FUENTE, AMBIENTE, 0, 1f);
+
+        VisualShaderPuntos.global().registrarVariante(FUENTE, VARIANTE_AGUA, VisualShaderPuntos.Punto.AGUA, 0, null, null, new Prov<Object>(){
+            @Override
+            public Object get(){
+                return new Shader(Shaders.getShaderFi("screenspace.vert").readString(), FRAGMENTO_AGUA);
+            }
+        }, Ajustes::pruebaAgua);
+        VisualShaderPuntos.global().registrarLimiteZoom(FUENTE, LIMITE_ZOOM, 0, 1f, 600f, Ajustes::pruebaZoom);
 
         r.registrarDibujo(VisualDibujo.de(FUENTE, DIBUJO, VisualCapa.SOBRE_UNIDADES, 0, 1, false, SHADER, Ajustes::pruebaVisual, () -> cuadro(28f, 8f)));
         r.registrarDibujo(VisualDibujo.de(FUENTE, DIBUJO_FALLA, VisualCapa.SOBRE_UNIDADES, 1, 1, false, SHADER_FALLA, Ajustes::pruebaVisualFalla, () -> cuadro(-28f, 5f)));

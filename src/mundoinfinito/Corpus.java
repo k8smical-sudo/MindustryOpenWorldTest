@@ -3,6 +3,7 @@ package mundoinfinito;
 import arc.func.Boolp;
 import arc.func.Cons;
 import arc.func.Prov;
+import arc.graphics.gl.Shader;
 import arc.struct.Seq;
 import arc.util.serialization.Jval;
 import mindustry.world.meta.Env;
@@ -12,10 +13,13 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.PrintWriter;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -30,6 +34,7 @@ import java.util.Set;
  * La ruta directa replica el bucle original de {@code ChunkData.generar}; la ruta del núcleo es la que usa el juego ahora ({@link Nucleo#terreno}).
  * "congelar" usa la ruta directa (referencia independiente del núcleo); "verificar" y la equivalencia de hilos usan la del núcleo.
  * Fase 3: "comprobar" además prueba las etapas por separado (suelo solo contra Muestreo.pisoBase, sin decoración, sin cada etapa).
+ * API pública: y los puntos de shader del juego, las versiones, las fachadas ApiVisual y ApiAjustes y la superficie pública (solo lo previsto es público).
  * Fase 10: y los efectos con pool, el color ambiental con política y las mallas preparadas fuera del hilo de render.
  * Fase 9: y la capa visual (orden de capas, shaders, uniformes, fallos aislados, presupuestos, calidad, medición, separación de la simulación).
  * Fase 7: y los presupuestos (las tres reglas de degradación, misma salida degradada siempre, mundo reabierto, nada interrumpe la generación).
@@ -1653,6 +1658,257 @@ public final class Corpus{
         while(!m.todoListo() && System.nanoTime() < limite) Thread.sleep(2);
     }
 
+    // ================================================================== API pública
+
+    private static final class CapaPrueba implements VisualShaderPuntos.Capa{
+        final Object original;
+        Object actual;
+        int cambios;
+
+        CapaPrueba(Object original){
+            this.original = original;
+            this.actual = original;
+        }
+
+        @Override public Object original(){ return original; }
+        @Override public void poner(Object shader){
+            actual = shader;
+            cambios++;
+        }
+    }
+
+    private static Prov<Object> fab(final Object valor, final int[] llamadas){
+        return new Prov<Object>(){
+            @Override public Object get(){
+                llamadas[0]++;
+                return valor;
+            }
+        };
+    }
+
+    /** Qué shader acaba en la capa del agua con una calidad dada, y comprueba que se restaura el original. */
+    private static Object ganadoraAgua(VisualShaderPuntos vp, VisualCalidad q){
+        final CapaPrueba agua = new CapaPrueba("original");
+        final EnumMap<VisualShaderPuntos.Punto, VisualShaderPuntos.Capa> m = new EnumMap<VisualShaderPuntos.Punto, VisualShaderPuntos.Capa>(VisualShaderPuntos.Punto.class);
+        m.put(VisualShaderPuntos.Punto.AGUA, agua);
+        vp.aplicar(m, q);
+        final Object r = agua.actual;
+        vp.restaurar(m);
+        return agua.actual == agua.original ? r : "NO-RESTAURADO";
+    }
+
+    /** Puntos de sustitución de shaders del juego, versiones, fachadas públicas, ajustes de mods y superficie pública. */
+    static int comprobarApi() throws Exception{
+        int fallos = 0;
+        final int[] ll = new int[1];
+
+        // ---- puntos de shader del juego
+        final CapaPrueba agua = new CapaPrueba("agua-original"), barro = new CapaPrueba("barro-original");
+        final EnumMap<VisualShaderPuntos.Punto, VisualShaderPuntos.Capa> capas = new EnumMap<VisualShaderPuntos.Punto, VisualShaderPuntos.Capa>(VisualShaderPuntos.Punto.class);
+        capas.put(VisualShaderPuntos.Punto.AGUA, agua);
+        capas.put(VisualShaderPuntos.Punto.BARRO, barro);
+        final VisualShaderPuntos vacio = new VisualShaderPuntos();
+        vacio.aplicar(capas, VisualCalidad.ALTA);
+        vacio.restaurar(capas);
+        fallos += chequear("sin variantes ni límites registrados no se toca ninguna capa del juego ni se omite ninguna superficie",
+            agua.cambios == 0 && barro.cambios == 0 && !vacio.omitirSuperficies(1e9f) && Float.isNaN(vacio.limiteZoom()));
+
+        final VisualShaderPuntos v1 = new VisualShaderPuntos();
+        v1.registrarVariante("t", "t:v1", VisualShaderPuntos.Punto.AGUA, 0, null, null, fab("v1", ll), null);
+        v1.aplicar(capas, VisualCalidad.ALTA);
+        final boolean puesta = "v1".equals(agua.actual) && barro.cambios == 0 && "barro-original".equals(barro.actual);
+        v1.restaurar(capas);
+        fallos += chequear("una variante se pone solo en su punto durante el dibujo y después se restaura el shader original del juego", puesta && "agua-original".equals(agua.actual) && barro.cambios == 0);
+
+        boolean conflicto = true;
+        for(List<String[]> p : permutaciones(Arrays.asList(new String[]{"aaa", "0"}, new String[]{"bbb", "0"}, new String[]{"zzz", "-1"}))){
+            final VisualShaderPuntos vp = new VisualShaderPuntos();
+            for(String[] d : p) vp.registrarVariante(d[0], d[0] + ":v", VisualShaderPuntos.Punto.AGUA, Integer.parseInt(d[1]), null, null, fab(d[0], ll), null);
+            final Object g = ganadoraAgua(vp, VisualCalidad.ALTA);
+            if(!"zzz".equals(g) || vp.conflictos() != 2) conflicto = false;
+        }
+        fallos += chequear("si varias variantes compiten por un punto gana la de menor prioridad (y, en empate, la primera por fuente) con las 6 ordenaciones de registro; las demás avisan", conflicto);
+
+        boolean empate = true;
+        for(int orden = 0; orden < 2; orden++){
+            final VisualShaderPuntos vp = new VisualShaderPuntos();
+            if(orden == 0){
+                vp.registrarVariante("aaa", "aaa:v", VisualShaderPuntos.Punto.AGUA, 0, null, null, fab("A", ll), null);
+                vp.registrarVariante("bbb", "bbb:v", VisualShaderPuntos.Punto.AGUA, 0, null, null, fab("B", ll), null);
+            }else{
+                vp.registrarVariante("bbb", "bbb:v", VisualShaderPuntos.Punto.AGUA, 0, null, null, fab("B", ll), null);
+                vp.registrarVariante("aaa", "aaa:v", VisualShaderPuntos.Punto.AGUA, 0, null, null, fab("A", ll), null);
+            }
+            if(!"A".equals(ganadoraAgua(vp, VisualCalidad.ALTA)) || vp.conflictos() != 1) empate = false;
+        }
+        fallos += chequear("con la misma prioridad gana la fuente que va antes alfabéticamente, sea cual sea el orden de carga", empate);
+
+        final VisualShaderPuntos calidades = new VisualShaderPuntos();
+        calidades.registrarVariante("a", "a:barata", VisualShaderPuntos.Punto.AGUA, 0, VisualCalidad.BAJA, VisualCalidad.MEDIA, fab("barata", ll), null);
+        calidades.registrarVariante("b", "b:bonita", VisualShaderPuntos.Punto.AGUA, 0, VisualCalidad.ALTA, VisualCalidad.ALTA, fab("bonita", ll), null);
+        final boolean rangoMalo = !calidades.registrarVariante("c", "c:mala", VisualShaderPuntos.Punto.AGUA, 0, VisualCalidad.ALTA, VisualCalidad.BAJA, fab("x", ll), null);
+        fallos += chequear("variantes de calidades distintas no compiten: baja y media usan la barata, alta la bonita; un rango de calidad al revés se rechaza",
+            "barata".equals(ganadoraAgua(calidades, VisualCalidad.BAJA)) && "barata".equals(ganadoraAgua(calidades, VisualCalidad.MEDIA))
+                && "bonita".equals(ganadoraAgua(calidades, VisualCalidad.ALTA)) && calidades.conflictos() == 0 && rangoMalo);
+
+        final VisualShaderPuntos rota = new VisualShaderPuntos();
+        final int[] intentos = new int[1];
+        rota.registrarVariante("t", "t:rota", VisualShaderPuntos.Punto.AGUA, 0, null, null, new Prov<Object>(){
+            @Override public Object get(){
+                intentos[0]++;
+                throw new IllegalStateException("shader que no compila");
+            }
+        }, null);
+        rota.registrarVariante("t", "t:buena", VisualShaderPuntos.Punto.BARRO, 0, null, null, fab("barro-nuevo", ll), null);
+        final CapaPrueba a2 = new CapaPrueba("agua-original"), b2 = new CapaPrueba("barro-original");
+        final EnumMap<VisualShaderPuntos.Punto, VisualShaderPuntos.Capa> m2 = new EnumMap<VisualShaderPuntos.Punto, VisualShaderPuntos.Capa>(VisualShaderPuntos.Punto.class);
+        m2.put(VisualShaderPuntos.Punto.AGUA, a2);
+        m2.put(VisualShaderPuntos.Punto.BARRO, b2);
+        rota.aplicar(m2, VisualCalidad.ALTA);
+        rota.restaurar(m2);
+        rota.aplicar(m2, VisualCalidad.ALTA);
+        final boolean seguia = "barro-nuevo".equals(b2.actual) && "agua-original".equals(a2.actual);
+        rota.restaurar(m2);
+        fallos += chequear("una variante cuyo shader no se puede crear se descarta con aviso (se queda el original, no se reintenta) y las de otros puntos siguen", intentos[0] == 1 && seguia && a2.cambios == 0);
+
+        final boolean[] on = {false};
+        final VisualShaderPuntos cond = new VisualShaderPuntos();
+        cond.registrarVariante("t", "t:cond", VisualShaderPuntos.Punto.AGUA, 0, null, null, fab("cond", ll), new Boolp(){
+            @Override public boolean get(){ return on[0]; }
+        });
+        final Object apagada = ganadoraAgua(cond, VisualCalidad.ALTA);
+        on[0] = true;
+        final Object encendida = ganadoraAgua(cond, VisualCalidad.ALTA);
+        fallos += chequear("la condición de una variante se evalúa en cada fotograma (apagada: shader original; encendida: la variante)", "original".equals(apagada) && "cond".equals(encendida));
+
+        boolean zoomOk = true;
+        for(int orden = 0; orden < 2; orden++){
+            final VisualShaderPuntos z = new VisualShaderPuntos();
+            if(orden == 0){
+                z.registrarLimiteZoom("a", "a:z", 0, 1f, 600f, null);
+                z.registrarLimiteZoom("b", "b:z", 0, 3f, 1000f, null);
+            }else{
+                z.registrarLimiteZoom("b", "b:z", 0, 3f, 1000f, null);
+                z.registrarLimiteZoom("a", "a:z", 0, 1f, 600f, null);
+            }
+            if(z.limiteZoom() != 900f || z.omitirSuperficies(899f) || !z.omitirSuperficies(901f)) zoomOk = false;
+        }
+        final VisualShaderPuntos zc = new VisualShaderPuntos();
+        final boolean[] zon = {false};
+        zc.registrarLimiteZoom("a", "a:z", 0, 1f, 600f, new Boolp(){ @Override public boolean get(){ return zon[0]; } });
+        final boolean sinActiva = Float.isNaN(zc.limiteZoom()) && !zc.omitirSuperficies(1e9f);
+        zon[0] = true;
+        final boolean rechazaMalo = !zc.registrarLimiteZoom("b", "b:z", 0, 0f, 600f, null) && !zc.registrarLimiteZoom("c", "c:z", 0, 1f, -5f, null) && !zc.registrarLimiteZoom("d", "sin-formato", 0, 1f, 600f, null);
+        fallos += chequear("el límite de zoom combina varios mods por media ponderada (600 con peso 1 y 1000 con peso 3 = 900) con cualquier orden; solo cuentan los activos; se rechazan pesos o anchos inválidos",
+            zoomOk && sinActiva && zc.limiteZoom() == 600f && rechazaMalo);
+
+        // ---- versiones
+        fallos += chequear("las versiones de la API son compatibles con el mismo mayor y un menor suficiente",
+            ApiVersion.compatible(1, 0, 1, 0) && ApiVersion.compatible(1, 3, 1, 2) && !ApiVersion.compatible(1, 2, 1, 3) && !ApiVersion.compatible(2, 0, 1, 0) && !ApiVersion.compatible(1, 0, 2, 0)
+                && ApiVersion.requiereVisual("api-prueba", ApiVersion.VISUAL_MAYOR, ApiVersion.VISUAL_MENOR) && ApiVersion.requiereAjustes("api-prueba", ApiVersion.AJUSTES_MAYOR, 0)
+                && !ApiVersion.requiereVisual("api-prueba", ApiVersion.VISUAL_MAYOR + 1, 0) && !ApiVersion.requiereAjustes("api-prueba", ApiVersion.AJUSTES_MAYOR, ApiVersion.AJUSTES_MENOR + 1)
+                && ApiVersion.texto().startsWith("api 1.0"));
+
+        // ---- fachada visual: lo que se registra por la API queda en los registros del núcleo
+        final Runnable nada = new Runnable(){ @Override public void run(){} };
+        final boolean dib = ApiVisual.registrarDibujo("api-prueba", "api-prueba:d1", VisualCapa.BLOQUES, 0, 1, false, null, null, nada);
+        final boolean dup = ApiVisual.registrarDibujo("api-prueba", "api-prueba:d1", VisualCapa.BLOQUES, 0, 1, false, null, null, nada);
+        final boolean inv = ApiVisual.registrarDibujo("api-prueba", "sin-formato", VisualCapa.BLOQUES, 0, 1, false, null, null, nada);
+        final boolean vivo = ApiVisual.activo("api-prueba:d1");
+        ApiVisual.desactivar("api-prueba:d1", "prueba");
+        fallos += chequear("la API visual registra dibujos en el registro del núcleo, rechaza repetidos e inválidos, y permite desactivar", dib && !dup && !inv && vivo && !ApiVisual.activo("api-prueba:d1") && ApiVisual.calidad() != null);
+
+        final boolean efReg = ApiVisual.registrarEfecto("api-prueba", "api-prueba:e1", VisualCapa.SOBRE_BLOQUES, 0, 10f, 1, true, new Cons<VisualEfectoInst>(){
+            @Override public void get(VisualEfectoInst i){ i.fin(); i.fout(); i.x(); i.y(); i.r(); i.g(); i.b(); i.a(); i.rot(); i.tiempo(); i.datos(); }
+        });
+        VisualEfectos.global().configurar(VisualCalidad.ALTA);
+        final boolean emitido = ApiVisual.emitirEfecto("api-prueba:e1", 1f, 2f, 0f, 1f, 1f, 1f, 1f, null);
+        final int vivosAntes = VisualEfectos.global().vivos();
+        VisualEfectos.global().dibujar(new SalidaPrueba(), 1000f);
+        fallos += chequear("la API de efectos registra y emite en el pool del núcleo, y el efecto se libera al terminar", efReg && emitido && vivosAntes == 1 && VisualEfectos.global().vivos() == 0 && !ApiVisual.emitirEfecto("api-prueba:no-existe", 0f, 0f, 0f, 1f, 1f, 1f, 1f, null));
+
+        final boolean ambReg = ApiVisual.registrarAmbiente("api-prueba", "api-prueba:a1", 0, 1f);
+        ApiVisual.fijarAmbiente("api-prueba:a1", 0.25f, 0.5f, 0.75f, 0.125f);
+        final float[] ca = VisualAmbiente.global().combinar();
+        final boolean ambOk = ca != null && ca[0] == 0.25f && ca[1] == 0.5f && ca[2] == 0.75f && ca[3] == 0.125f;
+        ApiVisual.quitarAmbiente("api-prueba:a1");
+        fallos += chequear("la API del color ambiental aporta un color al canal del juego y al quitarlo no queda nada", ambReg && ambOk && VisualAmbiente.global().combinar() == null);
+
+        Hilos.cuadro();
+        final int[] subidasApi = new int[1];
+        final boolean malla = ApiVisual.prepararMalla("api-prueba:malla", new Prov<Integer>(){ @Override public Integer get(){ return 7; } }, new Cons<Integer>(){
+            @Override public void get(Integer v){ subidasApi[0] += v; }
+        });
+        esperarMallas(VisualMallas.global());
+        final int subidas = VisualMallas.global().subirListos(10);
+        fallos += chequear("la API de mallas prepara en un hilo de fondo y sube en el hilo de render", malla && subidas == 1 && subidasApi[0] == 7);
+
+        final VisualShaderPuntos puntosAntes = VisualShaderPuntos.global();
+        final int variantesAntes = puntosAntes.variantes();
+        final boolean varReg = ApiVisual.registrarVarianteShader("api-prueba", "api-prueba:variante", ApiVisual.PuntoShader.AGUA, 0, VisualCalidad.BAJA, VisualCalidad.ALTA, new Prov<Shader>(){
+            @Override public Shader get(){ return null; }
+        }, null);
+        final boolean limReg = ApiVisual.registrarLimiteZoom("api-prueba", "api-prueba:limite", 0, 1f, 500f, null);
+        fallos += chequear("la API de shaders del juego registra variantes y límites de zoom en los puntos del núcleo", varReg && limReg && puntosAntes.variantes() == variantesAntes + 1 && puntosAntes.limiteZoom() == 500f);
+
+        // ---- fachada de ajustes de mods
+        final boolean regA = ApiAjustes.registrarDecimal("api-prueba:param", "Parámetro de prueba", "Para comprobar la API", 2.0, 1.0, 4.0, ApiAjustes.Politica.MEDIA_PONDERADA);
+        final boolean dupA = ApiAjustes.registrarDecimal("api-prueba:param", "otra vez", "", 2.0, 1.0, 4.0, ApiAjustes.Politica.MEDIA_PONDERADA);
+        final boolean invA = ApiAjustes.registrarEntero("sin-formato", "x", "", 1, 0, 2, null);
+        final boolean propA = ApiAjustes.proponer("a", "a:p", "api-prueba:param", 1.0, 1.0, 0) && ApiAjustes.proponer("b", "b:p", "api-prueba:param", 4.0, 3.0, 0);
+        final PerfilMundo mundoApi = new PerfilMundo();
+        mundoApi.sellarGeneracion(7);
+        fallos += chequear("la API de ajustes registra un parámetro de un mod, recibe propuestas y al crear un mundo se resuelven con su política (1 y 4 con pesos 1 y 3 = 3.25); sin mundo vale su valor por defecto",
+            regA && !dupA && !invA && propA && mundoApi.valor(RegistroAjustes.get("api-prueba:param")) == 3.25 && ApiAjustes.valor("api-prueba:param") == 2.0 && Double.isNaN(ApiAjustes.valor("api-prueba:no-existe"))
+                && ApiAjustes.procedencia(0, 0) == null);
+
+        // ---- superficie pública: solo lo previsto es público, y la API no filtra tipos internos
+        final java.util.Set<String> previstas = new java.util.TreeSet<String>(Arrays.asList("AlmacenModulo", "ContextoColocacion", "ContextoFenomeno", "ContextoTerreno", "GameRule",
+            "GeneradorEstructura", "GeneradorFenomeno", "GeneradorMundo", "GeneradorTerreno", "MundoInfinitoMod", "MundoRegistrado", "OpenWorldAPI", "PoliticaSueno", "SiloInterdimensional",
+            "Corpus", "ApiVersion", "ApiVisual", "ApiAjustes", "VisualCapa", "VisualCalidad", "VisualPrograma", "VisualEfectoInst"));
+        final java.util.Set<String> publicas = new java.util.TreeSet<String>();
+        final URL url = Corpus.class.getResource("Corpus.class");
+        if(url == null || !"file".equals(url.getProtocol())){
+            fallos += chequear("superficie pública: no verificable (el código no está en un directorio de clases)", true);
+        }else{
+            final File[] clases = new File(url.toURI()).getParentFile().listFiles();
+            int noCargadas = 0;
+            if(clases != null){
+                for(File f : clases){
+                    final String n = f.getName();
+                    if(!n.endsWith(".class") || n.indexOf('$') >= 0) continue;
+                    final String simple = n.substring(0, n.length() - 6);
+                    try{
+                        final Class<?> c = Class.forName("mundoinfinito." + simple, false, Corpus.class.getClassLoader());
+                        if(Modifier.isPublic(c.getModifiers())) publicas.add(simple);
+                    }catch(Throwable t){
+                        noCargadas++;
+                    }
+                }
+            }
+            final java.util.Set<String> sobran = new java.util.TreeSet<String>(publicas);
+            sobran.removeAll(previstas);
+            final java.util.Set<String> faltan = new java.util.TreeSet<String>(previstas);
+            faltan.removeAll(publicas);
+            fallos += chequear("superficie pública: solo son públicas las " + previstas.size() + " clases previstas (sobran " + sobran + ", faltan " + faltan + ", sin poder cargar " + noCargadas + ")", sobran.isEmpty() && faltan.isEmpty());
+        }
+        final List<String> filtran = new ArrayList<String>();
+        for(Class<?> api : new Class<?>[]{ApiVisual.class, ApiAjustes.class, ApiVersion.class}){
+            for(Method m : api.getDeclaredMethods()){
+                if(!Modifier.isPublic(m.getModifiers())) continue;
+                final List<Class<?>> tipos = new ArrayList<Class<?>>(Arrays.asList(m.getParameterTypes()));
+                tipos.add(m.getReturnType());
+                for(Class<?> t : tipos){
+                    Class<?> base = t;
+                    while(base.isArray()) base = base.getComponentType();
+                    if(base.getName().startsWith("mundoinfinito.") && !Modifier.isPublic(base.getModifiers())) filtran.add(api.getSimpleName() + "." + m.getName() + " -> " + base.getSimpleName());
+                }
+            }
+        }
+        fallos += chequear("los métodos de la API pública solo usan tipos públicos (no filtran clases internas): " + filtran, filtran.isEmpty());
+        return fallos;
+    }
+
     static int comprobar() throws Exception{
         final List<int[]> es = entradas();
         int fallos = 0;
@@ -1689,6 +1945,7 @@ public final class Corpus{
         fallos += comprobarAjustes(es, a);
         fallos += comprobarResolucion();
         fallos += comprobarAreas();
+        fallos += comprobarApi();   // antes de comprobarPresupuestos: ahí se abre un mundo y los ajustes de generación ya no se pueden registrar
         fallos += comprobarPresupuestos(es, a);
         fallos += comprobarVisual(es, a);
         fallos += comprobarVisual10();

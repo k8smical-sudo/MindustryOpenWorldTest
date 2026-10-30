@@ -904,6 +904,7 @@ public final class Corpus{
         // ---- un mundo reabierto reproduce la misma degradación (el perfil guardado trae el porcentaje)
         final PerfilMundo guardado = new PerfilMundo();
         guardado.fijar(ParametrosGeneracion.ID_PRESUPUESTO_TERRENO, 25);
+        guardado.fijar(ParametrosGeneracion.ID_POZOS_SPAWN, 1);   // la referencia d1 se calculó con pozos: el mundo reabierto debe tenerlos también
         guardado.sellarGeneracion(7, new ArrayList<PropuestaParametro>());
         final ParametrosGeneracion reabierto = PerfilMundo.desde(archivoDe(guardado)).parametros();
         Nucleo.alReiniciarMundo(reabierto);

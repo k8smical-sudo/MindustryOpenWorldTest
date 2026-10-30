@@ -59,8 +59,8 @@ final class FenomenosBase{
         @Override public boolean aplicaA(int dimension){ return Extensiones.generacionNueva() && dimension == 1; }
         @Override public int presupuestoMs(){ return 60; }
 
-        @Override public int celda(){ return 96; }
-        @Override public int distanciaMinima(){ return 48; }     // (calibrar) la campaña no fija una
+        @Override public int celda(){ return Math.max(96, Nucleo.parametros().separacionRespiraderos); }   // la retícula nunca es menor que la separación
+        @Override public int distanciaMinima(){ return Nucleo.parametros().separacionRespiraderos; }   // separación: ajuste del mundo (los anteriores: 48)
         @Override public int radio(){ return 20; }
         @Override public int intentos(){ return 3; }
         @Override public int macro(){ return 384; }
@@ -267,7 +267,11 @@ final class FenomenosBase{
             }
 
             // 2) mezcla del suelo alrededor (círculo sesgado, radio 6..14 por respiradero)
-            final int crad = 6 + (int)(c.azar(x, y, 0x7110) * 9f), crad2 = crad * crad;
+            final ParametrosGeneracion pg = Nucleo.parametros();
+            final int rmin = Math.max(1, pg.radioMezclaMin), rmax = Math.max(rmin, pg.radioMezclaMax);
+            // no todos los respiraderos alteran el suelo: con mezcla < 1 algunos aparecen sobre el terreno natural (con crad -1 el bucle no da vueltas)
+            final boolean mezclar = c.azar(x, y, 0x7113) < pg.mezclaRespiraderos;
+            final int crad = mezclar ? rmin + (int)(c.azar(x, y, 0x7110) * (rmax - rmin + 1)) : -1, crad2 = crad * crad;
             for(int cx = -crad; cx <= crad; cx++){
                 for(int cy = -crad; cy <= crad; cy++){
                     final int rx = x + cx, ry = y + cy;

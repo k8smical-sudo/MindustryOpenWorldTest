@@ -103,12 +103,24 @@ final class PerfilMundo{
 
     /** Los parámetros que lee la generación, con los valores de este mundo. */
     ParametrosGeneracion parametros(){
+        final int rmin = Math.max(1, (int)Math.rint(valorLegado(ParametrosGeneracion.ID_RESPIRADEROS_RADIO_MIN, ParametrosGeneracion.LEGADO_RADIO_MIN)));
+        final int rmax = Math.max(rmin, (int)Math.rint(valorLegado(ParametrosGeneracion.ID_RESPIRADEROS_RADIO_MAX, ParametrosGeneracion.LEGADO_RADIO_MAX)));
         return new ParametrosGeneracion(
             (float)valorDe(ParametrosGeneracion.ID_ALTURA_SERPULO, ParametrosGeneracion.DEFECTO.estirarAlturaSerpulo),
             (float)valorDe(ParametrosGeneracion.ID_TEMPERATURA_SERPULO, ParametrosGeneracion.DEFECTO.estirarTemperaturaSerpulo),
             (float)valorDe(ParametrosGeneracion.ID_HUMEDAD_SERPULO, ParametrosGeneracion.DEFECTO.estirarHumedadSerpulo),
             (int)Math.rint(valorDe(ParametrosGeneracion.ID_FENOMENOS_DISTANCIA, ParametrosGeneracion.DEFECTO.distanciaMinimaFenomenos)),
-            (int)Math.rint(valorDe(ParametrosGeneracion.ID_PRESUPUESTO_TERRENO, ParametrosGeneracion.DEFECTO.presupuestoTerrenoPct)));
+            (int)Math.rint(valorDe(ParametrosGeneracion.ID_PRESUPUESTO_TERRENO, ParametrosGeneracion.DEFECTO.presupuestoTerrenoPct)),
+            (int)Math.rint(valorLegado(ParametrosGeneracion.ID_RESPIRADEROS_SEPARACION, ParametrosGeneracion.LEGADO_SEPARACION_RESPIRADEROS)),
+            (float)valorLegado(ParametrosGeneracion.ID_RESPIRADEROS_MEZCLA, ParametrosGeneracion.LEGADO_MEZCLA_RESPIRADEROS),
+            rmin, rmax);
+    }
+
+    /** Como valorDe, pero si el mundo no guardó el ajuste (es anterior a él) devuelve el valor de entonces, no el de hoy. */
+    private double valorLegado(String id, double legado){
+        if(!valores.containsKey(id)) return legado;
+        final AjusteMundo a = RegistroAjustes.get(id);
+        return a == null ? legado : valor(a);
     }
 
     private double valorDe(String id, double respaldo){

@@ -1909,6 +1909,39 @@ public final class Corpus{
         return fallos;
     }
 
+    /** Respiraderos: separación, mezcla y radio. Los mundos anteriores conservan los valores de entonces; los nuevos, los nuevos. */
+    static int comprobarEspaciado(){
+        int fallos = 0;
+        final PerfilMundo viejo = new PerfilMundo();
+        final ParametrosGeneracion pv = viejo.parametros();
+        fallos += chequear("un mundo anterior a estos ajustes conserva sus respiraderos: separación 48, mezcla 100 % y radio 6 a 14",
+            pv.separacionRespiraderos == 48 && pv.mezclaRespiraderos == 1f && pv.radioMezclaMin == 6 && pv.radioMezclaMax == 14);
+
+        final PerfilMundo nuevo = new PerfilMundo();
+        nuevo.sellarGeneracion(7);
+        final ParametrosGeneracion pn = PerfilMundo.desde(archivoDe(nuevo)).parametros();
+        fallos += chequear("un mundo nuevo guarda separación 120, mezcla 50 % y radio 4 a 12, y sobrevive a guardarlo y leerlo",
+            pn.separacionRespiraderos == 120 && pn.mezclaRespiraderos == 0.5f && pn.radioMezclaMin == 4 && pn.radioMezclaMax == 12);
+
+        final PerfilMundo fuera = new PerfilMundo();
+        fuera.fijar(ParametrosGeneracion.ID_RESPIRADEROS_SEPARACION, 9999);
+        fuera.fijar(ParametrosGeneracion.ID_RESPIRADEROS_MEZCLA, -1);
+        fuera.fijar(ParametrosGeneracion.ID_RESPIRADEROS_RADIO_MIN, 20);
+        fuera.fijar(ParametrosGeneracion.ID_RESPIRADEROS_RADIO_MAX, 2);
+        final ParametrosGeneracion pf = fuera.parametros();
+        fallos += chequear("valores fuera de rango se recortan (separación 400, mezcla 0) y un radio mínimo mayor que el máximo se corrige",
+            pf.separacionRespiraderos == 400 && pf.mezclaRespiraderos == 0f && pf.radioMezclaMin <= pf.radioMezclaMax);
+
+        Nucleo.alReiniciarMundo(pn);
+        final int distNueva = new FenomenosBase.Respiraderos().distanciaMinima(), celdaNueva = new FenomenosBase.Respiraderos().celda();
+        Nucleo.alReiniciarMundo(pv);
+        final int distVieja = new FenomenosBase.Respiraderos().distanciaMinima(), celdaVieja = new FenomenosBase.Respiraderos().celda();
+        fallos += chequear("el generador de respiraderos usa la separación del mundo: 120 en uno nuevo (retícula >= 120) y 48 con retícula 96 en uno anterior",
+            distNueva == 120 && celdaNueva >= 120 && distVieja == 48 && celdaVieja == 96);
+        Nucleo.alReiniciarMundo(null);
+        return fallos;
+    }
+
     static int comprobar() throws Exception{
         final List<int[]> es = entradas();
         int fallos = 0;
@@ -1945,7 +1978,8 @@ public final class Corpus{
         fallos += comprobarAjustes(es, a);
         fallos += comprobarResolucion();
         fallos += comprobarAreas();
-        fallos += comprobarApi();   // antes de comprobarPresupuestos: ahí se abre un mundo y los ajustes de generación ya no se pueden registrar
+        fallos += comprobarApi();
+        fallos += comprobarEspaciado();   // antes de comprobarPresupuestos: ahí se abre un mundo y los ajustes de generación ya no se pueden registrar
         fallos += comprobarPresupuestos(es, a);
         fallos += comprobarVisual(es, a);
         fallos += comprobarVisual10();

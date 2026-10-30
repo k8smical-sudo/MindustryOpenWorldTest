@@ -56,6 +56,18 @@ final class RegistroAjustes{
         registrar(AjusteMundo.entero(ParametrosGeneracion.ID_PRESUPUESTO_TERRENO, "Presupuesto de generación del terreno (%)",
             "Qué porcentaje del presupuesto de cada contribución de terreno se le permite gastar por chunk. 100 = todo (sin degradar). Menos = generación más barata y simple, siempre la misma para ese mundo.",
             AjusteMundo.Ambito.GENERACION, 100, 1, 100).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
+        registrar(AjusteMundo.entero(ParametrosGeneracion.ID_RESPIRADEROS_SEPARACION, "Separación entre respiraderos (casillas)",
+            "Distancia mínima entre dos respiraderos de Erekir. Más alto = respiraderos más esparcidos. Los mundos anteriores conservan 48.",
+            AjusteMundo.Ambito.GENERACION, 120, 48, 400).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
+        registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_RESPIRADEROS_MEZCLA, "Respiraderos que alteran el suelo (0 a 1)",
+            "Fracción de respiraderos que cambian el suelo de su alrededor. 0 = ninguno (aparecen sobre el terreno natural), 1 = todos.",
+            AjusteMundo.Ambito.GENERACION, 0.5, 0.0, 1.0).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
+        registrar(AjusteMundo.entero(ParametrosGeneracion.ID_RESPIRADEROS_RADIO_MIN, "Radio mínimo de la zona alterada",
+            "Radio mínimo, en casillas, de la zona que cambia alrededor de un respiradero.",
+            AjusteMundo.Ambito.GENERACION, 4, 1, 14).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
+        registrar(AjusteMundo.entero(ParametrosGeneracion.ID_RESPIRADEROS_RADIO_MAX, "Radio máximo de la zona alterada",
+            "Radio máximo, en casillas, de la zona que cambia alrededor de un respiradero. Si queda por debajo del mínimo se usa el mínimo.",
+            AjusteMundo.Ambito.GENERACION, 12, 1, 14).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
     }
 
     private RegistroAjustes(){}

@@ -23,6 +23,7 @@ final class Ajustes{
     static final String K_CARGA = "ow-carga", K_SIM = "ow-sim", K_NIEBLA = "ow-niebla", K_VISION = "ow-vision";
     static final String K_CALIDAD = "ow-calidad", K_CALIDAD_AUTO = "ow-calidad-auto", K_PRUEBA = "ow-visual-prueba", K_PRUEBA_FALLA = "ow-visual-prueba-falla", K_PRUEBA_EFECTO = "ow-visual-prueba-efecto",
         K_PRUEBA_AGUA = "ow-visual-prueba-agua", K_PRUEBA_ZOOM = "ow-visual-prueba-zoom";
+    static final String K_MAPA_ESCALA = "ow-mapa-escala", K_MAPA_DX = "ow-mapa-dx", K_MAPA_DY = "ow-mapa-dy", K_MAPA_VISIBLE = "ow-mapa-visible";
     /** Con visión automática el dron nunca revela más de esto (la niebla se actualiza por cada casilla que se mueve el dron). */
     static final int VISION_AUTO_MAX = 12;
     /** Menor distancia de chunks permitida (antes 3): con 1 solo se carga el chunk del jugador y sus vecinos inmediatos. */
@@ -75,6 +76,31 @@ final class Ajustes{
 
     static boolean pruebaZoom(){
         return Core.settings.getBool(K_PRUEBA_ZOOM, false);
+    }
+
+    /** Escala del minimapa (1 = 100 %). */
+    static float mapaEscala(){
+        return Core.settings.getInt(K_MAPA_ESCALA, 100) / 100f;
+    }
+
+    static boolean mapaVisible(){
+        return Core.settings.getBool(K_MAPA_VISIBLE, true);
+    }
+
+    /** Separación del minimapa respecto al borde derecho, en unidades de interfaz. */
+    static float mapaDx(){
+        return Core.settings.getInt(K_MAPA_DX, 0);
+    }
+
+    /** Separación del minimapa respecto al borde superior, en unidades de interfaz. */
+    static float mapaDy(){
+        return Core.settings.getInt(K_MAPA_DY, 0);
+    }
+
+    /** Mueve el minimapa (en unidades de interfaz) y guarda la posición, limitada a un rango razonable. */
+    static void moverMapa(float dx, float dy){
+        Core.settings.put(K_MAPA_DX, Math.max(0, Math.min(2000, Math.round(mapaDx() + dx))));
+        Core.settings.put(K_MAPA_DY, Math.max(0, Math.min(2000, Math.round(mapaDy() + dy))));
     }
 
     static int simPorDefecto(){
@@ -172,6 +198,10 @@ final class Ajustes{
             p.put("setting." + K_PRUEBA_EFECTO + ".name", "Prueba visual: efecto y luz ambiental (solo para comprobar)");
             p.put("setting." + K_PRUEBA_AGUA + ".name", "Prueba visual: sustituir el shader del agua (solo para comprobar)");
             p.put("setting." + K_PRUEBA_ZOOM + ".name", "Prueba visual: sin shaders de superficie al alejar el zoom (solo para comprobar)");
+            p.put("setting." + K_MAPA_VISIBLE + ".name", "Mostrar el minimapa");
+            p.put("setting." + K_MAPA_ESCALA + ".name", "Tamaño del minimapa");
+            p.put("setting." + K_MAPA_DX + ".name", "Posición del minimapa (horizontal)");
+            p.put("setting." + K_MAPA_DY + ".name", "Posición del minimapa (vertical)");
             Vars.ui.settings.addCategory("OpenWorld", Icon.map, t -> {
                 t.sliderPref(K_CARGA, Math.min(cargaPorDefecto(), maxCarga()), MIN_CARGA, maxCarga(), v -> v + " chunks (" + (v * MundoInfinitoMod.TAM_CHUNK) + " tiles, redondo)");
                 t.sliderPref(K_SIM, simPorDefecto(), MIN_CARGA, maxCarga(), v -> v + " chunks (redondo)");
@@ -184,6 +214,10 @@ final class Ajustes{
                 t.checkPref(K_PRUEBA_EFECTO, false);
                 t.checkPref(K_PRUEBA_AGUA, false);
                 t.checkPref(K_PRUEBA_ZOOM, false);
+                t.checkPref(K_MAPA_VISIBLE, true);
+                t.sliderPref(K_MAPA_ESCALA, 100, 50, 200, v -> v + " %");
+                t.sliderPref(K_MAPA_DX, 0, 0, 2000, v -> v + " u (aleja del borde derecho)");
+                t.sliderPref(K_MAPA_DY, 0, 0, 2000, v -> v + " u (aleja del borde superior)");
             });
         }catch(Throwable e){
             Log.err("[MundoInfinito] No se pudo crear la sección OpenWorld en Ajustes", e);

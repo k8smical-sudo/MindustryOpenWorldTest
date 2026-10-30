@@ -33,22 +33,49 @@ final class MapaVista extends Element{
 
     MapaVista(){
         textura.setFilter(Texture.TextureFilter.nearest);
+        // arrastrar el minimapa lo mueve por la pantalla; la posición se guarda en los ajustes (un toque sin arrastrar sigue cambiando el zoom)
+        addListener(new arc.scene.event.ElementGestureListener(){
+            @Override
+            public void pan(arc.scene.event.InputEvent event, float x, float y, float deltaX, float deltaY){
+                Ajustes.moverMapa(-deltaX / Scl.scl(1f), -deltaY / Scl.scl(1f));   // el minimapa sigue al dedo
+            }
+        });
         clicked(() -> {
             tpp = tpp >= 8 ? 1 : tpp * 2;
             ultimo = -999f;
         });
     }
 
+    /** Tabla que contiene el minimapa y su celda; la escala y la posición vienen de los ajustes y se reaplican cuando cambian. */
+    private static Table raiz;
+    private static arc.scene.ui.layout.Cell<MapaVista> celda;
+    private static float escalaAplicada = -1f, dxAplicada = -1f, dyAplicada = -1f;
+
     static void crear(){
         if(creado || Vars.headless || Core.scene == null) return;
         creado = true;
-        Core.scene.add(new Table(t -> {
+        raiz = new Table(t -> {
             t.setFillParent(true);
             t.top().right();
-            t.visible(() -> Streamer.activo && Vars.state.isGame() && Mundos.actual != null && Mundos.actual.dimensional());
-            float lado = Scl.scl(LADO);
-            t.add(new MapaVista()).size(lado).padTop(Scl.scl(64f)).padRight(Scl.scl(8f));
-        }));
+            t.visible(() -> {
+                aplicarAjustes();
+                return Ajustes.mapaVisible() && Streamer.activo && Vars.state.isGame() && Mundos.actual != null && Mundos.actual.dimensional();
+            });
+            celda = t.add(new MapaVista()).size(Scl.scl(LADO)).padTop(Scl.scl(64f)).padRight(Scl.scl(8f));
+        });
+        Core.scene.add(raiz);
+    }
+
+    /** Aplica a la celda la escala y la posición de los ajustes, solo si han cambiado desde la última vez. */
+    private static void aplicarAjustes(){
+        if(celda == null) return;
+        final float e = Ajustes.mapaEscala(), dx = Ajustes.mapaDx(), dy = Ajustes.mapaDy();
+        if(e == escalaAplicada && dx == dxAplicada && dy == dyAplicada) return;
+        escalaAplicada = e;
+        dxAplicada = dx;
+        dyAplicada = dy;
+        celda.size(Scl.scl(LADO) * e).padTop(Scl.scl(64f) + Scl.scl(dy)).padRight(Scl.scl(8f) + Scl.scl(dx));
+        if(raiz != null) raiz.invalidateHierarchy();
     }
 
     /** Circunferencia recortada al cuadrado del minimapa (solo se pintan los tramos que caen dentro). */

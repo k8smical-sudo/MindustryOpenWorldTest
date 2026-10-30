@@ -176,7 +176,7 @@ final class EtapasBase{
             final boolean nueva = ce.nueva;
             int pzPiso = -1;
             boolean pzLibre = false;
-            float[] poz = ce.sp.poz;
+            float[] poz = ce.par.pozosSpawn ? ce.sp.poz : new float[0];   // pozos del spawn: solo si el mundo los tiene
             for(int k = 0; k < poz.length; k += STRIDE_POZ){
                 float ddx = (float)(dx0 - poz[k + 1]), ddy = (float)(dy0 - poz[k + 2]), r = poz[k + 3];
                 if(ddx * ddx + ddy * ddy > r * r * 3.4f) continue;

@@ -68,6 +68,9 @@ final class RegistroAjustes{
         registrar(AjusteMundo.entero(ParametrosGeneracion.ID_RESPIRADEROS_RADIO_MAX, "Radio máximo de la zona alterada",
             "Radio máximo, en casillas, de la zona que cambia alrededor de un respiradero. Si queda por debajo del mínimo se usa el mínimo.",
             AjusteMundo.Ambito.GENERACION, 12, 1, 14).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
+        registrar(AjusteMundo.bool(ParametrosGeneracion.ID_POZOS_SPAWN, "Pozos del spawn",
+            "Lista de pozos, respiraderos y depósitos agrupados alrededor del spawn. Desactivado en mundos nuevos: los pozos se reparten como el resto de fenómenos. Los mundos anteriores los conservan.",
+            AjusteMundo.Ambito.GENERACION, false, null).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
     }
 
     private RegistroAjustes(){}

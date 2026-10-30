@@ -425,7 +425,7 @@ public final class Corpus{
         int malosDefecto = 0, serpuloCambia = 0, erekirCambia = 0;
         for(int i = 0; i < es.size(); i++){
             final int[] e = es.get(i);
-            if(hashChunkNucleoCon(nuevoLeido.parametros(), e[0], e[1], e[2], e[3]) != directo[i]) malosDefecto++;
+            if(hashChunkNucleoCon(ParametrosGeneracion.DEFECTO, e[0], e[1], e[2], e[3]) != directo[i]) malosDefecto++;   // referencia: el perfil por defecto de la mod (con pozos)
             if(hashChunkNucleoCon(fuerte, e[0], e[1], e[2], e[3]) != directo[i]){
                 if(e[1] == 1) erekirCambia++;
                 else serpuloCambia++;
@@ -1938,6 +1938,11 @@ public final class Corpus{
         final int distVieja = new FenomenosBase.Respiraderos().distanciaMinima(), celdaVieja = new FenomenosBase.Respiraderos().celda();
         fallos += chequear("el generador de respiraderos usa la separación del mundo: 120 en uno nuevo (retícula >= 120) y 48 con retícula 96 en uno anterior",
             distNueva == 120 && celdaNueva >= 120 && distVieja == 48 && celdaVieja == 96);
+        final PerfilMundo sinPozos = new PerfilMundo();
+        sinPozos.sellarGeneracion(7);
+        final boolean nuevoSinPozos = !sinPozos.parametros().pozosSpawn && !PerfilMundo.desde(archivoDe(sinPozos)).parametros().pozosSpawn;
+        final boolean antiguoConPozos = viejo.parametros().pozosSpawn;
+        fallos += chequear("los mundos anteriores conservan sus pozos del spawn y los mundos nuevos no los generan (el ajuste se guarda y se lee)", nuevoSinPozos && antiguoConPozos);
         Nucleo.alReiniciarMundo(null);
         return fallos;
     }

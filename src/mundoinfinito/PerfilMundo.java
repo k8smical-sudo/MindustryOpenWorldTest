@@ -113,7 +113,8 @@ final class PerfilMundo{
             (int)Math.rint(valorDe(ParametrosGeneracion.ID_PRESUPUESTO_TERRENO, ParametrosGeneracion.DEFECTO.presupuestoTerrenoPct)),
             (int)Math.rint(valorLegado(ParametrosGeneracion.ID_RESPIRADEROS_SEPARACION, ParametrosGeneracion.LEGADO_SEPARACION_RESPIRADEROS)),
             (float)valorLegado(ParametrosGeneracion.ID_RESPIRADEROS_MEZCLA, ParametrosGeneracion.LEGADO_MEZCLA_RESPIRADEROS),
-            rmin, rmax);
+            rmin, rmax,
+            valorLegado(ParametrosGeneracion.ID_POZOS_SPAWN, ParametrosGeneracion.LEGADO_POZOS_SPAWN ? 1d : 0d) != 0d);
     }
 
     /** Como valorDe, pero si el mundo no guardó el ajuste (es anterior a él) devuelve el valor de entonces, no el de hoy. */

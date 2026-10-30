@@ -19,14 +19,17 @@ final class ParametrosGeneracion{
     static final String ID_RESPIRADEROS_MEZCLA = "mundo-infinito:respiraderos-mezcla";
     static final String ID_RESPIRADEROS_RADIO_MIN = "mundo-infinito:respiraderos-radio-min";
     static final String ID_RESPIRADEROS_RADIO_MAX = "mundo-infinito:respiraderos-radio-max";
+    static final String ID_POZOS_SPAWN = "mundo-infinito:pozos-spawn";
 
     /** Valores de los mundos anteriores a los ajustes de respiraderos (los que tenían fijos en el código). */
     static final int LEGADO_SEPARACION_RESPIRADEROS = 48;
     static final float LEGADO_MEZCLA_RESPIRADEROS = 1f;
     static final int LEGADO_RADIO_MIN = 6, LEGADO_RADIO_MAX = 14;
+    /** Los pozos del spawn (lista de objetos alrededor del spawn) existían en todos los mundos anteriores. */
+    static final boolean LEGADO_POZOS_SPAWN = true;
 
     /** El perfil por defecto de los mundos NUEVOS. */
-    static final ParametrosGeneracion DEFECTO = new ParametrosGeneracion(Muestreo.K_ALTURA, Muestreo.K_TEMP_S, Muestreo.K_HUM_S, 0, 100, 120, 0.5f, 4, 12);
+    static final ParametrosGeneracion DEFECTO = new ParametrosGeneracion(Muestreo.K_ALTURA, Muestreo.K_TEMP_S, Muestreo.K_HUM_S, 0, 100, 120, 0.5f, 4, 12, LEGADO_POZOS_SPAWN);
 
     /** Cuánto se estira el ruido de relieve, temperatura y humedad de Serpulo hacia [0,1]: más alto = biomas más contrastados. */
     final float estirarAlturaSerpulo, estirarTemperaturaSerpulo, estirarHumedadSerpulo;
@@ -40,6 +43,8 @@ final class ParametrosGeneracion{
     final float mezclaRespiraderos;
     /** Radio mínimo y máximo, en casillas, de la zona alterada alrededor de un respiradero. */
     final int radioMezclaMin, radioMezclaMax;
+    /** ¿Se generan los pozos del spawn (la lista de objetos cerca del spawn)? Los mundos nuevos no los generan: se reparten como el resto de fenómenos. */
+    final boolean pozosSpawn;
 
     ParametrosGeneracion(float estirarAlturaSerpulo, float estirarTemperaturaSerpulo, float estirarHumedadSerpulo){
         this(estirarAlturaSerpulo, estirarTemperaturaSerpulo, estirarHumedadSerpulo, 0, 100);
@@ -57,6 +62,14 @@ final class ParametrosGeneracion{
     ParametrosGeneracion(float estirarAlturaSerpulo, float estirarTemperaturaSerpulo, float estirarHumedadSerpulo,
                          int distanciaMinimaFenomenos, int presupuestoTerrenoPct,
                          int separacionRespiraderos, float mezclaRespiraderos, int radioMezclaMin, int radioMezclaMax){
+        this(estirarAlturaSerpulo, estirarTemperaturaSerpulo, estirarHumedadSerpulo, distanciaMinimaFenomenos, presupuestoTerrenoPct,
+            separacionRespiraderos, mezclaRespiraderos, radioMezclaMin, radioMezclaMax, LEGADO_POZOS_SPAWN);
+    }
+
+    ParametrosGeneracion(float estirarAlturaSerpulo, float estirarTemperaturaSerpulo, float estirarHumedadSerpulo,
+                         int distanciaMinimaFenomenos, int presupuestoTerrenoPct,
+                         int separacionRespiraderos, float mezclaRespiraderos, int radioMezclaMin, int radioMezclaMax, boolean pozosSpawn){
+        this.pozosSpawn = pozosSpawn;
         this.estirarAlturaSerpulo = estirarAlturaSerpulo;
         this.estirarTemperaturaSerpulo = estirarTemperaturaSerpulo;
         this.estirarHumedadSerpulo = estirarHumedadSerpulo;

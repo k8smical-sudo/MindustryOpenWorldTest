@@ -1444,7 +1444,7 @@ public class MundoInfinitoMod extends Mod{
             // --- pozos garantizados cerca del spawn (elípticos, orientados al azar) ---
             int pzPiso = -1;
             boolean pzLibre = false;
-            float[] poz = sp.poz;
+            float[] poz = Nucleo.parametros().pozosSpawn ? sp.poz : new float[0];   // pozos del spawn: solo si el mundo los tiene
             if(hue == 0){
                 for(int k = 0; k < poz.length; k += STRIDE_POZ){
                     float ddx = (float)(dx0 - poz[k + 1]), ddy = (float)(dy0 - poz[k + 2]), r = poz[k + 3];

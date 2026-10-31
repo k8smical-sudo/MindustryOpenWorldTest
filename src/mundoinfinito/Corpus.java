@@ -1866,7 +1866,7 @@ public final class Corpus{
         // ---- superficie pública: solo lo previsto es público, y la API no filtra tipos internos
         final java.util.Set<String> previstas = new java.util.TreeSet<String>(Arrays.asList("AlmacenModulo", "ContextoColocacion", "ContextoFenomeno", "ContextoTerreno", "GameRule",
             "GeneradorEstructura", "GeneradorFenomeno", "GeneradorMundo", "GeneradorTerreno", "MundoInfinitoMod", "MundoRegistrado", "OpenWorldAPI", "PoliticaSueno", "SiloInterdimensional",
-            "Corpus", "ApiVersion", "ApiVisual", "ApiAjustes", "VisualCapa", "VisualCalidad", "VisualPrograma", "VisualEfectoInst", "ApiTiempo", "EventoTiempo"));
+            "Corpus", "ApiVersion", "ApiVisual", "ApiAjustes", "VisualCapa", "VisualCalidad", "VisualPrograma", "VisualEfectoInst", "ApiTiempo", "EventoTiempo", "ApiMundo", "ApiModpack"));
         final java.util.Set<String> publicas = new java.util.TreeSet<String>();
         final URL url = Corpus.class.getResource("Corpus.class");
         if(url == null || !"file".equals(url.getProtocol())){
@@ -1894,7 +1894,7 @@ public final class Corpus{
             fallos += chequear("superficie pública: solo son públicas las " + previstas.size() + " clases previstas (sobran " + sobran + ", faltan " + faltan + ", sin poder cargar " + noCargadas + ")", sobran.isEmpty() && faltan.isEmpty());
         }
         final List<String> filtran = new ArrayList<String>();
-        for(Class<?> api : new Class<?>[]{ApiVisual.class, ApiAjustes.class, ApiVersion.class, ApiTiempo.class}){
+        for(Class<?> api : new Class<?>[]{ApiVisual.class, ApiAjustes.class, ApiVersion.class, ApiTiempo.class, ApiMundo.class, ApiModpack.class}){
             for(Method m : api.getDeclaredMethods()){
                 if(!Modifier.isPublic(m.getModifiers())) continue;
                 final List<Class<?>> tipos = new ArrayList<Class<?>>(Arrays.asList(m.getParameterTypes()));
@@ -2103,6 +2103,30 @@ public final class Corpus{
         return fallos;
     }
 
+    static int comprobarModpack(){
+        int fallos = 0;
+        final java.util.Map<String, String> cfg = ConfiguracionModpack.parsear("a:c|0|-;b:o|1|3;");
+        fallos += chequear("una configuración vacía no cambia nada: todos los aportes están activos con su peso",
+            ConfiguracionModpack.activo(ConfiguracionModpack.parsear(""), "a:c") && ConfiguracionModpack.pesoEfectivo(new java.util.TreeMap<String, String>(), "b:o", 1f) == 1f);
+        fallos += chequear("la configuración se lee y se vuelve a escribir igual (forma canónica)", ConfiguracionModpack.firma(cfg).equals("a:c|0|-;b:o|1|3;"));
+        fallos += chequear("un aporte desactivado no cuenta y un peso configurado sustituye al base",
+            !ConfiguracionModpack.activo(cfg, "a:c") && ConfiguracionModpack.pesoEfectivo(cfg, "b:o", 1f) == 3f && ConfiguracionModpack.pesoEfectivo(cfg, "x:y", 2f) == 2f);
+        final VisualAmbiente v = new VisualAmbiente(VisualAmbiente.Politica.MEDIA_PONDERADA);
+        v.registrar("a", "a:c", 0, 1f);
+        v.registrar("b", "b:o", 0, 1f);
+        v.fijarColor("a:c", 1f, 0f, 0f);
+        v.fijarOscuridad("b:o", 0.5f);
+        final VisualAmbiente.Iluminacion il = v.iluminacion(cfg);
+        fallos += chequear("desactivar un aporte de color deja solo la oscuridad del otro, sin residuo de color", il != null && il.color == null && il.oscuridad != null && il.oscuridad == 0.5f);
+        final VisualAmbiente.Iluminacion sinCfg = v.iluminacion(new java.util.TreeMap<String, String>());
+        fallos += chequear("sin configuración el canal combina todos los aportes como antes", sinCfg != null && sinCfg.color != null && sinCfg.oscuridad != null && sinCfg.oscuridad == 0.5f);
+        fallos += chequear("el manifiesto detecta un aporte desactivado y un peso cambiado, y no señala nada si la configuración es igual",
+            !ManifiestoMundo.diferenciasModpack("", "a:c|0|-;").isEmpty() && ManifiestoMundo.diferenciasModpack("a:c|1|-;", "a:c|0|-;").size() == 1
+                && ManifiestoMundo.diferenciasModpack("b:o|1|3;", "b:o|1|3;").isEmpty() && ManifiestoMundo.diferenciasModpack("", "").isEmpty());
+        fallos += chequear("ApiMundo devuelve -1 sin mundo abierto y las dimensiones tienen sus números", ApiMundo.dimensionActual() == -1 && ApiMundo.SERPULO == 0 && ApiMundo.EREKIR == 1);
+        return fallos;
+    }
+
     static int comprobar() throws Exception{
         final List<int[]> es = entradas();
         int fallos = 0;
@@ -2145,7 +2169,8 @@ public final class Corpus{
         fallos += comprobarTiempo();
         fallos += comprobarFondo();
         fallos += comprobarIluminacion();
-        fallos += comprobarManifiesto();   // antes de comprobarPresupuestos: ahí se abre un mundo y los ajustes de generación ya no se pueden registrar
+        fallos += comprobarManifiesto();
+        fallos += comprobarModpack();   // antes de comprobarPresupuestos: ahí se abre un mundo y los ajustes de generación ya no se pueden registrar
         fallos += comprobarPresupuestos(es, a);
         fallos += comprobarVisual(es, a);
         fallos += comprobarVisual10();

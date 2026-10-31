@@ -14,6 +14,10 @@ public final class ApiVersion{
     public static final int VISUAL_MAYOR = 1, VISUAL_MENOR = 1;
     /** La parte de ajustes y propuestas de valor: {@code ApiAjustes}. */
     public static final int AJUSTES_MAYOR = 1, AJUSTES_MENOR = 0;
+    /** La parte de datos del mundo: {@code ApiMundo}. */
+    public static final int MUNDO_MAYOR = 1, MUNDO_MENOR = 0;
+    /** La parte de configuración de modpack: {@code ApiModpack}. */
+    public static final int MODPACK_MAYOR = 1, MODPACK_MENOR = 0;
     /** La parte de tiempo, calendario y eventos: {@code ApiTiempo}. */
     public static final int TIEMPO_MAYOR = 1, TIEMPO_MENOR = 1;
 

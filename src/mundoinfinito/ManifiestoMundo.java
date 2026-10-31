@@ -48,6 +48,20 @@ final class ManifiestoMundo{
         return out;
     }
 
+    static List<String> diferenciasModpack(String guardada, String actual){
+        final Map<String, String> antes = ConfiguracionModpack.parsear(guardada), ahora = ConfiguracionModpack.parsear(actual);
+        final List<String> out = new ArrayList<String>();
+        for(Map.Entry<String, String> e : antes.entrySet()){
+            final String vb = ahora.get(e.getKey());
+            if(vb == null) out.add(e.getKey() + " ya no está configurado");
+            else if(!vb.equals(e.getValue())) out.add(e.getKey() + ": " + e.getValue() + " → " + vb);
+        }
+        for(Map.Entry<String, String> e : ahora.entrySet()){
+            if(!antes.containsKey(e.getKey())) out.add(e.getKey() + " configurado ahora: " + e.getValue());
+        }
+        return out;
+    }
+
     /** Versión mayor de la API con la que se guardó el mundo, o -1 si no se sabe. */
     static int apiMayor(String api){
         if(api == null) return -1;

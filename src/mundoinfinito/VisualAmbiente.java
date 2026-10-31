@@ -165,24 +165,32 @@ final class VisualAmbiente{
         return v < 0f ? 0f : (v > 1f ? 1f : v);
     }
 
-    /**
-     * Iluminación combinada: el color y la oscuridad se combinan por separado, cada una con la política del canal. Un valor que ningún aporte fija
-     * queda nulo y no cambia nada del juego. Devuelve null si ninguna magnitud está fijada.
-     */
     Iluminacion iluminacion(){
+        return iluminacion(ConfiguracionModpack.mapaActual());
+    }
+
+    Iluminacion iluminacion(Map<String, String> cfg){
         final List<Aporte> color = new ArrayList<Aporte>(), osc = new ArrayList<Aporte>();
         synchronized(cerrojo){
             for(Aporte p : aportes.values()){
                 if(!p.colorPuesto && !p.oscPuesta) continue;
-                if(!(p.peso > 0f) || Float.isInfinite(p.peso)){
-                    aviso("peso:" + p.id, "la contribución de iluminación '" + p.id + "' tiene un peso no válido (" + p.peso + ") y se ignora.");
+                if(!ConfiguracionModpack.activo(cfg, p.id)) continue;
+                final float pesoEf = ConfiguracionModpack.pesoEfectivo(cfg, p.id, p.peso);
+                if(!(pesoEf > 0f) || Float.isInfinite(pesoEf)){
+                    aviso("peso:" + p.id, "la contribución de iluminación '" + p.id + "' tiene un peso no válido (" + pesoEf + ") y se ignora.");
                     continue;
                 }
+                final Aporte copia = new Aporte(p.id, p.fuente, p.prioridad, pesoEf);
+                copia.r = p.r;
+                copia.g = p.g;
+                copia.b = p.b;
+                copia.osc = p.osc;
                 if(p.colorPuesto){
                     if(finito(p.r, p.g, p.b)){
                         if(p.r < 0f || p.r > 1f || p.g < 0f || p.g > 1f || p.b < 0f || p.b > 1f)
                             aviso("rangoc:" + p.id, "el color de '" + p.id + "' está fuera de [0, 1] y se recorta.");
-                        color.add(p);
+                        copia.colorPuesto = true;
+                        color.add(copia);
                     }else{
                         aviso("nanc:" + p.id, "el color de '" + p.id + "' no es numérico y se ignora.");
                     }
@@ -190,7 +198,8 @@ final class VisualAmbiente{
                 if(p.oscPuesta){
                     if(finito(p.osc)){
                         if(p.osc < 0f || p.osc > 1f) aviso("rangoo:" + p.id, "la oscuridad de '" + p.id + "' está fuera de [0, 1] y se recorta.");
-                        osc.add(p);
+                        copia.oscPuesta = true;
+                        osc.add(copia);
                     }else{
                         aviso("nano:" + p.id, "la oscuridad de '" + p.id + "' no es numérica y se ignora.");
                     }

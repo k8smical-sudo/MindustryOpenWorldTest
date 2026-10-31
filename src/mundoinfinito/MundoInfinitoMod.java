@@ -177,6 +177,7 @@ public class MundoInfinitoMod extends Mod{
         /** Mods activos al crear el mundo (nombres separados por coma): permite avisar si falta alguno al volver a abrirlo. */
         String mods = "";
         String api = "";
+        String modpack = "";
         /** Perfil del mundo (fase 4): el valor de cada ajuste (gamerules y parámetros de generación). Lo que falta usa el valor por defecto. */
         PerfilMundo perfil = new PerfilMundo();
         /** Tiempo de juego del mundo y eventos programados (fase 11). */
@@ -204,6 +205,7 @@ public class MundoInfinitoMod extends Mod{
             j.put("limpio", limpio);
             j.put("mods", mods == null ? "" : mods);
             j.put("api", api == null ? "" : api);
+            j.put("modpack", modpack == null ? "" : modpack);
             j.put("ajustes", perfil.aJson());
             j.put("calendario", calendario.aJson());
             j.put("gamerules", perfil.aJsonReglas());   // espejo para versiones anteriores del mod
@@ -238,6 +240,7 @@ public class MundoInfinitoMod extends Mod{
             m.limpio = j.getBool("limpio", false);
             m.mods = j.getString("mods", "");
             m.api = j.getString("api", "");
+            m.modpack = j.getString("modpack", "");
             m.perfil = PerfilMundo.desde(j);   // mundos antiguos: sin perfil = valores por defecto
             m.calendario = CalendarioMundo.desde(j.has("calendario") ? j.get("calendario") : null);   // mundos antiguos: tiempo 0, sin eventos
             // el archivo del calendario, si existe, es más reciente que el del mundo (se escribe en cada disparo)
@@ -2822,6 +2825,7 @@ public class MundoInfinitoMod extends Mod{
             m.limpio = true;                       // mundo base: sin generador de enemigos ni de estructuras
             m.mods = OpenWorldAPI.firmaMods();
             m.api = ApiVersion.texto();
+            m.modpack = ConfiguracionModpack.firma();
             if(gamerules != null) for(java.util.Map.Entry<String, Boolean> e : gamerules.entrySet()) m.perfil.fijar(e.getKey(), Boolean.TRUE.equals(e.getValue()) ? 1.0 : 0.0);
             m.perfil.sellarGeneracion(semilla);    // resuelve las propuestas de los mods; los parámetros de generación quedan guardados con el mundo y ya no cambian
             m.creado = m.ultimo = System.currentTimeMillis();
@@ -2858,6 +2862,12 @@ public class MundoInfinitoMod extends Mod{
                     final String txt = "Cambios de mods desde que se creó el mundo: " + String.join("; ", d) + ".";
                     Log.warn("[MundoInfinito] @", txt);
                     if(!Vars.headless && Vars.ui != null) Time.runTask(60f, () -> Vars.ui.showInfoToast("[accent]" + txt, 8f));
+                }
+                final java.util.List<String> dm = ManifiestoMundo.diferenciasModpack(m.modpack, ConfiguracionModpack.firma());
+                if(!dm.isEmpty()){
+                    final String txt2 = "La configuración del modpack cambió desde que se creó el mundo: " + String.join("; ", dm) + ".";
+                    Log.warn("[MundoInfinito] @", txt2);
+                    if(!Vars.headless && Vars.ui != null) Time.runTask(60f, () -> Vars.ui.showInfoToast("[accent]" + txt2, 8f));
                 }
                 return true;
             }catch(Throwable t){

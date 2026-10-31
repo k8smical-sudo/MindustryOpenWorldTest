@@ -14,12 +14,14 @@ public final class ApiVersion{
     public static final int VISUAL_MAYOR = 1, VISUAL_MENOR = 0;
     /** La parte de ajustes y propuestas de valor: {@code ApiAjustes}. */
     public static final int AJUSTES_MAYOR = 1, AJUSTES_MENOR = 0;
+    /** La parte de tiempo, calendario y eventos: {@code ApiTiempo}. */
+    public static final int TIEMPO_MAYOR = 1, TIEMPO_MENOR = 0;
 
     private ApiVersion(){}
 
     /** Texto para el log y los avisos: "api 1.0 (visual 1.0, ajustes 1.0)". */
     public static String texto(){
-        return "api " + PUBLICA_MAYOR + "." + PUBLICA_MENOR + " (visual " + VISUAL_MAYOR + "." + VISUAL_MENOR + ", ajustes " + AJUSTES_MAYOR + "." + AJUSTES_MENOR + ")";
+        return "api " + PUBLICA_MAYOR + "." + PUBLICA_MENOR + " (visual " + VISUAL_MAYOR + "." + VISUAL_MENOR + ", ajustes " + AJUSTES_MAYOR + "." + AJUSTES_MENOR + ", tiempo " + TIEMPO_MAYOR + "." + TIEMPO_MENOR + ")";
     }
 
     /** ¿Atiende una versión (mayor, menor) lo que pide un mod? Mismo mayor y menor suficiente. */
@@ -30,6 +32,11 @@ public final class ApiVersion{
     /** Un mod pregunta si la API visual le sirve. Si no, escribe un aviso claro en el log y devuelve false. */
     public static boolean requiereVisual(String mod, int mayorPedido, int menorMinimo){
         return comprobar(mod, "visual", VISUAL_MAYOR, VISUAL_MENOR, mayorPedido, menorMinimo);
+    }
+
+    /** Un mod pregunta si la API de tiempo le sirve. */
+    public static boolean requiereTiempo(String mod, int mayorPedido, int menorMinimo){
+        return comprobar(mod, "de tiempo", TIEMPO_MAYOR, TIEMPO_MENOR, mayorPedido, menorMinimo);
     }
 
     /** Un mod pregunta si la API de ajustes le sirve. */

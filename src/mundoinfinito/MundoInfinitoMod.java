@@ -133,6 +133,8 @@ public class MundoInfinitoMod extends Mod{
         Events.run(Trigger.update, Streamer::tick);
         // Drones de carga orbital: puro dato, avanza aunque el jugador esté en la otra dimensión.
         Events.run(Trigger.update, Orbita::tick);
+        Events.run(Trigger.update, CicloDiaNoche::tick);   // ciclo día/noche de Serpulo (ajuste del mundo)
+        Events.run(Trigger.update, CalendarioMundo::tick);   // tiempo del mundo y eventos programados (fase 11)
 
         // Guardar al abrir el menú de pausa (así se guarda antes de salir al menú).
         Events.on(StateChangeEvent.class, e -> {
@@ -175,6 +177,8 @@ public class MundoInfinitoMod extends Mod{
         String mods = "";
         /** Perfil del mundo (fase 4): el valor de cada ajuste (gamerules y parámetros de generación). Lo que falta usa el valor por defecto. */
         PerfilMundo perfil = new PerfilMundo();
+        /** Tiempo de juego del mundo y eventos programados (fase 11). */
+        CalendarioMundo calendario = new CalendarioMundo();
 
         /** Valor de una gamerule en este mundo. */
         boolean gameRule(GameRule g){
@@ -198,6 +202,7 @@ public class MundoInfinitoMod extends Mod{
             j.put("limpio", limpio);
             j.put("mods", mods == null ? "" : mods);
             j.put("ajustes", perfil.aJson());
+            j.put("calendario", calendario.aJson());
             j.put("gamerules", perfil.aJsonReglas());   // espejo para versiones anteriores del mod
             return j;
         }
@@ -230,6 +235,7 @@ public class MundoInfinitoMod extends Mod{
             m.limpio = j.getBool("limpio", false);
             m.mods = j.getString("mods", "");
             m.perfil = PerfilMundo.desde(j);   // mundos antiguos: sin perfil = valores por defecto
+            m.calendario = CalendarioMundo.desde(j.has("calendario") ? j.get("calendario") : null);   // mundos antiguos: tiempo 0, sin eventos
             return m;
         }
 

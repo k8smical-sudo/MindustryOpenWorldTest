@@ -1866,7 +1866,7 @@ public final class Corpus{
         // ---- superficie pública: solo lo previsto es público, y la API no filtra tipos internos
         final java.util.Set<String> previstas = new java.util.TreeSet<String>(Arrays.asList("AlmacenModulo", "ContextoColocacion", "ContextoFenomeno", "ContextoTerreno", "GameRule",
             "GeneradorEstructura", "GeneradorFenomeno", "GeneradorMundo", "GeneradorTerreno", "MundoInfinitoMod", "MundoRegistrado", "OpenWorldAPI", "PoliticaSueno", "SiloInterdimensional",
-            "Corpus", "ApiVersion", "ApiVisual", "ApiAjustes", "VisualCapa", "VisualCalidad", "VisualPrograma", "VisualEfectoInst"));
+            "Corpus", "ApiVersion", "ApiVisual", "ApiAjustes", "VisualCapa", "VisualCalidad", "VisualPrograma", "VisualEfectoInst", "ApiTiempo", "EventoTiempo"));
         final java.util.Set<String> publicas = new java.util.TreeSet<String>();
         final URL url = Corpus.class.getResource("Corpus.class");
         if(url == null || !"file".equals(url.getProtocol())){
@@ -1894,7 +1894,7 @@ public final class Corpus{
             fallos += chequear("superficie pública: solo son públicas las " + previstas.size() + " clases previstas (sobran " + sobran + ", faltan " + faltan + ", sin poder cargar " + noCargadas + ")", sobran.isEmpty() && faltan.isEmpty());
         }
         final List<String> filtran = new ArrayList<String>();
-        for(Class<?> api : new Class<?>[]{ApiVisual.class, ApiAjustes.class, ApiVersion.class}){
+        for(Class<?> api : new Class<?>[]{ApiVisual.class, ApiAjustes.class, ApiVersion.class, ApiTiempo.class}){
             for(Method m : api.getDeclaredMethods()){
                 if(!Modifier.isPublic(m.getModifiers())) continue;
                 final List<Class<?>> tipos = new ArrayList<Class<?>>(Arrays.asList(m.getParameterTypes()));
@@ -1948,6 +1948,90 @@ public final class Corpus{
         return fallos;
     }
 
+    /** Ciclo día/noche de Serpulo: curva de luz, equivalencia con Universe y ajuste por mundo (los anteriores lo tienen apagado). */
+    static int comprobarCiclo(){
+        int fallos = 0;
+        final float dia = CicloDiaNoche.DIA_TICKS;
+        fallos += chequear("al empezar el día hay luz plena (luz 1, alpha 1: de día no se oscurece) y a mitad del día, noche (luz 0)",
+            Math.abs(CicloDiaNoche.luz(0f) - 1f) < 1e-5f && Math.abs(CicloDiaNoche.luz(dia / 2f)) < 1e-5f);
+        fallos += chequear("el día se repite cada 10 minutos: la luz a los 10 min es la de 0 min", Math.abs(CicloDiaNoche.luz(dia) - CicloDiaNoche.luz(0f)) < 1e-5f);
+        fallos += chequear("la curva de alpha es la de Universe: alpha 1 de día, 0.2 de noche (oscuridad 0.8)",
+            Math.abs(CicloDiaNoche.alfa(1f) - 1f) < 1e-5f && Math.abs(CicloDiaNoche.alfa(0f) - 0.2f) < 1e-5f);
+        final PerfilMundo viejo = new PerfilMundo();
+        final PerfilMundo nuevo = new PerfilMundo();
+        nuevo.sellarGeneracion(7);
+        fallos += chequear("un mundo anterior no tiene el ciclo (apagado) y uno nuevo lo tiene encendido, y se conserva al guardar y leer",
+            !viejo.bool(CicloDiaNoche.ID, false) && nuevo.bool(CicloDiaNoche.ID, false) && PerfilMundo.desde(archivoDe(nuevo)).bool(CicloDiaNoche.ID, false));
+        return fallos;
+    }
+
+    /** Calendario y eventos: disparo en el tiempo correcto, una sola vez, persistencia, orden, acciones pendientes, suscriptores y reloj. */
+    static int comprobarTiempo(){
+        int fallos = 0;
+        final List<String> log = new ArrayList<String>();
+
+        final CalendarioMundo a = new CalendarioMundo();
+        CalendarioMundo.registrarAccion("t:cal-a", e -> log.add("a@" + e.tiempo()));
+        a.programar("t:cal-a", 100f);
+        a.avanzar(60f);
+        a.avanzar(39.5f);
+        final boolean antesDeTiempo = log.isEmpty();
+        a.avanzar(0.5f);
+        fallos += chequear("un evento programado para 100 no se dispara antes, y al alcanzarlo se entrega con su tiempo (100), una sola vez",
+            antesDeTiempo && log.toString().equals("[a@100.0]") && a.pendientes() == 0);
+        a.avanzar(1000f);
+        fallos += chequear("después de disparado no se repite aunque el tiempo siga avanzando", log.size() == 1);
+
+        final CalendarioMundo b = new CalendarioMundo();
+        CalendarioMundo.registrarAccion("t:cal-b", e -> log.add("b@" + e.tiempo()));
+        b.programar("t:cal-b", 500f);
+        b.avanzar(200f);
+        final CalendarioMundo b2 = CalendarioMundo.desde(b.aJson());
+        fallos += chequear("el tiempo y los eventos pendientes sobreviven a guardar y leer (tiempo 200, 1 pendiente)",
+            b2.tiempo() == 200f && b2.pendientes() == 1);
+        b2.avanzar(300f);
+        b2.avanzar(300f);
+        final long vecesB = log.stream().filter(s -> s.equals("b@500.0")).count();
+        fallos += chequear("al reabrir el mundo el evento se dispara en el tiempo correcto (500), una sola vez, aunque el tiempo siga avanzando", vecesB == 1L);
+
+        final CalendarioMundo c = new CalendarioMundo();
+        CalendarioMundo.registrarAccion("t:cal-c1", e -> log.add("c1@" + e.tiempo()));
+        CalendarioMundo.registrarAccion("t:cal-c2", e -> log.add("c2@" + e.tiempo()));
+        c.programar("t:cal-c2", 700f);
+        c.programar("t:cal-c1", 650f);
+        c.programar("t:cal-c1", 650f);   // el mismo id dos veces en el mismo tiempo: cuenta como dos eventos
+        c.avanzar(1000f);
+        fallos += chequear("varios eventos que vencen a la vez salen en orden de tiempo y, en empate, de id: " + log.subList(log.size() - 3, log.size()),
+            log.subList(log.size() - 3, log.size()).toString().equals("[c1@650.0, c1@650.0, c2@700.0]"));
+
+        final CalendarioMundo d = new CalendarioMundo();
+        d.programar("t:cal-sin-accion", 300f);
+        d.avanzar(400f);
+        final boolean espera = d.pendientes() == 1;
+        CalendarioMundo.registrarAccion("t:cal-sin-accion", e -> log.add("d@" + e.tiempo()));
+        d.avanzar(1f);
+        fallos += chequear("un evento sin acción registrada se queda pendiente (no se pierde) y se dispara cuando se registra su acción",
+            espera && log.contains("d@300.0") && d.pendientes() == 0);
+
+        final CalendarioMundo s = new CalendarioMundo();
+        CalendarioMundo.suscribir("t:cal-sub", e -> log.add("sub@" + e.id()));
+        CalendarioMundo.registrarAccion("t:cal-sub", e -> log.add("acc@" + e.id()));
+        s.programar("t:cal-sub", 10f);
+        s.avanzar(10f);
+        fallos += chequear("un suscriptor recibe el evento además de su acción", log.contains("sub@t:cal-sub") && log.contains("acc@t:cal-sub"));
+
+        final CalendarioMundo t = new CalendarioMundo();
+        fallos += chequear("un tiempo ya pasado no se acepta, y un id no válido tampoco", t.programar("t:cal-x", 5f) && !t.programar("t:cal-x", -1f) && !t.programar("sin-formato", 9999f));
+        fallos += chequear("día y temporada se derivan del tiempo: día 0 primavera; 7 días después, verano",
+            t.dia() == 0 && t.temporada().equals("primavera") && CalendarioMundo.temporadaEn(CicloDiaNoche.DIA_TICKS * 7f) .equals("verano"));
+        t.avanzar(CicloDiaNoche.DIA_TICKS * 7f);
+        fallos += chequear("el reloj del mundo avanza con el tiempo: 7 días después el día es 7 y la temporada verano", t.dia() == 7 && t.temporada().equals("verano"));
+
+        final CalendarioMundo nada = CalendarioMundo.desde(null);
+        fallos += chequear("un mundo anterior (sin calendario) empieza en tiempo 0 y sin eventos", nada.tiempo() == 0f && nada.pendientes() == 0);
+        return fallos;
+    }
+
     static int comprobar() throws Exception{
         final List<int[]> es = entradas();
         int fallos = 0;
@@ -1985,7 +2069,9 @@ public final class Corpus{
         fallos += comprobarResolucion();
         fallos += comprobarAreas();
         fallos += comprobarApi();
-        fallos += comprobarEspaciado();   // antes de comprobarPresupuestos: ahí se abre un mundo y los ajustes de generación ya no se pueden registrar
+        fallos += comprobarEspaciado();
+        fallos += comprobarCiclo();
+        fallos += comprobarTiempo();   // antes de comprobarPresupuestos: ahí se abre un mundo y los ajustes de generación ya no se pueden registrar
         fallos += comprobarPresupuestos(es, a);
         fallos += comprobarVisual(es, a);
         fallos += comprobarVisual10();

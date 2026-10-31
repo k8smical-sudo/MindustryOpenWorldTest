@@ -2163,6 +2163,24 @@ public final class Corpus{
         return fallos;
     }
 
+    static int comprobarRespiraderosBioma(){
+        int fallos = 0;
+        fallos += chequear("los biomas agrupan los pisos de Erekir: arkyic 1, amarillo 2, rojo 3 y el resto 0",
+            FenomenosBase.grupoBioma(MundoInfinitoMod.Muestreo.P_ARKYIC) == 1 && FenomenosBase.grupoBioma(MundoInfinitoMod.Muestreo.P_YELLOW) == 2
+                && FenomenosBase.grupoBioma(MundoInfinitoMod.Muestreo.P_RED) == 3 && FenomenosBase.grupoBioma(MundoInfinitoMod.Muestreo.P_ARKYIC + 1000) == 0);
+        final PerfilMundo viejo = new PerfilMundo();
+        fallos += chequear("un mundo anterior conserva sus respiraderos: multiplicadores 1 y umbral 1",
+            viejo.parametros().multBioma[0] == 1f && viejo.parametros().multBioma[3] == 1f && viejo.parametros().umbralRespiraderos == 1f);
+        final PerfilMundo nuevo = new PerfilMundo();
+        nuevo.sellarGeneracion(7);
+        final ParametrosGeneracion pn = PerfilMundo.desde(archivoDe(nuevo)).parametros();
+        fallos += chequear("un mundo nuevo guarda multiplicadores 1,6 y umbral 0,85, y los conserva al guardar y leer",
+            pn.multBioma[2] == 1.6f && Math.abs(pn.umbralRespiraderos - 0.85f) < 1e-5f);
+        fallos += chequear("con multiplicadores iguales el máximo es esa cifra y el cociente de cada bioma vale 1",
+            FenomenosBase.maxMult() >= 1f);
+        return fallos;
+    }
+
     static int comprobar() throws Exception{
         final List<int[]> es = entradas();
         int fallos = 0;
@@ -2207,7 +2225,8 @@ public final class Corpus{
         fallos += comprobarIluminacion();
         fallos += comprobarManifiesto();
         fallos += comprobarModpack();
-        fallos += comprobarAzarYValidador();   // antes de comprobarPresupuestos: ahí se abre un mundo y los ajustes de generación ya no se pueden registrar
+        fallos += comprobarAzarYValidador();
+        fallos += comprobarRespiraderosBioma();   // antes de comprobarPresupuestos: ahí se abre un mundo y los ajustes de generación ya no se pueden registrar
         fallos += comprobarPresupuestos(es, a);
         fallos += comprobarVisual(es, a);
         fallos += comprobarVisual10();

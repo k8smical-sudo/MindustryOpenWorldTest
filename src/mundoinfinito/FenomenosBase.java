@@ -35,6 +35,21 @@ final class FenomenosBase{
         return 0.30f + 0.25f * c.azar(1, 1, 0x7001);
     }
 
+    /** Grupo de bioma de un código de piso de Erekir: 0 riolita, 1 arkyic, 2 amarillo, 3 rojo. */
+    static int grupoBioma(int code){
+        if(code == Muestreo.P_BERYL || code == Muestreo.P_ARKYIC) return 1;
+        if(code == Muestreo.P_YELLOW || code == Muestreo.P_YPLATES || code == Muestreo.P_REGO) return 2;
+        if(code == Muestreo.P_RED || code == Muestreo.P_DENSERED) return 3;
+        return 0;
+    }
+
+    /** El mayor multiplicador de bioma: la densidad de la celda se calcula con él y cada bioma se reduce a su valor. */
+    static float maxMult(){
+        float m = 1f;
+        for(float v : Nucleo.parametros().multBioma) if(v > m) m = v;
+        return m;
+    }
+
     /** Fracción mínima de terreno transitable alrededor de un respiradero (juicio de balance). [0,50, 0,70] según semilla. */
     static float umbralAbierto(ContextoFenomeno c){
         return 0.50f + 0.20f * c.azar(2, 2, 0x7003);
@@ -181,7 +196,7 @@ final class FenomenosBase{
             }
             if(suprimida(a, i, j)) return false;
             // los intentos extra (garantía mínima por macrocelda) ignoran la probabilidad de la celda
-            if(intento < intentos() && c.azar(i, j, 0x7100) >= densidad(c)) return false;
+            if(intento < intentos() && c.azar(i, j, 0x7100) >= Math.min(1f, densidad(c) * maxMult())) return false;
             out[0] = candX(c, i, j, intento);
             out[1] = candY(c, i, j, intento);
             return true;
@@ -219,6 +234,8 @@ final class FenomenosBase{
 
         @Override
         public boolean valido(ContextoFenomeno c, int x, int y){
+            final float mb = Nucleo.parametros().multBioma[grupoBioma(c.codigoPiso(x, y))];
+            if(c.azar(x, y, 0x7104) >= mb / maxMult()) return false;   // probabilidad por bioma (en mundos anteriores vale 1: no cambia nada)
             if(c.distanciaSpawn(x, y) < Math.max(40f, c.radioClaroSpawn() * 1.8f)) return false;   // nunca en el claro inicial
             if(c.cercaDePozoSpawn(x, y, 8f)) return false;                                         // ni encima de los pozos del spawn
             if(!c.esTipoErekir(x, y)) return false;
@@ -232,7 +249,7 @@ final class FenomenosBase{
                 final int[] o = c.muestra(x + d[0], y + d[1]);
                 if(o[2] != 0 || Muestreo.liquido(o[0])) return false;
             }
-            return abierto(c, x, y) >= umbralAbierto(c);                                            // juicio de balance
+            return abierto(c, x, y) >= umbralAbierto(c) * Nucleo.parametros().umbralRespiraderos;                                            // juicio de balance
         }
 
         @Override

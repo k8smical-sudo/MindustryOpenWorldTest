@@ -3,11 +3,9 @@ package mundoinfinito;
 import mundoinfinito.MundoInfinitoMod.Muestreo;
 
 /**
- * PARÁMETROS DE GENERACIÓN de un mundo: la parte del perfil que lee la generación. Inmutable; el resultado del terreno depende de ellos.
- *
- * Valores heredados: un mundo CREADO ANTES de que existieran los ajustes de respiraderos no tiene sus claves guardadas en el perfil, y se abre con los
- * valores de entonces (LEGADO_*), así que no cambia su terreno. Los mundos nuevos guardan los valores de DEFECTO al crearse.
- * Los constructores de 3, 4 y 5 argumentos (pruebas y llamadas antiguas) usan también los valores heredados.
+ * PARÁMETROS DE GENERACIÓN de un mundo. Inmutable; el resultado del terreno depende de ellos.
+ * Valores heredados: un mundo CREADO ANTES de un ajuste no tiene su clave en el perfil y se abre con el valor de entonces (LEGADO_*), así que no cambia.
+ * Los mundos nuevos guardan los valores de DEFECTO al crearse.
  */
 final class ParametrosGeneracion{
     static final String ID_ALTURA_SERPULO = "mundo-infinito:serpulo-estiramiento-altura";
@@ -20,31 +18,37 @@ final class ParametrosGeneracion{
     static final String ID_RESPIRADEROS_RADIO_MIN = "mundo-infinito:respiraderos-radio-min";
     static final String ID_RESPIRADEROS_RADIO_MAX = "mundo-infinito:respiraderos-radio-max";
     static final String ID_POZOS_SPAWN = "mundo-infinito:pozos-spawn";
+    /** Probabilidad de respiraderos por bioma (multiplicador de la densidad base): riolita, arkyic, amarillo, rojo. */
+    static final String[] ID_RESP_BIOMA = {"mundo-infinito:respiraderos-bioma-riolita", "mundo-infinito:respiraderos-bioma-arkyic",
+        "mundo-infinito:respiraderos-bioma-amarillo", "mundo-infinito:respiraderos-bioma-rojo"};
+    /** Multiplicador del umbral de terreno abierto (menor = más respiraderos). */
+    static final String ID_RESP_UMBRAL = "mundo-infinito:respiraderos-umbral";
 
-    /** Valores de los mundos anteriores a los ajustes de respiraderos (los que tenían fijos en el código). */
     static final int LEGADO_SEPARACION_RESPIRADEROS = 48;
     static final float LEGADO_MEZCLA_RESPIRADEROS = 1f;
     static final int LEGADO_RADIO_MIN = 6, LEGADO_RADIO_MAX = 14;
-    /** Los pozos del spawn (lista de objetos alrededor del spawn) existían en todos los mundos anteriores. */
     static final boolean LEGADO_POZOS_SPAWN = true;
+    static final float[] LEGADO_MULT_BIOMA = {1f, 1f, 1f, 1f};
+    static final float LEGADO_UMBRAL_RESPIRADEROS = 1f;
 
-    /** El perfil por defecto de los mundos NUEVOS. */
-    static final ParametrosGeneracion DEFECTO = new ParametrosGeneracion(Muestreo.K_ALTURA, Muestreo.K_TEMP_S, Muestreo.K_HUM_S, 0, 100, 120, 0.5f, 4, 12, LEGADO_POZOS_SPAWN);
+    /** Valores de los mundos NUEVOS. */
+    static final float[] DEFECTO_MULT_BIOMA = {1.6f, 1.6f, 1.6f, 1.6f};
+    static final float DEFECTO_UMBRAL_RESPIRADEROS = 0.85f;
 
-    /** Cuánto se estira el ruido de relieve, temperatura y humedad de Serpulo hacia [0,1]: más alto = biomas más contrastados. */
+    static final ParametrosGeneracion DEFECTO = new ParametrosGeneracion(Muestreo.K_ALTURA, Muestreo.K_TEMP_S, Muestreo.K_HUM_S, 0, 100, 120, 0.5f, 4, 12, LEGADO_POZOS_SPAWN,
+        DEFECTO_MULT_BIOMA, DEFECTO_UMBRAL_RESPIRADEROS);
+
     final float estirarAlturaSerpulo, estirarTemperaturaSerpulo, estirarHumedadSerpulo;
-    /** Distancia mínima, en casillas, entre dos fenómenos de CUALQUIER generador. 0 = sin distancia global. */
     final int distanciaMinimaFenomenos;
-    /** Porcentaje (1 a 100) del presupuesto declarado de cada contribución de terreno que se permite gastar por chunk. */
     final int presupuestoTerrenoPct;
-    /** Separación mínima, en casillas, entre dos respiraderos de Erekir (la retícula de búsqueda se ajusta a ella). */
     final int separacionRespiraderos;
-    /** Fracción (0 a 1) de los respiraderos que alteran el suelo de su alrededor. El resto aparece sobre el terreno natural. */
     final float mezclaRespiraderos;
-    /** Radio mínimo y máximo, en casillas, de la zona alterada alrededor de un respiradero. */
     final int radioMezclaMin, radioMezclaMax;
-    /** ¿Se generan los pozos del spawn (la lista de objetos cerca del spawn)? Los mundos nuevos no los generan: se reparten como el resto de fenómenos. */
     final boolean pozosSpawn;
+    /** Multiplicador de la probabilidad de respiradero por grupo de bioma (riolita, arkyic, amarillo, rojo). */
+    final float[] multBioma;
+    /** Multiplicador del umbral de terreno abierto de un respiradero. */
+    final float umbralRespiraderos;
 
     ParametrosGeneracion(float estirarAlturaSerpulo, float estirarTemperaturaSerpulo, float estirarHumedadSerpulo){
         this(estirarAlturaSerpulo, estirarTemperaturaSerpulo, estirarHumedadSerpulo, 0, 100);
@@ -69,7 +73,14 @@ final class ParametrosGeneracion{
     ParametrosGeneracion(float estirarAlturaSerpulo, float estirarTemperaturaSerpulo, float estirarHumedadSerpulo,
                          int distanciaMinimaFenomenos, int presupuestoTerrenoPct,
                          int separacionRespiraderos, float mezclaRespiraderos, int radioMezclaMin, int radioMezclaMax, boolean pozosSpawn){
-        this.pozosSpawn = pozosSpawn;
+        this(estirarAlturaSerpulo, estirarTemperaturaSerpulo, estirarHumedadSerpulo, distanciaMinimaFenomenos, presupuestoTerrenoPct,
+            separacionRespiraderos, mezclaRespiraderos, radioMezclaMin, radioMezclaMax, pozosSpawn, LEGADO_MULT_BIOMA, LEGADO_UMBRAL_RESPIRADEROS);
+    }
+
+    ParametrosGeneracion(float estirarAlturaSerpulo, float estirarTemperaturaSerpulo, float estirarHumedadSerpulo,
+                         int distanciaMinimaFenomenos, int presupuestoTerrenoPct,
+                         int separacionRespiraderos, float mezclaRespiraderos, int radioMezclaMin, int radioMezclaMax,
+                         boolean pozosSpawn, float[] multBioma, float umbralRespiraderos){
         this.estirarAlturaSerpulo = estirarAlturaSerpulo;
         this.estirarTemperaturaSerpulo = estirarTemperaturaSerpulo;
         this.estirarHumedadSerpulo = estirarHumedadSerpulo;
@@ -79,5 +90,9 @@ final class ParametrosGeneracion{
         this.mezclaRespiraderos = mezclaRespiraderos;
         this.radioMezclaMin = radioMezclaMin;
         this.radioMezclaMax = radioMezclaMax;
+        this.pozosSpawn = pozosSpawn;
+        this.multBioma = new float[4];
+        for(int i = 0; i < 4; i++) this.multBioma[i] = multBioma != null && i < multBioma.length && multBioma[i] >= 0f ? multBioma[i] : 1f;
+        this.umbralRespiraderos = umbralRespiraderos > 0f ? umbralRespiraderos : 1f;
     }
 }

@@ -74,6 +74,15 @@ final class RegistroAjustes{
         registrar(AjusteMundo.bool(CicloDiaNoche.ID, "Ciclo día/noche (Serpulo)",
             "Día y noche en Serpulo, como en campaña (un día completo dura 10 minutos). Los mundos anteriores no lo tienen.",
             AjusteMundo.Ambito.GENERACION, true, null).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
+        final String[] nombresBioma = {"riolita", "arkyic", "amarillo", "rojo"};
+        for(int i = 0; i < 4; i++){
+            registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_RESP_BIOMA[i], "Respiraderos en bioma " + nombresBioma[i],
+                "Multiplicador de la probabilidad de respiraderos en el bioma " + nombresBioma[i] + ". 1 = la base; más alto = más respiraderos.",
+                AjusteMundo.Ambito.GENERACION, ParametrosGeneracion.DEFECTO_MULT_BIOMA[i], 0.0, 3.0).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
+        }
+        registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_RESP_UMBRAL, "Exigencia de terreno abierto de los respiraderos",
+            "Multiplicador del umbral de terreno abierto. Más bajo = más respiraderos en terreno menos despejado.",
+            AjusteMundo.Ambito.GENERACION, ParametrosGeneracion.DEFECTO_UMBRAL_RESPIRADEROS, 0.3, 1.5).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
     }
 
     private RegistroAjustes(){}

@@ -2032,6 +2032,39 @@ public final class Corpus{
         return fallos;
     }
 
+    /** Eventos de segundo plano: disparo al llegar su instante de pared, una sola vez, persistencia y orden de guardado antes de ejecutar. */
+    static int comprobarFondo(){
+        int fallos = 0;
+        final List<String> log = new ArrayList<String>();
+        final CalendarioMundo f = new CalendarioMundo();
+        CalendarioMundo.registrarAccion("t:fondo-a", e -> log.add("a@" + e.id()));
+        f.programarPared("t:fondo-a", 1000L);
+        f.avanzarPared(999L);
+        final boolean antes = log.isEmpty();
+        f.avanzarPared(1000L);
+        f.avanzarPared(5000L);
+        fallos += chequear("un evento de segundo plano se dispara al llegar su instante de pared, una sola vez", antes && log.toString().equals("[a@t:fondo-a]") && f.paredPendientes() == 0);
+
+        final CalendarioMundo g = new CalendarioMundo();
+        CalendarioMundo.registrarAccion("t:fondo-b", e -> log.add("b"));
+        g.programarPared("t:fondo-b", 5000L);
+        final CalendarioMundo g2 = CalendarioMundo.desde(g.aJson());
+        fallos += chequear("un evento de segundo plano pendiente sobrevive a guardar y leer", g2.paredPendientes() == 1);
+        g2.avanzarPared(6000L);
+        g2.avanzarPared(9000L);
+        fallos += chequear("al reabrir se aplica el evento de segundo plano pendiente, una sola vez", log.stream().filter(x -> x.equals("b")).count() == 1L);
+
+        final List<String> orden = new ArrayList<String>();
+        final CalendarioMundo h = new CalendarioMundo();
+        h.persistir = () -> orden.add("guardar");
+        CalendarioMundo.registrarAccion("t:fondo-c", e -> orden.add("accion"));
+        h.programarPared("t:fondo-c", 100L);
+        h.avanzarPared(100L);
+        fallos += chequear("el calendario se escribe ANTES de ejecutar la acción de un evento (así un fallo durante la acción no lo repite)",
+            orden.toString().equals("[guardar, accion]"));
+        return fallos;
+    }
+
     static int comprobar() throws Exception{
         final List<int[]> es = entradas();
         int fallos = 0;
@@ -2071,7 +2104,8 @@ public final class Corpus{
         fallos += comprobarApi();
         fallos += comprobarEspaciado();
         fallos += comprobarCiclo();
-        fallos += comprobarTiempo();   // antes de comprobarPresupuestos: ahí se abre un mundo y los ajustes de generación ya no se pueden registrar
+        fallos += comprobarTiempo();
+        fallos += comprobarFondo();   // antes de comprobarPresupuestos: ahí se abre un mundo y los ajustes de generación ya no se pueden registrar
         fallos += comprobarPresupuestos(es, a);
         fallos += comprobarVisual(es, a);
         fallos += comprobarVisual10();

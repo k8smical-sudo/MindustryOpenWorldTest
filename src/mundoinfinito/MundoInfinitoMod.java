@@ -236,6 +236,16 @@ public class MundoInfinitoMod extends Mod{
             m.mods = j.getString("mods", "");
             m.perfil = PerfilMundo.desde(j);   // mundos antiguos: sin perfil = valores por defecto
             m.calendario = CalendarioMundo.desde(j.has("calendario") ? j.get("calendario") : null);   // mundos antiguos: tiempo 0, sin eventos
+            // el archivo del calendario, si existe, es más reciente que el del mundo (se escribe en cada disparo)
+            final Fi fCal = Almacen.archivoCalendario(m);
+            if(fCal.exists()){
+                try{
+                    m.calendario = CalendarioMundo.desde(Jval.read(fCal.readString()));
+                }catch(Throwable t){
+                    Log.err("[MundoInfinito] El archivo del calendario no se pudo leer; se usa el del mundo.", t);
+                }
+            }
+            m.calendario.persistir = () -> Almacen.escribirCalendario(m);
             return m;
         }
 
@@ -346,6 +356,17 @@ public class MundoInfinitoMod extends Mod{
         }
 
         /** Estado COMPARTIDO por las dos dimensiones (viven en la raíz del mundo). */
+        /** El calendario tiene su propio archivo, escrito a disco en cada disparo y en cada guardado del mundo. */
+        static Fi archivoCalendario(Meta m){
+            return carpeta(m.id).child("calendario.json");
+        }
+
+        static void escribirCalendario(Meta m){
+            if(m == null || m.calendario == null) return;
+            final byte[] b = m.calendario.aJson().toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            Disco.escribir(archivoCalendario(m).file(), b, true);   // síncrono: el disparo debe estar en disco antes de ejecutar la acción
+        }
+
         static Fi archivoOrbita(Meta m){
             return carpeta(m.id).child("orbita.dat");
         }
@@ -3236,6 +3257,7 @@ public class MundoInfinitoMod extends Mod{
                 Disco.escribirDiferido(e.getKey().file(), e.getValue(), true);   // si la región quedó vacía, la fuente da null y se borra el archivo
             }
             if(estado != null) Disco.escribir(Almacen.archivoEstado(m).file(), estado, false);
+            if(m.calendario != null) Disco.escribir(Almacen.archivoCalendario(m).file(), m.calendario.aJson().toString().getBytes(java.nio.charset.StandardCharsets.UTF_8), false);
             if(orbita != null) Disco.escribir(Almacen.archivoOrbita(m).file(), orbita, false);
             if(estructuras != null) Disco.escribir(fEstructuras.file(), estructuras, false);
             Mapa.guardar();

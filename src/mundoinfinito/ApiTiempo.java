@@ -44,6 +44,17 @@ public final class ApiTiempo{
         return m != null && m.calendario != null && m.calendario.programar(id, tiempoObjetivo);
     }
 
+    /**
+     * Programa un evento de SEGUNDO PLANO: se dispara cuando han pasado {@code segundos} de reloj real, aunque el juego esté cerrado; si estaba cerrado,
+     * se aplica al volver, una sola vez. NO es determinista: depende de cuándo se cerró el juego. Úsalo para efectos que no cambian el terreno ni la
+     * simulación (avisos, recompensas, notas al jugador). Para cambios del mundo, usa {@link #programar(String, float)}.
+     */
+    public static boolean programarDeFondo(String id, long segundos){
+        final MundoInfinitoMod.Meta m = MundoInfinitoMod.Streamer.meta;
+        return m != null && m.calendario != null && segundos >= 0L
+            && m.calendario.programarPared(id, System.currentTimeMillis() + segundos * 1000L);
+    }
+
     /** Suscribe a un evento: recibe una copia cada vez que se dispara. Sin suscriptores un evento no cuesta nada extra. */
     public static boolean suscribir(String id, Cons<EventoTiempo> suscriptor){
         return CalendarioMundo.suscribir(id, suscriptor);

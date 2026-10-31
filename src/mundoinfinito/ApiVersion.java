@@ -15,7 +15,7 @@ public final class ApiVersion{
     /** La parte de ajustes y propuestas de valor: {@code ApiAjustes}. */
     public static final int AJUSTES_MAYOR = 1, AJUSTES_MENOR = 0;
     /** La parte de tiempo, calendario y eventos: {@code ApiTiempo}. */
-    public static final int TIEMPO_MAYOR = 1, TIEMPO_MENOR = 0;
+    public static final int TIEMPO_MAYOR = 1, TIEMPO_MENOR = 1;
 
     private ApiVersion(){}
 

@@ -46,9 +46,27 @@ final class CalendarioMundo{
         }
     }
 
+    /** Un evento de SEGUNDO PLANO: se dispara cuando llega su instante de pared (aunque el juego estuviera cerrado). */
+    static final class ProgramadoPared{
+        final String id;
+        final long millis;
+
+        ProgramadoPared(String id, long millis){
+            this.id = id;
+            this.millis = millis;
+        }
+    }
+
     private float tiempo;
-    /** Pendientes, ordenados por (tiempo, id). */
+    /** Pendientes de JUEGO, ordenados por (tiempo, id). Avanzan solo jugando. */
     private final List<Programado> pendientes = new ArrayList<Programado>();
+    /** Pendientes de SEGUNDO PLANO, ordenados por (instante, id). Avanzan con el reloj de pared. */
+    private final List<ProgramadoPared> pared = new ArrayList<ProgramadoPared>();
+    /** Lo llama el mundo para escribir el calendario a disco. Se llama ANTES de ejecutar un evento y cada cierto tiempo. */
+    Runnable persistir;
+    private long ultimoGuardado = System.currentTimeMillis();
+    /** Cada cuánto se escribe el calendario aunque no dispare nada (ms). */
+    static final long PERIODO_GUARDADO_MS = 30000L;
 
     static int diaEn(float tiempo){
         return (int)Math.floor(tiempo / CicloDiaNoche.DIA_TICKS);
@@ -134,6 +152,7 @@ final class CalendarioMundo{
                 return;
             }
             pendientes.remove(0);   // se quita ANTES de ejecutar: no se repite aunque la acción falle
+            if(persistir != null) persistir.run();   // y se escribe a disco ANTES de ejecutar: si el juego cae en la acción, no se repite
             final EventoTiempo e = new EventoTiempo(p.id, p.tiempo);
             try{
                 accion.get(e);
@@ -148,6 +167,51 @@ final class CalendarioMundo{
                     }catch(Throwable t){
                         aviso("subfallo:" + p.id + ":" + s.hashCode(), "un suscriptor de '" + p.id + "' lanzó una excepción (" + t + ").");
                     }
+                }
+            }
+        }
+    }
+
+    /** Programa un evento de segundo plano para un instante de pared (ms desde la época). */
+    boolean programarPared(String id, long millis){
+        if(!idValido(id) || millis < 0L) return false;
+        int i = 0;
+        while(i < pared.size()){
+            final ProgramadoPared p = pared.get(i);
+            if(p.millis > millis || (p.millis == millis && p.id.compareTo(id) > 0)) break;
+            i++;
+        }
+        pared.add(i, new ProgramadoPared(id, millis));
+        return true;
+    }
+
+    int paredPendientes(){
+        return pared.size();
+    }
+
+    /** Dispara los eventos de segundo plano cuyo instante ya ha llegado. Se llama con el reloj de pared, también al reabrir el mundo. */
+    void avanzarPared(long ahoraMillis){
+        while(!pared.isEmpty() && pared.get(0).millis <= ahoraMillis){
+            final ProgramadoPared p = pared.get(0);
+            final Cons<EventoTiempo> accion = ACCIONES.get(p.id);
+            if(accion == null){
+                aviso("sinaccionp:" + p.id, "el evento de segundo plano '" + p.id + "' no tiene acción registrada; se queda pendiente hasta que se registre.");
+                return;
+            }
+            pared.remove(0);
+            if(persistir != null) persistir.run();
+            final EventoTiempo e = new EventoTiempo(p.id, tiempo);
+            try{
+                accion.get(e);
+            }catch(Throwable t){
+                aviso("fallop:" + p.id, "la acción del evento de segundo plano '" + p.id + "' lanzó una excepción (" + t + "); no se repite.");
+            }
+            final List<Cons<EventoTiempo>> subs = SUSCRIPTORES.get(p.id);
+            if(subs != null) for(Cons<EventoTiempo> sub : subs){
+                try{
+                    sub.get(e);
+                }catch(Throwable t){
+                    aviso("subp:" + p.id, "un suscriptor de '" + p.id + "' lanzó una excepción (" + t + ").");
                 }
             }
         }
@@ -168,6 +232,15 @@ final class CalendarioMundo{
             lista.put(String.valueOf(i), e);
         }
         o.put("pendientes", lista);
+        final Jval listaP = Jval.newObject();
+        for(int i = 0; i < pared.size(); i++){
+            final ProgramadoPared p = pared.get(i);
+            final Jval e = Jval.newObject();
+            e.put("id", p.id);
+            e.put("millis", Double.valueOf((double)p.millis));
+            listaP.put(String.valueOf(i), e);
+        }
+        o.put("pared", listaP);
         return o;
     }
 
@@ -179,6 +252,17 @@ final class CalendarioMundo{
             if(j.has("tiempo") && j.get("tiempo").isNumber()){
                 final double t = j.get("tiempo").asDouble();
                 if(!Double.isNaN(t) && !Double.isInfinite(t) && t >= 0) c.tiempo = (float)t;
+            }
+            if(j.has("pared") && j.get("pared").isObject()){
+                final Jval.JsonMap mp = j.get("pared").asObject();
+                for(int i = 0; i < mp.size; i++){
+                    final Jval e = mp.getValueAt(i);
+                    if(!e.isObject() || !e.has("millis") || !e.get("millis").isNumber()) continue;
+                    final String id = e.getString("id", "");
+                    final double ms = e.get("millis").asDouble();
+                    if(!idValido(id) || Double.isNaN(ms) || Double.isInfinite(ms) || ms < 0) continue;
+                    c.programarPared(id, (long)ms);
+                }
             }
             if(j.has("pendientes") && j.get("pendientes").isObject()){
                 final Jval.JsonMap mp = j.get("pendientes").asObject();
@@ -204,11 +288,21 @@ final class CalendarioMundo{
 
     // ================================================================== reloj del juego
 
-    /** Cada fotograma (Trigger.update). Avanza el tiempo del mundo jugando; en pausa o sin partida no hace nada. */
+    /**
+     * Cada fotograma (Trigger.update). El reloj de juego avanza solo jugando (no en pausa). Los eventos de segundo plano se comprueban siempre que hay
+     * un mundo abierto, también en pausa. Cada PERIODO_GUARDADO_MS se escribe el calendario aunque no haya disparos.
+     */
     static void tick(){
-        if(mindustry.Vars.state == null || !mindustry.Vars.state.isGame() || mindustry.Vars.state.isPaused()) return;
+        if(mindustry.Vars.state == null || !mindustry.Vars.state.isGame()) return;
         final MundoInfinitoMod.Meta m = MundoInfinitoMod.Streamer.meta;
         if(m == null || m.calendario == null) return;
-        m.calendario.avanzar(arc.util.Time.delta);
+        final CalendarioMundo c = m.calendario;
+        final long ahora = System.currentTimeMillis();
+        c.avanzarPared(ahora);
+        if(!mindustry.Vars.state.isPaused()) c.avanzar(arc.util.Time.delta);
+        if(c.persistir != null && ahora - c.ultimoGuardado >= PERIODO_GUARDADO_MS){
+            c.ultimoGuardado = ahora;
+            c.persistir.run();
+        }
     }
 }

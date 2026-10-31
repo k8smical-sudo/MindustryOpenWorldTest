@@ -97,6 +97,52 @@ final class ValidadorAddons{
         return out;
     }
 
+    /**
+     * HUELLA (solo en el juego, con los bloques cargados). Para cada ancla de un generador, se aplica el generador a las 9 piezas de chunk que la rodean
+     * y se recogen todas las casillas que escribe. Si alguna cae fuera de {@code radio()} (medido desde el ancla), la huella excede lo declarado: es la
+     * causa típica de un corte en el borde de dos chunks, porque el chunk vecino no consulta esa ancla con el margen suficiente.
+     */
+    static List<String> huella(GeneradorFenomeno g, int semilla, int dim){
+        final List<String> out = new ArrayList<String>();
+        final String nombre = g == null || g.id() == null ? "(sin id)" : g.id();
+        try{
+            if(!g.aplicaA(dim)) return out;
+            final MundoInfinitoMod.Paleta pal = MundoInfinitoMod.Paleta.crear();
+            final int T = ContextoTerreno.TAM, R = g.radio();
+            final GeneradorFenomeno[] todos = {g};
+            final long[] anclas = Fenomenos.puntosFinales(g, todos, new ContextoFenomeno(pal, semilla, dim, g.id()), -48, -48, 79, 79, 0);
+            int fuera = 0, maxExceso = 0, probadas = 0;
+            String ejemplo = null;
+            for(long p : anclas){
+                final int px = (int)(p >> 32), py = (int)p;
+                probadas++;
+                final int cvx = Math.floorDiv(px, T), cvy = Math.floorDiv(py, T);
+                for(int dvx = -1; dvx <= 1; dvx++){
+                    for(int dvy = -1; dvy <= 1; dvy++){
+                        final int vcx = cvx + dvx, vcy = cvy + dvy;
+                        final short[] piso = new short[T * T], mena = new short[T * T], bloque = new short[T * T];
+                        final ContextoTerreno ctx = new ContextoTerreno(piso, mena, bloque, pal, semilla, dim, vcx, vcy, g.id());
+                        g.aplicar(ctx, ctx.lectura, px, py);
+                        for(int i = 0; i < T * T; i++){
+                            if(piso[i] == 0 && mena[i] == 0 && bloque[i] == 0) continue;
+                            final int x = vcx * T + i % T, y = vcy * T + i / T;
+                            final int exceso = Math.max(Math.abs(x - px), Math.abs(y - py)) - R;
+                            if(exceso > 0){
+                                fuera++;
+                                if(exceso > maxExceso) maxExceso = exceso;
+                                if(ejemplo == null) ejemplo = "ancla (" + px + ", " + py + ") escribe (" + x + ", " + y + ")";
+                            }
+                        }
+                    }
+                }
+            }
+            if(fuera > 0) out.add(nombre + ": " + fuera + " casillas fuera del radio declarado " + R + " (máx. exceso " + maxExceso + "; ej. " + ejemplo + "); puede haber cortes en los bordes");
+        }catch(Throwable t){
+            out.add(nombre + ": huella no verificable (" + t + ")");
+        }
+        return out;
+    }
+
     /** Al cargar el juego: escanea los addons Java y comprueba los bordes de los generadores registrados. Solo avisa. */
     static void alCargar(){
         try{
@@ -113,6 +159,8 @@ final class ValidadorAddons{
                 for(GeneradorFenomeno g : todos){
                     for(String s : bordes(g, todos, 12345, 1, 0))
                         Log.warn("[MundoInfinito] Validación de addons (bordes): @", s);
+                    for(String s : huella(g, 12345, 1))
+                        Log.warn("[MundoInfinito] Validación de addons (huella): @", s);
                 }
             }
         }catch(Throwable t){

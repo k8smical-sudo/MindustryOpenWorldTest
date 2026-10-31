@@ -64,6 +64,7 @@ final class ValidadorAddons{
      */
     static List<String> bordes(GeneradorFenomeno g, GeneradorFenomeno[] todos, int semilla, int dim, int distanciaGlobal){
         final List<String> out = new ArrayList<String>();
+        final String nombre = g == null || g.id() == null ? "(sin id)" : g.id();
         try{
             if(!g.aplicaA(dim)) return out;
             final ContextoFenomeno c = new ContextoFenomeno(null, semilla, dim, g.id());
@@ -89,9 +90,9 @@ final class ValidadorAddons{
                     if(ejemplo == null) ejemplo = "(" + (int)(p >> 32) + ", " + (int)p + ") solo en la parte";
                 }
             }
-            if(diferencias > 0) out.add(g.id() + ": " + diferencias + " puntos dependen de la ventana de consulta (ej. " + ejemplo + "); puede haber cortes en los bordes");
+            if(diferencias > 0) out.add(nombre + ": " + diferencias + " puntos dependen de la ventana de consulta (ej. " + ejemplo + "); puede haber cortes en los bordes");
         }catch(Throwable t){
-            out.add(g.id() + ": no verificable en el borde (" + t + ")");
+            out.add(nombre + ": no verificable en el borde (" + t + ")");
         }
         return out;
     }

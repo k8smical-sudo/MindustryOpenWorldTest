@@ -56,7 +56,7 @@ final class CicloDiaNoche{
             aplicado = true;
             ambienteOriginal = r.ambientLight.a;
         }
-        final float alpha = alfa(luz(Vars.state.tick));
+        final float alpha = alfa(luz((float)Vars.state.tick));
         r.ambientLight.a = 1f - alpha;            // igual que Universe: oscuridad = 1 - alpha
         r.lighting = !Mathf.equal(alpha, 1f);     // de día no hay iluminación
     }

@@ -11,7 +11,7 @@ public final class ApiVersion{
     /** Conjunto de la API pública (sube cuando cambia cualquiera de las partes). */
     public static final int PUBLICA_MAYOR = 1, PUBLICA_MENOR = 0;
     /** La parte visual: {@code ApiVisual}. */
-    public static final int VISUAL_MAYOR = 1, VISUAL_MENOR = 0;
+    public static final int VISUAL_MAYOR = 1, VISUAL_MENOR = 1;
     /** La parte de ajustes y propuestas de valor: {@code ApiAjustes}. */
     public static final int AJUSTES_MAYOR = 1, AJUSTES_MENOR = 0;
     /** La parte de tiempo, calendario y eventos: {@code ApiTiempo}. */

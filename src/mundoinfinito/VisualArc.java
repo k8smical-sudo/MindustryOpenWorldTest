@@ -18,7 +18,7 @@ import mindustry.game.EventType.Trigger;
  * La lógica (orden, presupuestos, conflictos de uniformes, fallos) vive en {@link VisualRegistro} y se comprueba sin GPU.
  */
 final class VisualArc{
-    private static boolean registrado, aviso, ambienteAplicado, capasListas, superficiesAplicadas, aguaAnimadaGuardada;
+    private static boolean registrado, aviso, ambienteAplicado, lightingOriginal, capasListas, superficiesAplicadas, aguaAnimadaGuardada;
     private static final Color ambienteOriginal = new Color();
     /** Las capas de suelo líquido del juego cuyo shader se puede sustituir (ver {@link VisualShaderPuntos}). */
     private static final java.util.EnumMap<VisualShaderPuntos.Punto, VisualShaderPuntos.Capa> CAPAS =
@@ -209,15 +209,18 @@ final class VisualArc{
      */
     private static void alPreparar(){
         try{
-            restaurarAmbiente();       // por si el fotograma anterior no llegó a restaurarlo
+            restaurarAmbiente();
             restaurarSuperficies();
             if(Vars.state == null || !Vars.state.isGame()) return;
             aplicarSuperficies();
-            if(!Vars.state.rules.lighting) return;
-            final float[] c = VisualAmbiente.global().combinar();
-            if(c == null) return;
-            ambienteOriginal.set(Vars.state.rules.ambientLight);
-            Vars.state.rules.ambientLight.set(c[0], c[1], c[2], c[3]);
+            final VisualAmbiente.Iluminacion il = VisualAmbiente.global().iluminacion();
+            if(il == null) return;
+            final mindustry.game.Rules r = Vars.state.rules;
+            ambienteOriginal.set(r.ambientLight);
+            lightingOriginal = r.lighting;
+            if(il.color != null) r.ambientLight.set(il.color[0], il.color[1], il.color[2], r.ambientLight.a);
+            if(il.oscuridad != null) r.ambientLight.a = il.oscuridad;
+            r.lighting = (il.oscuridad != null && il.oscuridad > 0f) || il.color != null;
             ambienteAplicado = true;
         }catch(Throwable t){
             avisar(t);
@@ -227,7 +230,10 @@ final class VisualArc{
     private static void restaurarAmbiente(){
         if(!ambienteAplicado) return;
         ambienteAplicado = false;
-        if(Vars.state != null) Vars.state.rules.ambientLight.set(ambienteOriginal);
+        if(Vars.state != null){
+            Vars.state.rules.ambientLight.set(ambienteOriginal);
+            Vars.state.rules.lighting = lightingOriginal;
+        }
     }
 
     private static void alPostProcesar(){

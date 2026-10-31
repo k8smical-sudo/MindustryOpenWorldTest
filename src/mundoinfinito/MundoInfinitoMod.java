@@ -133,6 +133,7 @@ public class MundoInfinitoMod extends Mod{
         Events.run(Trigger.update, Streamer::tick);
         // Drones de carga orbital: puro dato, avanza aunque el jugador esté en la otra dimensión.
         Events.run(Trigger.update, Orbita::tick);
+        CicloDiaNoche.registrar();
         Events.run(Trigger.update, CicloDiaNoche::tick);   // ciclo día/noche de Serpulo (ajuste del mundo)
         Events.run(Trigger.update, CalendarioMundo::tick);   // tiempo del mundo y eventos programados (fase 11)
 

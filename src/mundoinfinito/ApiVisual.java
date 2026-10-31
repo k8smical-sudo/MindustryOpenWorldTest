@@ -121,6 +121,26 @@ public final class ApiVisual{
         VisualAmbiente.global().quitar(id);
     }
 
+    /** Solo el color de un aporte (RGB, 0 a 1). No cambia su oscuridad. */
+    public static boolean fijarColorAmbiente(String id, float r, float g, float b){
+        return VisualAmbiente.global().fijarColor(id, r, g, b);
+    }
+
+    /** Solo la oscuridad de un aporte (0 = día, 1 = noche total). No cambia su color. */
+    public static boolean fijarOscuridad(String id, float oscuridad){
+        return VisualAmbiente.global().fijarOscuridad(id, oscuridad);
+    }
+
+    /** Deja de aportar color, y conserva la oscuridad si la tiene. */
+    public static void quitarColorAmbiente(String id){
+        VisualAmbiente.global().quitarColor(id);
+    }
+
+    /** Deja de aportar oscuridad, y conserva el color si lo tiene. */
+    public static void quitarOscuridad(String id){
+        VisualAmbiente.global().quitarOscuridad(id);
+    }
+
     // ================================================================== mallas y texturas
 
     /**

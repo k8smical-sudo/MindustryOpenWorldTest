@@ -2065,6 +2065,30 @@ public final class Corpus{
         return fallos;
     }
 
+    static int comprobarIluminacion(){
+        int fallos = 0;
+        final VisualAmbiente v = new VisualAmbiente(VisualAmbiente.Politica.MEDIA_PONDERADA);
+        v.registrar("a", "a:c", 0, 1f);
+        v.registrar("b", "b:o", 0, 1f);
+        v.fijarColor("a:c", 0.5f, 0.25f, 0.75f);
+        v.fijarOscuridad("b:o", 0.4f);
+        VisualAmbiente.Iluminacion il = v.iluminacion();
+        fallos += chequear("un aporte solo de color y otro solo de oscuridad se combinan por separado: color (0.5, 0.25, 0.75) y oscuridad 0.4",
+            il != null && il.color != null && il.color[0] == 0.5f && il.color[1] == 0.25f && il.color[2] == 0.75f && il.oscuridad != null && il.oscuridad == 0.4f);
+        v.quitarColor("a:c");
+        il = v.iluminacion();
+        fallos += chequear("quitar el color de un aporte deja solo la oscuridad, sin residuo de color", il != null && il.color == null && il.oscuridad == 0.4f);
+        v.quitarOscuridad("b:o");
+        fallos += chequear("sin ningún aporte no hay iluminación (null) y no quedan aportes activos", v.iluminacion() == null && v.activas() == 0);
+        v.fijarOscuridad("a:c", 0.2f);
+        v.fijarOscuridad("b:o", 0.8f);
+        il = v.iluminacion();
+        fallos += chequear("oscuridad de varios aportes: media ponderada (0.2 y 0.8 con pesos iguales = 0.5), sin color", il != null && il.oscuridad != null && il.oscuridad == 0.5f && il.color == null);
+        fallos += chequear("el ciclo día/noche es un aporte de oscuridad: al mediodía no oscurece (0) y a mitad del día sí (0.8)",
+            Math.abs(CicloDiaNoche.alfa(1f) - 1f) < 1e-5f && Math.abs((1f - CicloDiaNoche.alfa(0f)) - 0.8f) < 1e-5f);
+        return fallos;
+    }
+
     static int comprobar() throws Exception{
         final List<int[]> es = entradas();
         int fallos = 0;
@@ -2105,7 +2129,8 @@ public final class Corpus{
         fallos += comprobarEspaciado();
         fallos += comprobarCiclo();
         fallos += comprobarTiempo();
-        fallos += comprobarFondo();   // antes de comprobarPresupuestos: ahí se abre un mundo y los ajustes de generación ya no se pueden registrar
+        fallos += comprobarFondo();
+        fallos += comprobarIluminacion();   // antes de comprobarPresupuestos: ahí se abre un mundo y los ajustes de generación ya no se pueden registrar
         fallos += comprobarPresupuestos(es, a);
         fallos += comprobarVisual(es, a);
         fallos += comprobarVisual10();

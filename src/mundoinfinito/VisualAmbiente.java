@@ -11,22 +11,21 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * COLOR AMBIENTAL Y LUZ como contribuciones con política (fase 10). Varios mods pueden aportar un color ambiental (RGBA: en Mindustry el alfa es cuánta
- * oscuridad añade); el canal los combina con la política que declara, y el enlace con el motor aplica el resultado solo mientras dibuja.
- *
- *  - {@link Politica#MEDIA_PONDERADA}: media de los colores ponderada por el peso, en orden canónico (prioridad, id de fuente, id): el resultado es idéntico
- *    bit a bit con cualquier orden de carga.
- *  - {@link Politica#PRIORIDAD_ABSOLUTA}: manda el primero en orden canónico.
- * Un valor fuera de [0, 1] se recorta (con aviso una vez); uno no numérico, o con peso menor o igual que 0, se ignora (con aviso). Una contribución que no
- * ha fijado un color, o que lo ha quitado, no cuenta: sin contribuciones no hay ningún cambio ({@link #combinar} devuelve null) y no queda nada residual.
- */
 final class VisualAmbiente{
     enum Politica{ MEDIA_PONDERADA, PRIORIDAD_ABSOLUTA }
 
+    static final class Iluminacion{
+        final float[] color;
+        final Float oscuridad;
+
+        Iluminacion(float[] color, Float oscuridad){
+            this.color = color;
+            this.oscuridad = oscuridad;
+        }
+    }
+
     private static final VisualAmbiente GLOBAL = new VisualAmbiente(Politica.MEDIA_PONDERADA);
 
-    /** El canal de color ambiental del juego. */
     static VisualAmbiente global(){
         return GLOBAL;
     }
@@ -35,8 +34,8 @@ final class VisualAmbiente{
         final String id, fuente;
         final int prioridad;
         final float peso;
-        float r, g, b, a;
-        boolean puesto;
+        boolean colorPuesto, oscPuesta;
+        float r, g, b, osc;
 
         Aporte(String id, String fuente, int prioridad, float peso){
             this.id = id;
@@ -60,9 +59,7 @@ final class VisualAmbiente{
     private final Object cerrojo = new Object();
     private final Map<String, Aporte> aportes = new HashMap<String, Aporte>();
     private final Set<String> avisos = new HashSet<String>();
-    private final float[] resultado = new float[4];
 
-    /** @param politica la que declara este canal para combinar a sus contribuyentes */
     VisualAmbiente(Politica politica){
         this.politica = politica;
     }
@@ -79,10 +76,9 @@ final class VisualAmbiente{
         if(nuevo) Log.warn("[MundoInfinito] Visual: " + texto);
     }
 
-    /** Registra una contribución (aún sin color: no cuenta hasta que se fije uno). @param id con el formato "fuente:nombre" */
     boolean registrar(String fuente, String id, int prioridad, float peso){
         if(fuente == null || fuente.isEmpty() || id == null || id.indexOf(':') <= 0 || id.indexOf(':') >= id.length() - 1 || id.indexOf(' ') >= 0){
-            Log.err("[MundoInfinito] Visual: contribución de ambiente rechazada (id \"fuente:nombre\" obligatorio): @", id);
+            Log.err("[MundoInfinito] Visual: contribución de iluminación rechazada (id \"fuente:nombre\" obligatorio): @", id);
             return false;
         }
         synchronized(cerrojo){
@@ -92,25 +88,76 @@ final class VisualAmbiente{
         }
     }
 
-    /** Fija el color que aporta esta contribución (RGBA, 0 a 1). Se puede llamar cada fotograma. */
+    private static boolean finito(float... vs){
+        for(float v : vs) if(Float.isNaN(v) || Float.isInfinite(v)) return false;
+        return true;
+    }
+
+    /** Color y oscuridad a la vez. Si algún valor no es numérico, el aporte se ignora entero. */
     boolean fijar(String id, float r, float g, float b, float a){
+        synchronized(cerrojo){
+            final Aporte p = aportes.get(id);
+            if(p == null) return false;
+            if(!finito(r, g, b, a)){
+                p.colorPuesto = false;
+                p.oscPuesta = false;
+                return true;
+            }
+            p.r = r;
+            p.g = g;
+            p.b = b;
+            p.colorPuesto = true;
+            p.osc = a;
+            p.oscPuesta = true;
+            return true;
+        }
+    }
+
+    /** Solo el color (RGB). No cambia la oscuridad de este aporte. */
+    boolean fijarColor(String id, float r, float g, float b){
         synchronized(cerrojo){
             final Aporte p = aportes.get(id);
             if(p == null) return false;
             p.r = r;
             p.g = g;
             p.b = b;
-            p.a = a;
-            p.puesto = true;
+            p.colorPuesto = true;
             return true;
         }
     }
 
-    /** La contribución deja de aportar (sigue registrada). */
+    /** Solo la oscuridad (0 = día, 1 = noche total). No cambia el color de este aporte. */
+    boolean fijarOscuridad(String id, float oscuridad){
+        synchronized(cerrojo){
+            final Aporte p = aportes.get(id);
+            if(p == null) return false;
+            p.osc = oscuridad;
+            p.oscPuesta = true;
+            return true;
+        }
+    }
+
     void quitar(String id){
         synchronized(cerrojo){
             final Aporte p = aportes.get(id);
-            if(p != null) p.puesto = false;
+            if(p != null){
+                p.colorPuesto = false;
+                p.oscPuesta = false;
+            }
+        }
+    }
+
+    void quitarColor(String id){
+        synchronized(cerrojo){
+            final Aporte p = aportes.get(id);
+            if(p != null) p.colorPuesto = false;
+        }
+    }
+
+    void quitarOscuridad(String id){
+        synchronized(cerrojo){
+            final Aporte p = aportes.get(id);
+            if(p != null) p.oscPuesta = false;
         }
     }
 
@@ -119,66 +166,89 @@ final class VisualAmbiente{
     }
 
     /**
-     * Combina las contribuciones activas según la política del canal. Devuelve {r, g, b, a} (un arreglo que se reutiliza: vale hasta la siguiente llamada),
-     * o null si nadie aporta (no hay que cambiar nada).
+     * Iluminación combinada: el color y la oscuridad se combinan por separado, cada una con la política del canal. Un valor que ningún aporte fija
+     * queda nulo y no cambia nada del juego. Devuelve null si ninguna magnitud está fijada.
      */
-    float[] combinar(){
-        final List<Aporte> v = new ArrayList<Aporte>();
+    Iluminacion iluminacion(){
+        final List<Aporte> color = new ArrayList<Aporte>(), osc = new ArrayList<Aporte>();
         synchronized(cerrojo){
             for(Aporte p : aportes.values()){
-                if(!p.puesto) continue;
-                final boolean finito = !Float.isNaN(p.r + p.g + p.b + p.a) && !Float.isInfinite(p.r + p.g + p.b + p.a);
-                if(!finito){
-                    avisoSinCerrojo("nan:" + p.id, "la contribución de ambiente '" + p.id + "' tiene un color no numérico y se ignora.");
-                    continue;
-                }
+                if(!p.colorPuesto && !p.oscPuesta) continue;
                 if(!(p.peso > 0f) || Float.isInfinite(p.peso)){
-                    avisoSinCerrojo("peso:" + p.id, "la contribución de ambiente '" + p.id + "' tiene un peso no válido (" + p.peso + ") y se ignora.");
+                    aviso("peso:" + p.id, "la contribución de iluminación '" + p.id + "' tiene un peso no válido (" + p.peso + ") y se ignora.");
                     continue;
                 }
-                if(p.r < 0f || p.r > 1f || p.g < 0f || p.g > 1f || p.b < 0f || p.b > 1f || p.a < 0f || p.a > 1f){
-                    avisoSinCerrojo("rango:" + p.id, "la contribución de ambiente '" + p.id + "' tiene un color fuera de [0, 1] y se recorta.");
+                if(p.colorPuesto){
+                    if(finito(p.r, p.g, p.b)){
+                        if(p.r < 0f || p.r > 1f || p.g < 0f || p.g > 1f || p.b < 0f || p.b > 1f)
+                            aviso("rangoc:" + p.id, "el color de '" + p.id + "' está fuera de [0, 1] y se recorta.");
+                        color.add(p);
+                    }else{
+                        aviso("nanc:" + p.id, "el color de '" + p.id + "' no es numérico y se ignora.");
+                    }
                 }
-                v.add(p);
+                if(p.oscPuesta){
+                    if(finito(p.osc)){
+                        if(p.osc < 0f || p.osc > 1f) aviso("rangoo:" + p.id, "la oscuridad de '" + p.id + "' está fuera de [0, 1] y se recorta.");
+                        osc.add(p);
+                    }else{
+                        aviso("nano:" + p.id, "la oscuridad de '" + p.id + "' no es numérica y se ignora.");
+                    }
+                }
             }
         }
-        if(v.isEmpty()) return null;
-        Collections.sort(v, CANONICO);   // el mismo orden siempre: la suma de decimales no es asociativa
+        Collections.sort(color, CANONICO);
+        Collections.sort(osc, CANONICO);
+        final float[] c = color.isEmpty() ? null : combinarColor(color);
+        final Float o = osc.isEmpty() ? null : combinarOscuridad(osc);
+        return c == null && o == null ? null : new Iluminacion(c, o);
+    }
 
+    private float[] combinarColor(List<Aporte> v){
+        final float[] out = new float[3];
         if(politica == Politica.PRIORIDAD_ABSOLUTA){
             final Aporte p = v.get(0);
-            resultado[0] = recorte(p.r);
-            resultado[1] = recorte(p.g);
-            resultado[2] = recorte(p.b);
-            resultado[3] = recorte(p.a);
-            return resultado;
+            out[0] = recorte(p.r);
+            out[1] = recorte(p.g);
+            out[2] = recorte(p.b);
+            return out;
         }
-        double r = 0.0, g = 0.0, b = 0.0, a = 0.0, pesos = 0.0;
+        double r = 0.0, g = 0.0, b = 0.0, pesos = 0.0;
         for(Aporte p : v){
             final double w = p.peso;
             r += w * recorte(p.r);
             g += w * recorte(p.g);
             b += w * recorte(p.b);
-            a += w * recorte(p.a);
             pesos += w;
         }
-        resultado[0] = (float)(r / pesos);
-        resultado[1] = (float)(g / pesos);
-        resultado[2] = (float)(b / pesos);
-        resultado[3] = (float)(a / pesos);
-        return resultado;
+        out[0] = (float)(r / pesos);
+        out[1] = (float)(g / pesos);
+        out[2] = (float)(b / pesos);
+        return out;
     }
 
-    /** Aviso desde dentro del cerrojo (no se bloquea dos veces; el registro de avisos ya está protegido). */
-    private void avisoSinCerrojo(String clave, String texto){
-        if(avisos.add(clave)) Log.warn("[MundoInfinito] Visual: " + texto);
+    private Float combinarOscuridad(List<Aporte> v){
+        if(politica == Politica.PRIORIDAD_ABSOLUTA) return recorte(v.get(0).osc);
+        double suma = 0.0, pesos = 0.0;
+        for(Aporte p : v){
+            final double w = p.peso;
+            suma += w * recorte(p.osc);
+            pesos += w;
+        }
+        return (float)(suma / pesos);
     }
 
-    /** Cuántas contribuciones están aportando ahora. */
+    /** Color y oscuridad juntos, como {r, g, b, oscuridad}, solo si ambas están fijadas. Compatibilidad con la API de color ambiental. */
+    float[] combinar(){
+        final Iluminacion il = iluminacion();
+        if(il == null || il.color == null || il.oscuridad == null) return null;
+        return new float[]{il.color[0], il.color[1], il.color[2], il.oscuridad};
+    }
+
     int activas(){
         synchronized(cerrojo){
             int n = 0;
-            for(Aporte p : aportes.values()) if(p.puesto) n++;
+            for(Aporte p : aportes.values()) if(p.colorPuesto || p.oscPuesta) n++;
             return n;
         }
     }

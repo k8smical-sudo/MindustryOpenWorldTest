@@ -18,6 +18,8 @@ public final class ApiVersion{
     public static final int MUNDO_MAYOR = 1, MUNDO_MENOR = 0;
     /** La parte de configuración de modpack: {@code ApiModpack}. */
     public static final int MODPACK_MAYOR = 1, MODPACK_MENOR = 0;
+    /** La parte de azar determinista: {@code ApiAzar}. */
+    public static final int AZAR_MAYOR = 1, AZAR_MENOR = 0;
     /** La parte de tiempo, calendario y eventos: {@code ApiTiempo}. */
     public static final int TIEMPO_MAYOR = 1, TIEMPO_MENOR = 1;
 

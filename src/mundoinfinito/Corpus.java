@@ -1866,7 +1866,7 @@ public final class Corpus{
         // ---- superficie pública: solo lo previsto es público, y la API no filtra tipos internos
         final java.util.Set<String> previstas = new java.util.TreeSet<String>(Arrays.asList("AlmacenModulo", "ContextoColocacion", "ContextoFenomeno", "ContextoTerreno", "GameRule",
             "GeneradorEstructura", "GeneradorFenomeno", "GeneradorMundo", "GeneradorTerreno", "MundoInfinitoMod", "MundoRegistrado", "OpenWorldAPI", "PoliticaSueno", "SiloInterdimensional",
-            "Corpus", "ApiVersion", "ApiVisual", "ApiAjustes", "VisualCapa", "VisualCalidad", "VisualPrograma", "VisualEfectoInst", "ApiTiempo", "EventoTiempo", "ApiMundo", "ApiModpack"));
+            "Corpus", "ApiVersion", "ApiVisual", "ApiAjustes", "VisualCapa", "VisualCalidad", "VisualPrograma", "VisualEfectoInst", "ApiTiempo", "EventoTiempo", "ApiMundo", "ApiModpack", "ApiAzar"));
         final java.util.Set<String> publicas = new java.util.TreeSet<String>();
         final URL url = Corpus.class.getResource("Corpus.class");
         if(url == null || !"file".equals(url.getProtocol())){
@@ -1894,7 +1894,7 @@ public final class Corpus{
             fallos += chequear("superficie pública: solo son públicas las " + previstas.size() + " clases previstas (sobran " + sobran + ", faltan " + faltan + ", sin poder cargar " + noCargadas + ")", sobran.isEmpty() && faltan.isEmpty());
         }
         final List<String> filtran = new ArrayList<String>();
-        for(Class<?> api : new Class<?>[]{ApiVisual.class, ApiAjustes.class, ApiVersion.class, ApiTiempo.class, ApiMundo.class, ApiModpack.class}){
+        for(Class<?> api : new Class<?>[]{ApiVisual.class, ApiAjustes.class, ApiVersion.class, ApiTiempo.class, ApiMundo.class, ApiModpack.class, ApiAzar.class}){
             for(Method m : api.getDeclaredMethods()){
                 if(!Modifier.isPublic(m.getModifiers())) continue;
                 final List<Class<?>> tipos = new ArrayList<Class<?>>(Arrays.asList(m.getParameterTypes()));
@@ -2127,6 +2127,42 @@ public final class Corpus{
         return fallos;
     }
 
+    static int comprobarAzarYValidador(){
+        int fallos = 0;
+        fallos += chequear("el azar determinista da el mismo valor para la misma semilla, dimensión, canal y posición, en cualquier orden",
+            ApiAzar.unidad(7, 0, "a:b", 10, -3) == ApiAzar.unidad(7, 0, "a:b", 10, -3) && ApiAzar.unidad(7, 0, "a:b", 5, 5) == ApiAzar.unidad(7, 0, "a:b", 5, 5));
+        final float[] tras = new float[4], antes = new float[4];
+        for(int i = 0; i < 4; i++) antes[i] = ApiAzar.unidad(9, 1, "a:c", i, i);
+        for(int i = 3; i >= 0; i--) tras[i] = ApiAzar.unidad(9, 1, "a:c", i, i);
+        fallos += chequear("el valor de una posición no depende del orden en que se pide", java.util.Arrays.equals(antes, tras));
+        boolean rango = true, varia = false;
+        final float primero = ApiAzar.unidad(3, 0, "a:b", 0, 0);
+        for(int x = -50; x < 50; x++) for(int y = -50; y < 50; y++){
+            final float u = ApiAzar.unidad(3, 0, "a:b", x, y);
+            if(!(u >= 0f && u < 1f)) rango = false;
+            if(u != primero) varia = true;
+        }
+        fallos += chequear("el azar cae en [0, 1) y varía de una posición a otra", rango && varia);
+        fallos += chequear("cambiar el canal, la semilla o la dimensión cambia el valor (no comparten números)",
+            ApiAzar.unidad(3, 0, "a:b", 1, 1) != ApiAzar.unidad(3, 0, "a:c", 1, 1) && ApiAzar.unidad(3, 0, "a:b", 1, 1) != ApiAzar.unidad(4, 0, "a:b", 1, 1)
+                && ApiAzar.unidad(3, 0, "a:b", 1, 1) != ApiAzar.unidad(3, 1, "a:b", 1, 1));
+        boolean enteros = true;
+        for(int x = 0; x < 200; x++){ final int e = ApiAzar.entero(1, 0, "a:b", x, x, 6); if(e < 0 || e >= 6) enteros = false; }
+        fallos += chequear("los enteros de ApiAzar caen en [0, n) y n <= 0 da 0", enteros && ApiAzar.entero(1, 0, "a:b", 0, 0, 0) == 0);
+        final ApiAzar.Secuencia s1 = ApiAzar.secuencia(5, 0, "a:b", 2, 2), s2 = ApiAzar.secuencia(5, 0, "a:b", 2, 2);
+        fallos += chequear("una secuencia con los mismos datos da la misma serie", s1.siguiente() == s2.siguiente() && s1.siguienteEntero(9) == s2.siguienteEntero(9));
+        final String limpia = "java/lang/String java/util/List";
+        final String sucia = "java/util/Random nextInt";
+        fallos += chequear("el escáner señala una clase que usa java.util.Random y no señala una limpia",
+            ValidadorAddons.sospechasClase(limpia.getBytes(StandardCharsets.ISO_8859_1)).isEmpty() && !ValidadorAddons.sospechasClase(sucia.getBytes(StandardCharsets.ISO_8859_1)).isEmpty());
+        final GeneradorFenomeno[] nada = new GeneradorFenomeno[0];
+        fallos += chequear("un generador sin tipos de fenómeno no produce fallos de borde (la función no lanza excepciones)", ValidadorAddons.bordes(null, nada, 1, 0, 0) != null);
+        for(GeneradorFenomeno g : Extensiones.fenomenosRegistrados() == null ? new GeneradorFenomeno[0] : Extensiones.fenomenosRegistrados()){
+            System.out.println("[Corpus] info: bordes de " + g.id() + ": " + ValidadorAddons.bordes(g, Extensiones.fenomenosRegistrados(), 12345, 1, 0));
+        }
+        return fallos;
+    }
+
     static int comprobar() throws Exception{
         final List<int[]> es = entradas();
         int fallos = 0;
@@ -2170,7 +2206,8 @@ public final class Corpus{
         fallos += comprobarFondo();
         fallos += comprobarIluminacion();
         fallos += comprobarManifiesto();
-        fallos += comprobarModpack();   // antes de comprobarPresupuestos: ahí se abre un mundo y los ajustes de generación ya no se pueden registrar
+        fallos += comprobarModpack();
+        fallos += comprobarAzarYValidador();   // antes de comprobarPresupuestos: ahí se abre un mundo y los ajustes de generación ya no se pueden registrar
         fallos += comprobarPresupuestos(es, a);
         fallos += comprobarVisual(es, a);
         fallos += comprobarVisual10();

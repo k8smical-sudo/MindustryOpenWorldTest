@@ -48,6 +48,11 @@ final class Extensiones{
     private static final Object CERROJO = new Object();
     private static volatile GeneradorTerreno[] terreno = new GeneradorTerreno[0];
     private static volatile GeneradorFenomeno[] fenomenos = new GeneradorFenomeno[0];
+
+    /** Generadores de fenómenos registrados (solo lectura, para validación). */
+    static GeneradorFenomeno[] fenomenosRegistrados(){
+        return fenomenos;
+    }
     private static volatile GeneradorEstructura[] estructuras = new GeneradorEstructura[0];
     private static final CopyOnWriteArrayList<PoliticaSueno> politicas = new CopyOnWriteArrayList<>();
     private static final CopyOnWriteArrayList<Team> equipos = new CopyOnWriteArrayList<>();

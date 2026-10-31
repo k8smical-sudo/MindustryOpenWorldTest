@@ -71,6 +71,9 @@ final class RegistroAjustes{
         registrar(AjusteMundo.bool(ParametrosGeneracion.ID_POZOS_SPAWN, "Pozos del spawn",
             "Lista de pozos, respiraderos y depósitos agrupados alrededor del spawn. Desactivado en mundos nuevos: los pozos se reparten como el resto de fenómenos. Los mundos anteriores los conservan.",
             AjusteMundo.Ambito.GENERACION, false, null).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
+        registrar(AjusteMundo.bool(CicloDiaNoche.ID, "Ciclo día/noche (Serpulo)",
+            "Día y noche en Serpulo, como en campaña (un día completo dura 10 minutos). Los mundos anteriores no lo tienen.",
+            AjusteMundo.Ambito.GENERACION, true, null).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
     }
 
     private RegistroAjustes(){}

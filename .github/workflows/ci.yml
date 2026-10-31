@@ -61,6 +61,22 @@ jobs:
           gh release download "$TAG" --repo "$MX_REPO" --pattern '*-Desktop.jar' --dir libs --clobber
           mv libs/*-Desktop.jar libs/MindustryX-Desktop.jar
           ls -la libs
+      - name: Inventario de fuentes (manifiesto)
+        shell: bash
+        run: |
+          mkdir -p build
+          cd "$GITHUB_WORKSPACE"
+          find src -type f | LC_ALL=C sort > build/inventario-actual.txt
+          LC_ALL=C sort inventario/fuentes.txt > build/inventario-esperado.txt
+          echo "Archivos en src: $(wc -l < build/inventario-actual.txt) | esperados en inventario/fuentes.txt: $(wc -l < build/inventario-esperado.txt)"
+          if ! diff build/inventario-esperado.txt build/inventario-actual.txt > build/inventario-diferencias.txt; then
+            echo "::error::El árbol de src no coincide con inventario/fuentes.txt."
+            echo "'<' = está en el manifiesto y falta en el repo. '>' = está en el repo y no está en el manifiesto (sobra o se escapó)."
+            cat build/inventario-diferencias.txt
+            exit 1
+          fi
+          echo "Inventario de fuentes: OK"
+
       - name: Build mod artifact
         run: ./gradlew dex -x fetchComps --stacktrace
       # ---- FASE 0 del plan: corpus de regresión del terreno base, equivalencia de hilos y línea base de coste ----

@@ -2089,6 +2089,20 @@ public final class Corpus{
         return fallos;
     }
 
+    static int comprobarManifiesto(){
+        int fallos = 0;
+        fallos += chequear("un manifiesto igual no produce diferencias", ManifiestoMundo.diferencias("a@1,b@2", "a@1,b@2").isEmpty());
+        fallos += chequear("un mod ausente se señala con su versión", ManifiestoMundo.diferencias("a@1,b@2", "a@1").toString().equals("[falta b 2]"));
+        fallos += chequear("un cambio de versión se señala con antes y después", ManifiestoMundo.diferencias("a@1", "a@1.1").toString().equals("[a: versión 1 → 1.1]"));
+        fallos += chequear("un mod nuevo se señala", ManifiestoMundo.diferencias("a@1", "a@1,c@4").toString().equals("[nuevo c 4]"));
+        fallos += chequear("un mundo anterior (sin versiones) solo compara por nombre", ManifiestoMundo.diferencias("a,b", "a@9,b@7").isEmpty());
+        fallos += chequear("la versión de API se lee del texto guardado (1 para api 1.1; -1 si no hay)",
+            ManifiestoMundo.apiMayor("api 1.1 (visual 1.1)") == 1 && ManifiestoMundo.apiMayor(null) == -1 && ManifiestoMundo.apiMayor("") == -1);
+        fallos += chequear("un mundo de una API mayor se rechaza y uno de API menor o igual se acepta",
+            ManifiestoMundo.incompatible("api 2.0 (x)", 1) && !ManifiestoMundo.incompatible("api 1.9 (x)", 1) && !ManifiestoMundo.incompatible(null, 1));
+        return fallos;
+    }
+
     static int comprobar() throws Exception{
         final List<int[]> es = entradas();
         int fallos = 0;
@@ -2130,7 +2144,8 @@ public final class Corpus{
         fallos += comprobarCiclo();
         fallos += comprobarTiempo();
         fallos += comprobarFondo();
-        fallos += comprobarIluminacion();   // antes de comprobarPresupuestos: ahí se abre un mundo y los ajustes de generación ya no se pueden registrar
+        fallos += comprobarIluminacion();
+        fallos += comprobarManifiesto();   // antes de comprobarPresupuestos: ahí se abre un mundo y los ajustes de generación ya no se pueden registrar
         fallos += comprobarPresupuestos(es, a);
         fallos += comprobarVisual(es, a);
         fallos += comprobarVisual10();

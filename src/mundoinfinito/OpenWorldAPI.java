@@ -328,7 +328,7 @@ public final class OpenWorldAPI{
         final StringBuilder sb = new StringBuilder();
         for(ModDetectado d : modsDetectados()){
             if(sb.length() > 0) sb.append(',');
-            sb.append(d.nombre);
+            sb.append(d.nombre).append('@').append(d.version);
         }
         return sb.toString();
     }

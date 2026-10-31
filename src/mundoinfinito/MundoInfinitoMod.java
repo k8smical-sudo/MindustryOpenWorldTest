@@ -176,6 +176,7 @@ public class MundoInfinitoMod extends Mod{
         boolean limpio;
         /** Mods activos al crear el mundo (nombres separados por coma): permite avisar si falta alguno al volver a abrirlo. */
         String mods = "";
+        String api = "";
         /** Perfil del mundo (fase 4): el valor de cada ajuste (gamerules y parámetros de generación). Lo que falta usa el valor por defecto. */
         PerfilMundo perfil = new PerfilMundo();
         /** Tiempo de juego del mundo y eventos programados (fase 11). */
@@ -202,6 +203,7 @@ public class MundoInfinitoMod extends Mod{
             j.put("limY", limY);
             j.put("limpio", limpio);
             j.put("mods", mods == null ? "" : mods);
+            j.put("api", api == null ? "" : api);
             j.put("ajustes", perfil.aJson());
             j.put("calendario", calendario.aJson());
             j.put("gamerules", perfil.aJsonReglas());   // espejo para versiones anteriores del mod
@@ -235,6 +237,7 @@ public class MundoInfinitoMod extends Mod{
             m.limY = Math.max(0, j.getInt("limY", 0));
             m.limpio = j.getBool("limpio", false);
             m.mods = j.getString("mods", "");
+            m.api = j.getString("api", "");
             m.perfil = PerfilMundo.desde(j);   // mundos antiguos: sin perfil = valores por defecto
             m.calendario = CalendarioMundo.desde(j.has("calendario") ? j.get("calendario") : null);   // mundos antiguos: tiempo 0, sin eventos
             // el archivo del calendario, si existe, es más reciente que el del mundo (se escribe en cada disparo)
@@ -2818,6 +2821,7 @@ public class MundoInfinitoMod extends Mod{
             m.limY = Math.max(0, limY);
             m.limpio = true;                       // mundo base: sin generador de enemigos ni de estructuras
             m.mods = OpenWorldAPI.firmaMods();
+            m.api = ApiVersion.texto();
             if(gamerules != null) for(java.util.Map.Entry<String, Boolean> e : gamerules.entrySet()) m.perfil.fijar(e.getKey(), Boolean.TRUE.equals(e.getValue()) ? 1.0 : 0.0);
             m.perfil.sellarGeneracion(semilla);    // resuelve las propuestas de los mods; los parámetros de generación quedan guardados con el mundo y ya no cambian
             m.creado = m.ultimo = System.currentTimeMillis();
@@ -2830,7 +2834,7 @@ public class MundoInfinitoMod extends Mod{
 
         static void continuar(Meta m){
             if(!m.compatible()) return;
-            avisarModsDistintos(m);
+            if(!avisarModsDistintos(m)) return;
             Fi f = Almacen.archivoEstado(m);
             Datos d = f.exists() ? Datos.leer(f) : null;
             Regiones.iniciar(m);
@@ -2841,22 +2845,24 @@ public class MundoInfinitoMod extends Mod{
         }
 
         /** Si el mundo se creó con otros mods activos que ahora faltan (o sobran), lo avisa: lo que esos mods pusieron puede no funcionar. */
-        static void avisarModsDistintos(Meta m){
+        static boolean avisarModsDistintos(Meta m){
             try{
-                final java.util.HashSet<String> antes = new java.util.HashSet<>(), ahora = new java.util.HashSet<>();
-                if(m.mods != null && !m.mods.isEmpty()) for(String x : m.mods.split(",")) antes.add(x.trim());
-                final String f = OpenWorldAPI.firmaMods();
-                if(!f.isEmpty()) for(String x : f.split(",")) ahora.add(x.trim());
-                final java.util.HashSet<String> faltan = new java.util.HashSet<>(antes), sobran = new java.util.HashSet<>(ahora);
-                faltan.removeAll(ahora);
-                sobran.removeAll(antes);
-                if(faltan.isEmpty() && sobran.isEmpty()) return;
-                final String txt = (faltan.isEmpty() ? "" : "Faltan mods con los que se creó este mundo: " + String.join(", ", faltan) + ". ")
-                    + (sobran.isEmpty() ? "" : "Mods nuevos activos: " + String.join(", ", sobran) + ".");
-                Log.warn("[MundoInfinito] @", txt);
-                if(!Vars.headless && Vars.ui != null) Time.runTask(60f, () -> Vars.ui.showInfoToast("[accent]" + txt, 8f));
+                if(ManifiestoMundo.incompatible(m.api, ApiVersion.PUBLICA_MAYOR)){
+                    final String txt = "Este mundo necesita la API " + ManifiestoMundo.apiMayor(m.api) + " y está instalada la " + ApiVersion.PUBLICA_MAYOR + ". No se abre: actualiza el mod.";
+                    Log.err("[MundoInfinito] @", txt);
+                    if(!Vars.headless && Vars.ui != null) Time.runTask(60f, () -> Vars.ui.showInfoToast("[scarlet]" + txt, 8f));
+                    return false;
+                }
+                final java.util.List<String> d = ManifiestoMundo.diferencias(m.mods, OpenWorldAPI.firmaMods());
+                if(!d.isEmpty()){
+                    final String txt = "Cambios de mods desde que se creó el mundo: " + String.join("; ", d) + ".";
+                    Log.warn("[MundoInfinito] @", txt);
+                    if(!Vars.headless && Vars.ui != null) Time.runTask(60f, () -> Vars.ui.showInfoToast("[accent]" + txt, 8f));
+                }
+                return true;
             }catch(Throwable t){
-                Log.warn("[MundoInfinito] No se pudo comparar la lista de mods: @", t.toString());
+                Log.warn("[MundoInfinito] No se pudo comparar el manifiesto: @", t.toString());
+                return true;
             }
         }
 

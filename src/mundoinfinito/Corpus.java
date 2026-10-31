@@ -2157,9 +2157,9 @@ public final class Corpus{
             ValidadorAddons.sospechasClase(limpia.getBytes(StandardCharsets.ISO_8859_1)).isEmpty() && !ValidadorAddons.sospechasClase(sucia.getBytes(StandardCharsets.ISO_8859_1)).isEmpty());
         final GeneradorFenomeno[] nada = new GeneradorFenomeno[0];
         fallos += chequear("un generador sin tipos de fenómeno no produce fallos de borde (la función no lanza excepciones)", ValidadorAddons.bordes(null, nada, 1, 0, 0) != null);
-        for(GeneradorFenomeno g : Extensiones.fenomenosRegistrados() == null ? new GeneradorFenomeno[0] : Extensiones.fenomenosRegistrados()){
-            System.out.println("[Corpus] info: bordes de " + g.id() + ": " + ValidadorAddons.bordes(g, Extensiones.fenomenosRegistrados(), 12345, 1, 0));
-        }
+        final GeneradorFenomeno[] respiraderos = { new FenomenosBase.Respiraderos() };
+        System.out.println("[Corpus] info: bordes de " + respiraderos[0].id() + " (dim 1, distancia global 0): " + ValidadorAddons.bordes(respiraderos[0], respiraderos, 12345, 1, 0));
+        System.out.println("[Corpus] info: bordes de " + respiraderos[0].id() + " (dim 1, semilla 1): " + ValidadorAddons.bordes(respiraderos[0], respiraderos, 1, 1, 0));
         return fallos;
     }
 

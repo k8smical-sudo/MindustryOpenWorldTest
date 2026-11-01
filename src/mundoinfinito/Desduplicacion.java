@@ -47,6 +47,22 @@ final class Desduplicacion{
     /** Sobrecoste inicial estimado de la caché, en ns. Se corrige con las mediciones. */
     static final double SOBRECOSTE_INICIAL_NS = 100.0;
 
+    /**
+     * Ruido de medir: lo que cuesta un par de lecturas consecutivas de nanoTime (el menor de 2000 pares). Se resta de cada medición para que un
+     * cálculo barato no parezca más caro de lo que es.
+     */
+    static final double RUIDO_NS = medirRuido();
+
+    private static double medirRuido(){
+        long minimo = Long.MAX_VALUE;
+        for(int i = 0; i < 2000; i++){
+            final long a = System.nanoTime();
+            final long b = System.nanoTime();
+            if(b - a < minimo) minimo = b - a;
+        }
+        return (double)minimo;
+    }
+
     /** Sobrecoste medio de consultar la caché, en ns (media móvil; compartida por todos los contribuyentes). */
     private static volatile double sobrecosteNs = SOBRECOSTE_INICIAL_NS;
 
@@ -113,7 +129,10 @@ final class Desduplicacion{
         synchronized void cerrarVentanaSiToca(){
             if(politica != POLITICA_AUTO || llamadas < VENTANA) return;
             final double tasa = (double)aciertos / (double)llamadas;
-            final boolean rentable = costeNs > 0.0 && tasa * costeNs > sobrecosteNs * MARGEN;
+            // Se resta el ruido de los propios cronómetros: en un cálculo barato, medir cuesta del mismo orden que el cálculo.
+            final double coste = Math.max(0.0, costeNs - RUIDO_NS);
+            final double sobre = Math.max(0.0, sobrecosteNs - RUIDO_NS);
+            final boolean rentable = coste > 0.0 && tasa * coste > sobre * MARGEN;
             if(rentable != desduplica){
                 desduplica = rentable;
                 if(!rentable){

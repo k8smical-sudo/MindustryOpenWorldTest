@@ -9,7 +9,7 @@ import arc.util.Log;
  */
 public final class ApiVersion{
     /** Conjunto de la API pública (sube cuando cambia cualquiera de las partes). */
-    public static final int PUBLICA_MAYOR = 1, PUBLICA_MENOR = 1;   // 1.1: se suma WORLDGEN 1.0 y la luz 1.1 (plan v5)
+    public static final int PUBLICA_MAYOR = 1, PUBLICA_MENOR = 4;   // 1.4: SISTEMAS 1.0, FISICA 1.0, RADAR 1.0 y VIAJE 1.0 (plan v7, entregas A2 y B1)
     /** La parte visual: {@code ApiVisual}. */
     public static final int VISUAL_MAYOR = 1, VISUAL_MENOR = 1;
     /** La parte de ajustes y propuestas de valor: {@code ApiAjustes}. */
@@ -32,6 +32,16 @@ public final class ApiVersion{
     public static final int DEDUP_MAYOR = 1, DEDUP_MENOR = 1;   // 1.1: política adaptativa, registro por cálculo, olvidar y modo
     /** La parte de tiempo, calendario y eventos: {@code ApiTiempo}. */
     public static final int TIEMPO_MAYOR = 1, TIEMPO_MENOR = 1;
+    /** La parte de sistemas (órbitas compartidas, slots, capacidad, planetas solitarios, movimiento): {@code ApiSistemas}. Plan v6, F4 y F5. */
+    public static final int SISTEMAS_MAYOR = 1, SISTEMAS_MENOR = 0;
+    /** La parte de física (fichas, categorías, validación): {@code ApiFisica}. Plan v6, F3. */
+    public static final int FISICA_MAYOR = 1, FISICA_MENOR = 0;
+    /** La parte de radares (barrido por tiers, orden por sistema y distancia, tiempo de detección): {@code ApiRadar}. Plan v7, A2. */
+    public static final int RADAR_MAYOR = 1, RADAR_MENOR = 0;
+    /** La parte de viajes (portales por tiers, enlaces, coste de viaje): {@code ApiViaje}. Plan v7, B1. */
+    public static final int VIAJE_MAYOR = 1, VIAJE_MENOR = 0;
+    /** Formato del estado de sistemas guardado con el mundo: {@code EstadoSistemas}. Plan v6, F2. No es una API de mods. */
+    public static final int ESTADO_MAYOR = 1, ESTADO_MENOR = 0;
 
     private ApiVersion(){}
 

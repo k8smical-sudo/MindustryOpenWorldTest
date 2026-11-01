@@ -32,6 +32,9 @@ final class CasosBenchmark{
         arbol(out);
         luz(out);
         worldgen(out);
+        sistemasYFisica(out);
+        radar(out);
+        viaje(out);
         return out;
     }
 
@@ -212,6 +215,48 @@ final class CasosBenchmark{
         out.add(new Bancos.Caso("worldgen", "fijo-y-bioma", 200000, () ->
             ApiWorldgen.bioma(l) == ApiWorldgen.BIOMA_ARKYIC && ApiWorldgen.probabilidad("bench:fijo", 1f, l) == 0.25f
                 && ApiWorldgen.probabilidad("bench:libre", 0.5f, l) == 0.5f, "ApiWorldgen"));
+    }
+
+    // ================================================================== física y sistemas (ApiFisica, ApiSistemas; plan v6, F3 a F5)
+
+    private static void sistemasYFisica(List<Bancos.Caso> out){
+        out.add(new Bancos.Caso("fisica", "validar-y-categoria", 200000, () -> {
+            final FichaFisica f = ApiFisica.validar(null, ApiFisica.TIPO_PLANETA);
+            return f.diametro == ApiFisica.DIAMETRO_PLANETA && ApiFisica.PEQUENO.equals(ApiFisica.categoria(0.5f))
+                && ApiFisica.GRANDE.equals(ApiFisica.categoria(8f));
+        }, "ApiFisica"));
+        out.add(new Bancos.Caso("sistemas", "orbita-compartida", 2000, () -> {
+            final EstadoSistemas e = new EstadoSistemas();
+            final boolean a = ApiSistemas.anadirMundoEnOrbita(e, "b1", "bm1", "serpulo", 100, 10).ok;
+            final boolean b = ApiSistemas.anadirMundoEnOrbita(e, "b2", "bm2", "serpulo", 100, 10).ok;
+            final double[] ang = e.angulosOrbita("serpulo");
+            return a && b && ang.length == 2 && Math.abs(ang[1] - Math.PI) < 1e-6;
+        }, "ApiSistemas"));
+    }
+
+    // ================================================================== radares (ApiRadar; plan v7, entrega A2)
+
+    private static void radar(List<Bancos.Caso> out){
+        out.add(new Bancos.Caso("radar", "orden-por-sistema-y-distancia", 2000, () -> {
+            final EstadoSistemas e = new EstadoSistemas();
+            ApiSistemas.crearSolitario(e, "r-lejos", "r-m1", "erekir", 30, 0, 0, 0, 0, 2);
+            ApiSistemas.crearSolitario(e, "r-cerca", "r-m2", "erekir", 5, 0, 0, 0, 0, 2);
+            final List<ApiRadar.Hallazgo> h = ApiRadar.escanear(e, 0, 0, ApiRadar.nivel(2), 1000, p -> 0.0);
+            return h.size() == 2 && "r-m2".equals(h.get(0).cuerpoId) && h.get(1).tickDeteccion == 1000 + 2 * 240;
+        }, "ApiRadar"));
+    }
+
+    // ================================================================== viajes (ApiViaje; plan v7, entrega B1)
+
+    private static void viaje(List<Bancos.Caso> out){
+        out.add(new Bancos.Caso("viaje", "enlace-y-coste", 2000, () -> {
+            final EstadoSistemas e = new EstadoSistemas();
+            ApiSistemas.crearSolitario(e, "v-a", "v-m1", "erekir", 0, 0, 0, 0, 0, 2);
+            ApiSistemas.crearSolitario(e, "v-b", "v-m2", "serpulo", 50, 0, 0, 0, 0, 2);
+            final ApiViaje.Enlaces enlaces = new ApiViaje.Enlaces();
+            if(!ApiViaje.establecer(e, enlaces, "v-e", "v-m1", "v-m2", ApiViaje.portal(1), 0, p -> 0.0).ok) return false;
+            return ApiViaje.viajar(e, enlaces, "v-m2", "v-m1", 0, p -> 0.0).ticks == 400L;
+        }, "ApiViaje"));
     }
 
     // ================================================================== árbol tecnológico (ApiArbol)

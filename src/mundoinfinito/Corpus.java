@@ -1808,7 +1808,7 @@ public final class Corpus{
             ApiVersion.compatible(1, 0, 1, 0) && ApiVersion.compatible(1, 3, 1, 2) && !ApiVersion.compatible(1, 2, 1, 3) && !ApiVersion.compatible(2, 0, 1, 0) && !ApiVersion.compatible(1, 0, 2, 0)
                 && ApiVersion.requiereVisual("api-prueba", ApiVersion.VISUAL_MAYOR, ApiVersion.VISUAL_MENOR) && ApiVersion.requiereAjustes("api-prueba", ApiVersion.AJUSTES_MAYOR, 0)
                 && !ApiVersion.requiereVisual("api-prueba", ApiVersion.VISUAL_MAYOR + 1, 0) && !ApiVersion.requiereAjustes("api-prueba", ApiVersion.AJUSTES_MAYOR, ApiVersion.AJUSTES_MENOR + 1)
-                && ApiVersion.texto().startsWith("api 1.1"));
+                && ApiVersion.texto().startsWith("api 1." + ApiVersion.PUBLICA_MENOR));
 
         // ---- fachada visual: lo que se registra por la API queda en los registros del núcleo
         final Runnable nada = new Runnable(){ @Override public void run(){} };

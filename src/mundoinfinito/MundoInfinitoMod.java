@@ -3434,6 +3434,7 @@ public class MundoInfinitoMod extends Mod{
                     fila.button("Borrar", () -> Vars.ui.showConfirm("Borrar mundo", "¿Borrar \"" + m.nombre + "\" para siempre?", () -> {
                         Almacen.borrar(m.id);
                         rellenar[0].run();
+                        VistaPlanetas.recargar();
                     })).size(110f, 52f).pad(4f);
                     lista.add(fila).growX().row();
                     lista.image().color(arc.graphics.Color.gray).height(2f).growX().row();
@@ -3443,9 +3444,9 @@ public class MundoInfinitoMod extends Mod{
 
             // Modos intercambiables: "Simple" (la lista de siempre) y "Planetas" (órbitas y árbol tecnológico)
             final Table cuerpo = new Table();
-            final Table planetas = VistaPlanetas.crear();
+            final Table planetas = VistaPlanetas.crear(() -> { d.hide(); abrirNuevo(); });
             final Runnable verSimple = () -> { cuerpo.clear(); cuerpo.pane(lista).grow().minWidth(520f); };
-            final Runnable verPlanetas = () -> { cuerpo.clear(); cuerpo.add(planetas).grow().minWidth(520f); };
+            final Runnable verPlanetas = () -> { VistaPlanetas.recargar(); cuerpo.clear(); cuerpo.add(planetas).grow().minWidth(520f); };
             d.cont.table(modos -> {
                 modos.button("Simple", mindustry.ui.Styles.cleart, verSimple).size(200f, 52f).pad(4f);
                 modos.button("Planetas", mindustry.ui.Styles.cleart, verPlanetas).size(200f, 52f).pad(4f);

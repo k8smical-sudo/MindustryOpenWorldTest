@@ -10,95 +10,136 @@ import arc.scene.event.ClickListener;
 import arc.scene.event.ElementGestureListener;
 import arc.scene.event.InputEvent;
 import arc.scene.event.InputListener;
+import arc.scene.ui.Label;
 import arc.scene.ui.layout.Table;
-import arc.util.Time;
 import mindustry.Vars;
 import mindustry.graphics.Pal;
 import mindustry.type.Planet;
 import mindustry.ui.Styles;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
- * VISTA DE PLANETAS (plan v2, M8; zoom y paneo en plan v6, F6 / D14). Modo "Planetas" del menú de Mundo abierto.
+ * VISTA DE PLANETAS Y SISTEMAS (plan v8, F6 y F7 aproximado). Modo "Planetas" del menú de Mundo abierto.
  *
- *  - Las órbitas son las del juego (radio de cada planeta en Mindustry), escaladas para caber en la vista.
- *  - Con un mundo abierto, la posición de cada planeta es su fase real de la simulación ({@link ApiPlaneta#fase}). Sin mundo, avanza con el
- *    periodo por defecto de cada planeta, solo para verla moverse: no es el estado de ningún mundo.
- *  - Tocar un planeta abre su árbol tecnológico y lo deja seleccionado para el botón Centrar.
- *  - Rueda y pellizco hacen zoom; arrastre mueve la vista (misma matemática que el árbol: {@link NavegacionVista}).
+ * FUENTE: los mundos guardados (Almacen.listar), no los planetas del juego. Cada mundo es un cuerpo en la órbita de su planeta base,
+ * colocado con ApiSistemas (mismo tipo = misma órbita; slots; capacidad). Sin mundos guardados, la vista muestra el estado vacío.
+ * Se recarga al abrir el modo y tras borrar un mundo: así no quedan planetas de mundos que ya no existen.
  *
- * Los planetas se leen de {@link ApiPlaneta#listar()}, así que un planeta de un addon aparece sin tocar esta clase. Esta vista todavía no
- * lee {@link EstadoSistemas}: eso llega con la entrega siguiente, cuando el estado se guarde con el mundo.
+ * MOVIMIENTO: órbitas simuladas con el tiempo del mundo (ApiSistemas.anguloEn y el periodo de ApiPlaneta). Nada inventado.
+ *
+ * MODOS: 2D (órbitas circulares) y 3D aproximado (órbitas inclinadas, con planetas delante y detrás). El 3D completo (F7) queda para
+ * la siguiente entrega y su verificación en dispositivo.
+ *
+ * Tocar un mundo lo selecciona y abre el árbol tecnológico de su planeta. Rueda y pellizco hacen zoom; arrastre mueve la vista; Centrar
+ * lleva la vista al mundo seleccionado. Misma matemática que el árbol: {@link NavegacionVista}.
  */
 final class VistaPlanetas{
-    /** Radio visual de la estrella y de cada planeta, en píxeles. */
-    static final float RADIO_ESTRELLA = 16f, RADIO_PLANETA = 11f;
-    /** Radio de un planeta de respaldo, para uno cuyo objeto Planet no se encuentra. */
-    static final float RADIO_RESPALDO = 60f;
-    /** Límites de zoom y margen visible (mismos valores que el árbol). */
-    static final float ESCALA_MIN = 0.5f, ESCALA_MAX = 4f, MARGEN = 40f;
-    /** Escala al centrar en un planeta seleccionado. */
-    static final float ESCALA_CENTRADO = 2f;
+    static final float RADIO_ESTRELLA = 16f, RADIO_PLANETA = 9f;
+    static final float ESCALA_MIN = 0.5f, ESCALA_MAX = 4f, MARGEN = 40f, ESCALA_CENTRADO = 2f;
+    /** Aplastamiento vertical de las órbitas en el modo 3D aproximado. */
+    static final float INCLINACION = 0.45f;
+    static final int SEGMENTOS = 64;
+
+    private static Panel ultimo;
 
     private VistaPlanetas(){}
 
-    /** Tabla con la vista, la leyenda y los botones (Centrar y acceso al árbol tecnológico). */
-    static Table crear(){
-        final Table t = new Table();
-        final Lienzo lienzo = new Lienzo();
-        t.add(lienzo).grow().minHeight(360f).row();
+    /** Vuelve a leer los mundos guardados. Llamar al abrir el modo Planetas y después de borrar un mundo. */
+    static void recargar(){
+        if(ultimo != null) ultimo.recargar();
+    }
 
-        final Table leyenda = new Table();
-        for(ApiPlaneta.Ficha f : ApiPlaneta.listar()){
-            leyenda.add("[lightgray]" + f.nombre + "[]").left().padRight(18f);
-        }
-        t.add(leyenda).padTop(6f).row();
+    /** Tabla con la vista, la leyenda, los botones y el estado vacío (que ofrece crear un mundo). */
+    static Table crear(Runnable nuevoMundo){
+        final Lienzo lienzo = new Lienzo();
+        final Table vacio = new Table();
+        vacio.add("[lightgray]Sin mundos creados. Crea uno para ver sus planetas y sistemas.[]").row();
+        vacio.button("Nuevo mundo", Styles.cleart, nuevoMundo).size(260f, 52f).padTop(12f);
+        final Label leyenda = new Label("");
+        final Table cuerpo = new Table();
 
         final Table botones = new Table();
+        botones.button("2D", Styles.cleart, () -> lienzo.setModo(false)).size(120f, 52f).padRight(8f);
+        botones.button("3D", Styles.cleart, () -> lienzo.setModo(true)).size(120f, 52f).padRight(8f);
         botones.button("Centrar", Styles.cleart, lienzo::centrar).size(160f, 52f).padRight(8f);
-        botones.button("Árbol tecnológico", Styles.cleart, () -> ArbolUI.abrir(null)).size(260f, 52f);
-        t.add(botones).padTop(6f).row();
+        botones.button("Árbol tecnológico", Styles.cleart, () -> ArbolUI.abrir(lienzo.tagSeleccionado())).size(260f, 52f);
+
+        final Table t = new Table();
+        t.add(botones).padBottom(6f).row();
+        t.add(cuerpo).grow().minHeight(360f).row();
+        t.add(leyenda).padTop(6f).row();
+
+        ultimo = new Panel(lienzo, vacio, cuerpo, leyenda);
+        ultimo.recargar();
         return t;
     }
 
-    /** Un planeta de la vista, con su radio de órbita y su periodo. */
-    private static final class Orbita{
-        final String tag;
-        final float radio;
-        final float periodo;
-        final boolean delMundo;
+    /** Lo que se muestra: el lienzo si hay mundos, o el estado vacío. */
+    private static final class Panel{
+        final Lienzo lienzo;
+        final Table vacio, cuerpo;
+        final Label leyenda;
 
-        Orbita(String tag, float radio, float periodo, boolean delMundo){
-            this.tag = tag;
-            this.radio = radio;
-            this.periodo = periodo;
-            this.delMundo = delMundo;
+        Panel(Lienzo lienzo, Table vacio, Table cuerpo, Label leyenda){
+            this.lienzo = lienzo;
+            this.vacio = vacio;
+            this.cuerpo = cuerpo;
+            this.leyenda = leyenda;
+        }
+
+        void recargar(){
+            lienzo.recargar();
+            cuerpo.clearChildren();
+            if(lienzo.hayMundos()) cuerpo.add(lienzo).grow().minHeight(360f);
+            else cuerpo.add(vacio).grow();
+            leyenda.setText(lienzo.textoLeyenda());
         }
     }
 
-    /** Dibuja las órbitas y los planetas, con zoom y paneo. Se recalcula cada fotograma. */
+    /** Un mundo guardado, como cuerpo en la órbita de su planeta base. */
+    private static final class Mundo{
+        final String id, nombre, tag;
+        final EstadoSistemas.Cuerpo cuerpo;
+        final boolean actual;
+
+        Mundo(String id, String nombre, String tag, EstadoSistemas.Cuerpo cuerpo, boolean actual){
+            this.id = id;
+            this.nombre = nombre;
+            this.tag = tag;
+            this.cuerpo = cuerpo;
+            this.actual = actual;
+        }
+    }
+
+    /** Órbita de un planeta base: radio (unidades de Mindustry) y periodo de revolución en ticks. */
+    private static final class Orbita{
+        final String tag;
+        final float radio;
+        final double periodo;
+
+        Orbita(String tag, float radio, double periodo){
+            this.tag = tag;
+            this.radio = radio;
+            this.periodo = periodo;
+        }
+    }
+
+    /** Lienzo con las órbitas y los mundos. */
     static final class Lienzo extends Element{
-        private final List<Orbita> orbitas;
         final NavegacionVista nav = new NavegacionVista(ESCALA_MIN, ESCALA_MAX);
-        private float zoomInicial = -1f;
+        private final Map<String, Orbita> orbitas = new LinkedHashMap<String, Orbita>();
+        private final List<Mundo> mundos = new ArrayList<Mundo>();
+        private EstadoSistemas est = new EstadoSistemas();
+        private double tiempo;
+        private boolean vista3d;
         private String seleccionado;
+        private float zoomInicial = -1f;
 
         Lienzo(){
-            final java.util.ArrayList<Orbita> lista = new java.util.ArrayList<Orbita>();
-            final MundoInfinitoMod.Meta m = MundoInfinitoMod.Streamer.meta;
-            final String delMundo = m == null ? null : ApiPlaneta.planetaDeMundo(m);
-            int i = 0;
-            for(ApiPlaneta.Ficha f : ApiPlaneta.listar()){
-                final Planet p = Vars.content == null ? null : Vars.content.planet(f.tag);
-                final float radio = p != null && p.orbitRadius > 0f ? p.orbitRadius : RADIO_RESPALDO + 20f * i;
-                final float periodo = Math.max(1, ApiPlaneta.orbita(f.tag));
-                lista.add(new Orbita(f.tag, radio, periodo, f.tag.equals(delMundo)));
-                i++;
-            }
-            this.orbitas = lista;
-
-            // Rueda: zoom centrado en el puntero (mismo criterio que el árbol).
             addListener(new InputListener(){
                 @Override
                 public boolean scrolled(InputEvent event, float x, float y, float amountX, float amountY){
@@ -108,7 +149,6 @@ final class VistaPlanetas{
                 }
             });
 
-            // Pellizco y arrastre.
             addCaptureListener(new ElementGestureListener(){
                 @Override
                 public void zoom(InputEvent event, float initialDistance, float distance){
@@ -129,57 +169,118 @@ final class VistaPlanetas{
                 }
             });
 
-            // Toque: abre el árbol del planeta tocado y lo deja seleccionado.
             addListener(new ClickListener(){
                 @Override
                 public void clicked(InputEvent event, float x, float y){
-                    final String tag = planetaEn(x, y);
-                    if(tag != null){
-                        seleccionado = tag;
-                        ArbolUI.abrir(tag);
+                    final Mundo b = mundoEn(x, y);
+                    if(b != null){
+                        seleccionado = b.id;
+                        ArbolUI.abrir(b.tag);
                     }
                 }
             });
         }
 
-        /** Escala base (sin zoom): la órbita más grande cabe en la vista. */
+        /** Vuelve a leer los mundos guardados y recalcula sus posiciones. */
+        void recargar(){
+            orbitas.clear();
+            mundos.clear();
+            est = new EstadoSistemas();
+            tiempo = 0.0;
+            final MundoInfinitoMod.Meta actual = MundoInfinitoMod.Streamer.meta;
+            for(MundoInfinitoMod.Meta m : MundoInfinitoMod.Almacen.listar()){
+                if(!m.compatible()) continue;
+                final String tag = ApiPlaneta.planetaDeMundo(m);
+                if(tag == null) continue;
+                if(!orbitas.containsKey(tag)){
+                    orbitas.put(tag, new Orbita(tag, radioDe(tag), Math.max(1, ApiPlaneta.orbita(tag))));
+                }
+                final Orbita o = orbitas.get(tag);
+                final ApiSistemas.Resultado r = ApiSistemas.anadirMundoEnOrbita(est, "sistema-" + tag, m.id, tag, o.radio,
+                    ApiFisica.DIAMETRO_PLANETA);
+                if(!r.ok) continue;   // no cabe en esta órbita: hace falta otro sistema solar
+                mundos.add(new Mundo(m.id, m.nombre, tag, est.buscarCuerpo(m.id), actual != null && actual.id.equals(m.id)));
+                tiempo = Math.max(tiempo, m.calendario.tiempo());
+            }
+            if(seleccionado != null && buscarSeleccionado() == null) seleccionado = null;
+        }
+
+        boolean hayMundos(){ return !mundos.isEmpty(); }
+
+        /** Leyenda: cuántos mundos hay en cada planeta base. */
+        String textoLeyenda(){
+            final StringBuilder sb = new StringBuilder();
+            for(Orbita o : orbitas.values()){
+                int n = 0;
+                for(Mundo b : mundos) if(b.tag.equals(o.tag)) n++;
+                if(n == 0) continue;
+                if(sb.length() > 0) sb.append("   ");
+                sb.append("[lightgray]").append(ApiPlaneta.nombre(o.tag)).append(" (").append(n).append(" mundos)[]");
+            }
+            return sb.toString();
+        }
+
+        void setModo(boolean tresD){ vista3d = tresD; }
+
+        /** Planeta base del mundo seleccionado, o null. */
+        String tagSeleccionado(){
+            final Mundo b = buscarSeleccionado();
+            return b == null ? null : b.tag;
+        }
+
+        private Mundo buscarSeleccionado(){
+            if(seleccionado == null) return null;
+            for(Mundo b : mundos) if(b.id.equals(seleccionado)) return b;
+            return null;
+        }
+
+        /** Radio de la órbita: el del juego si existe; si no, la estimación de D24. */
+        private static float radioDe(String tag){
+            final Planet p = Vars.content == null ? null : Vars.content.planet(tag);
+            if(p != null && p.orbitRadius > 0f) return p.orbitRadius;
+            final float estimado = ApiFisica.distanciaOrbitaEstimada(tag);
+            return estimado > 0f ? estimado : 20f;
+        }
+
+        /** Escala base (sin zoom ni paneo): la órbita más grande cabe en la vista. */
         private float escalaBase(){
             float max = 1f;
-            for(Orbita o : orbitas) max = Math.max(max, o.radio);
+            for(Orbita o : orbitas.values()) max = Math.max(max, o.radio);
             return Math.min(getWidth(), getHeight()) * 0.42f / max;
         }
 
-        /** Ángulo actual de un planeta: su fase real si hay mundo abierto, o un avance visual con su periodo si no. */
-        private double angulo(Orbita o){
-            if(MundoInfinitoMod.Streamer.meta != null) return ApiPlaneta.fase(o.tag) * 2.0 * Math.PI;
-            return (Time.globalTime / o.periodo) * 2.0 * Math.PI;
+        /** Ángulo del mundo en el tiempo del mundo, con la órbita simulada. */
+        private double anguloDe(Mundo b){
+            return ApiSistemas.anguloEn(b.cuerpo, tiempo, orbitas.get(b.tag).periodo);
         }
 
-        /** Posición de un planeta en coordenadas de contenido (la vista sin zoom ni paneo). */
-        private float[] contenido(Orbita o){
-            final float k = escalaBase(), cx = getWidth() / 2f, cy = getHeight() / 2f;
-            final double a = angulo(o);
-            return new float[]{cx + (float)Math.cos(a) * o.radio * k, cy + (float)Math.sin(a) * o.radio * k};
+        /** Posición del mundo en coordenadas de contenido (sin zoom ni paneo). */
+        private float[] contenido(Mundo b){
+            final Orbita o = orbitas.get(b.tag);
+            final float r = o.radio * escalaBase(), cx = getWidth() / 2f, cy = getHeight() / 2f;
+            final double a = anguloDe(b);
+            return new float[]{cx + (float)Math.cos(a) * r, cy + (float)Math.sin(a) * r * (vista3d ? INCLINACION : 1f)};
         }
 
-        /** Posición de un planeta en coordenadas locales de la vista, con zoom y paneo aplicados. */
-        private float[] local(Orbita o){
-            final float[] c = contenido(o);
+        /** Posición local (con zoom y paneo) del mundo. */
+        private float[] local(Mundo b){
+            final float[] c = contenido(b);
             return new float[]{nav.aPantallaX(c[0]), nav.aPantallaY(c[1])};
         }
 
-        /** Planeta bajo un punto (coordenadas locales de la vista), o null. */
-        private String planetaEn(float x, float y){
-            for(Orbita o : orbitas){
-                final float[] p = local(o);
-                if(Math.hypot(x - p[0], y - p[1]) <= RADIO_PLANETA * 2.2f) return o.tag;
+        /** Mundo bajo un punto (coordenadas locales), o null. */
+        private Mundo mundoEn(float x, float y){
+            Mundo mejor = null;
+            float mejorDist = RADIO_PLANETA * 2.2f;
+            for(Mundo b : mundos){
+                final float[] p = local(b);
+                final float d = (float)Math.hypot(x - p[0], y - p[1]);
+                if(d <= mejorDist){
+                    mejor = b;
+                    mejorDist = d;
+                }
             }
-            return null;
-        }
-
-        private Orbita buscar(String tag){
-            for(Orbita o : orbitas) if(o.tag.equals(tag)) return o;
-            return null;
+            return mejor;
         }
 
         /** Mantiene un margen visible de la vista dentro de la ventana. */
@@ -188,17 +289,17 @@ final class VistaPlanetas{
             nav.ajustar(getWidth(), getHeight(), getWidth(), getHeight(), MARGEN);
         }
 
-        /** Centra la vista en el planeta seleccionado con zoom {@link #ESCALA_CENTRADO}; sin selección, vuelve a la vista completa. */
+        /** Centra en el mundo seleccionado con zoom {@link #ESCALA_CENTRADO}; sin selección, vuelve a la vista completa. */
         void centrar(){
             final float cw = getWidth(), ch = getHeight();
             if(cw <= 0f || ch <= 0f) return;
-            final Orbita o = seleccionado == null ? null : buscar(seleccionado);
-            if(o == null){
+            final Mundo b = buscarSeleccionado();
+            if(b == null){
                 nav.escala = 1f;
                 nav.panX = 0f;
                 nav.panY = 0f;
             }else{
-                final float[] c = contenido(o);
+                final float[] c = contenido(b);
                 nav.escala = NavegacionVista.clamp(ESCALA_CENTRADO, ESCALA_MIN, ESCALA_MAX);
                 nav.panX = cw / 2f - c[0] * nav.escala;
                 nav.panY = ch / 2f - c[1] * nav.escala;
@@ -210,21 +311,42 @@ final class VistaPlanetas{
         public void draw(){
             if(orbitas.isEmpty()) return;
             final float cw = getWidth(), ch = getHeight();
-            final float k = escalaBase() * nav.escala;
             final float cx = this.x + nav.aPantallaX(cw / 2f), cy = this.y + nav.aPantallaY(ch / 2f);
+            final float inc = vista3d ? INCLINACION : 1f;
 
             if(clipBegin()){
                 Draw.color(Pal.gray);
                 Lines.stroke(2f);
-                for(Orbita o : orbitas) Lines.circle(cx, cy, o.radio * k);
+                for(Orbita o : orbitas.values()){
+                    final float r = o.radio * escalaBase() * nav.escala;
+                    if(!vista3d){
+                        Lines.circle(cx, cy, r);
+                        continue;
+                    }
+                    float px0 = 0f, py0 = 0f;
+                    for(int i = 0; i <= SEGMENTOS; i++){
+                        final double a = 2.0 * Math.PI * i / SEGMENTOS;
+                        final float px = cx + (float)Math.cos(a) * r, py = cy + (float)Math.sin(a) * r * inc;
+                        if(i > 0) Lines.line(px0, py0, px, py);
+                        px0 = px;
+                        py0 = py;
+                    }
+                }
 
                 Draw.color(Pal.accent);
                 Fill.circle(cx, cy, RADIO_ESTRELLA);
 
-                for(Orbita o : orbitas){
-                    final float[] p = local(o);
-                    Draw.color(o.delMundo ? Pal.heal : Color.white);
-                    Fill.circle(this.x + p[0], this.y + p[1], RADIO_PLANETA);
+                // 3D: primero los cuerpos de atrás (seno negativo), luego los de delante. 2D: una sola pasada.
+                final int pasadas = vista3d ? 2 : 1;
+                for(int pasada = 0; pasada < pasadas; pasada++){
+                    for(Mundo b : mundos){
+                        final double seno = Math.sin(anguloDe(b));
+                        if(vista3d && (seno < 0) != (pasada == 0)) continue;
+                        final float[] p = local(b);
+                        final float rad = vista3d ? RADIO_PLANETA * (1f + 0.15f * (float)seno) : RADIO_PLANETA;
+                        Draw.color(b.actual ? Pal.heal : (b.id.equals(seleccionado) ? Pal.accent : Color.white));
+                        Fill.circle(this.x + p[0], this.y + p[1], rad);
+                    }
                 }
                 Draw.reset();
                 clipEnd();

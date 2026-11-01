@@ -91,7 +91,7 @@ jobs:
       # Comprobación previa: si una clase de prueba no está compilada, el fallo debe decir qué falta (el fuente no llegó al repo o no está en src/mundoinfinito).
       - name: Comprobar que las clases de prueba están compiladas
         run: |
-          for c in PruebasLuz PruebasWorldgen PruebasApi InventarioApi; do
+          for c in PruebasLuz PruebasWorldgen PruebasApi PruebasNavegacion InventarioApi; do
             if [ ! -f "build/classes/java/main/mundoinfinito/$c.class" ]; then
               echo "::error::Falta build/classes/java/main/mundoinfinito/$c.class. Comprueba que src/mundoinfinito/$c.java está en el repo (y no en otra carpeta)."
               exit 1
@@ -111,6 +111,13 @@ jobs:
         run: |
           mkdir -p build/corpus
           java -cp "build/classes/java/main:libs/MindustryX-Desktop.jar" mundoinfinito.PruebasWorldgen 2>&1 | tee build/corpus/worldgen.txt
+          test "${PIPESTATUS[0]}" -eq 0
+        shell: bash
+      # ---- NAVEGACIÓN (plan v6, D14): zoom anclado, paneo, límites y encaje del árbol tecnológico y de la vista 2D de planetas. Sin el juego. ----
+      - name: Navegacion - pruebas de zoom y paneo (D14)
+        run: |
+          mkdir -p build/corpus
+          java -cp "build/classes/java/main:libs/MindustryX-Desktop.jar" mundoinfinito.PruebasNavegacion 2>&1 | tee build/corpus/navegacion.txt
           test "${PIPESTATUS[0]}" -eq 0
         shell: bash
       # ---- COMPATIBILIDAD (plan v5, sección 10, C2 y C3): casos de fallo y de éxito con inventarios de prueba. Sin el juego. ----

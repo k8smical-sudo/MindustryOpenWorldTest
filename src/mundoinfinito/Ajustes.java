@@ -199,6 +199,7 @@ final class Ajustes{
             p.put("setting." + K_PRUEBA_AGUA + ".name", "Prueba visual: sustituir el shader del agua (solo para comprobar)");
             p.put("setting." + K_PRUEBA_ZOOM + ".name", "Prueba visual: sin shaders de superficie al alejar el zoom (solo para comprobar)");
             p.put("setting." + K_MAPA_VISIBLE + ".name", "Mostrar el minimapa");
+            p.put("setting." + ArbolPlanetas.K_ACTIVO + ".name", "Árbol tecnológico por planeta (investigar para construir)");
             p.put("setting." + K_MAPA_ESCALA + ".name", "Tamaño del minimapa");
             p.put("setting." + K_MAPA_DX + ".name", "Posición del minimapa (horizontal)");
             p.put("setting." + K_MAPA_DY + ".name", "Posición del minimapa (vertical)");
@@ -215,6 +216,7 @@ final class Ajustes{
                 t.checkPref(K_PRUEBA_AGUA, false);
                 t.checkPref(K_PRUEBA_ZOOM, false);
                 t.checkPref(K_MAPA_VISIBLE, true);
+                t.checkPref(ArbolPlanetas.K_ACTIVO, false);   // D1: árbol tecnológico por planeta (apagado = sin bloqueos)
                 t.sliderPref(K_MAPA_ESCALA, 100, 50, 200, v -> v + " %");
                 t.sliderPref(K_MAPA_DX, 0, 0, 2000, v -> v + " u (aleja del borde derecho)");
                 t.sliderPref(K_MAPA_DY, 0, 0, 2000, v -> v + " u (aleja del borde superior)");

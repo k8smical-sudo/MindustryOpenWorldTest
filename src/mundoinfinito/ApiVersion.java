@@ -21,7 +21,9 @@ public final class ApiVersion{
     /** La parte de azar determinista: {@code ApiAzar}. */
     public static final int AZAR_MAYOR = 1, AZAR_MENOR = 0;
     /** La parte de planetas (rotación y órbita): {@code ApiPlaneta}. */
-    public static final int PLANETA_MAYOR = 1, PLANETA_MENOR = 0;
+    public static final int PLANETA_MAYOR = 1, PLANETA_MENOR = 1;
+    /** La parte del árbol tecnológico por planeta: {@code ApiArbol}. */
+    public static final int ARBOL_MAYOR = 1, ARBOL_MENOR = 0;
     /** La parte de tiempo, calendario y eventos: {@code ApiTiempo}. */
     public static final int TIEMPO_MAYOR = 1, TIEMPO_MENOR = 1;
 

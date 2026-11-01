@@ -137,6 +137,7 @@ public class MundoInfinitoMod extends Mod{
         CicloDiaNoche.registrar();
         Events.run(Trigger.update, CicloDiaNoche::tick);   // ciclo día/noche de Serpulo (ajuste del mundo)
         Events.run(Trigger.update, CalendarioMundo::tick);   // tiempo del mundo y eventos programados (fase 11)
+        Events.run(Trigger.update, PlanetasMundo::tick);     // fase orbital de los planetas (plan v2, M1)
 
         // Guardar al abrir el menú de pausa (así se guarda antes de salir al menú).
         Events.on(StateChangeEvent.class, e -> {
@@ -183,6 +184,8 @@ public class MundoInfinitoMod extends Mod{
         PerfilMundo perfil = new PerfilMundo();
         /** Tiempo de juego del mundo y eventos programados (fase 11). */
         CalendarioMundo calendario = new CalendarioMundo();
+        /** Estado de planetas (plan v2, M1 y M2): nombre visible y fase orbital de cada planeta. */
+        PlanetasMundo planetas = new PlanetasMundo();
 
         /** Valor de una gamerule en este mundo. */
         boolean gameRule(GameRule g){
@@ -209,6 +212,7 @@ public class MundoInfinitoMod extends Mod{
             j.put("modpack", modpack == null ? "" : modpack);
             j.put("ajustes", perfil.aJson());
             j.put("calendario", calendario.aJson());
+            j.put("planetas", planetas.aJson());
             j.put("gamerules", perfil.aJsonReglas());   // espejo para versiones anteriores del mod
             return j;
         }
@@ -254,6 +258,7 @@ public class MundoInfinitoMod extends Mod{
                 }
             }
             m.calendario.persistir = () -> Almacen.escribirCalendario(m);
+            m.planetas = PlanetasMundo.desde(j.has("planetas") ? j.get("planetas") : null);   // mundos antiguos: sin nombres, fase 0
             return m;
         }
 

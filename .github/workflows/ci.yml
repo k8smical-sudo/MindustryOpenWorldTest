@@ -98,12 +98,20 @@ jobs:
         run: |
           mkdir -p build/corpus
           java -cp "build/classes/java/main:libs/MindustryX-Desktop.jar" mundoinfinito.Corpus escala build/corpus/escalado.txt
-      - name: Subir resultados del corpus
+      # ---- FASE DE BENCHMARKS del mod: cobertura automática de la API, correctness de cada caso, sobrecoste de desduplicación, terreno, planetas,
+      # tiempo, azar, árbol. Un caso incorrecto o una API sin caso hacen fallar el build; el rendimiento solo avisa frente a la línea base.
+      - name: Benchmarks - banco de pruebas del mod
+        run: |
+          mkdir -p build/benchmarks
+          java -cp "build/classes/java/main:libs/MindustryX-Desktop.jar" mundoinfinito.Corpus bench build/benchmarks/resultados.txt corpus/benchmarks-base.txt 2>&1 | tee build/benchmarks/bench.txt
+      - name: Subir resultados del corpus y benchmarks
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: corpus
-          path: build/corpus/
+          path: |
+            build/corpus/
+            build/benchmarks/
           if-no-files-found: ignore
       - name: Upload built mod artifact as a GitHub Action artifact
         uses: actions/upload-artifact@v7

@@ -9,7 +9,7 @@ import arc.util.Log;
  */
 public final class ApiVersion{
     /** Conjunto de la API pública (sube cuando cambia cualquiera de las partes). */
-    public static final int PUBLICA_MAYOR = 1, PUBLICA_MENOR = 0;
+    public static final int PUBLICA_MAYOR = 1, PUBLICA_MENOR = 1;   // 1.1: se suma WORLDGEN 1.0 y la luz 1.1 (plan v5)
     /** La parte visual: {@code ApiVisual}. */
     public static final int VISUAL_MAYOR = 1, VISUAL_MENOR = 1;
     /** La parte de ajustes y propuestas de valor: {@code ApiAjustes}. */
@@ -35,7 +35,7 @@ public final class ApiVersion{
 
     private ApiVersion(){}
 
-    /** Texto para el log y los avisos: "api 1.0 (visual 1.0, ajustes 1.0)". */
+    /** Texto para el log y los avisos: "api 1.1 (visual 1.1, ajustes 1.0)". */
     public static String texto(){
         return "api " + PUBLICA_MAYOR + "." + PUBLICA_MENOR + " (visual " + VISUAL_MAYOR + "." + VISUAL_MENOR + ", ajustes " + AJUSTES_MAYOR + "." + AJUSTES_MENOR + ", tiempo " + TIEMPO_MAYOR + "." + TIEMPO_MENOR + ")";
     }

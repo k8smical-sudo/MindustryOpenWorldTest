@@ -1,5 +1,6 @@
 package mundoinfinito;
 
+import arc.graphics.g2d.TextureRegion;
 import mindustry.type.ItemStack;
 
 import java.util.ArrayList;
@@ -34,6 +35,8 @@ public final class ApiArbol{
         public final String grupo;
         /** Cuántos nodos visibles (de cualquier planeta) comparten esta sección, incluido este. */
         public final int copias;
+        /** Icono del contenido de Mindustry, o null si es de un addon sin icono. */
+        public final TextureRegion icono;
 
         NodoInfo(ArbolPlanetas.Nodo n){
             this.clave = n.clave;
@@ -47,6 +50,7 @@ public final class ApiArbol{
             this.nombre = n.contenido != null && n.contenido.localizedName != null ? n.contenido.localizedName : n.id;
             this.grupo = ArbolPlanetas.grupoDe(n);
             this.copias = ArbolPlanetas.copias(n.clave);
+            this.icono = n.contenido != null ? n.contenido.uiIcon : null;
         }
     }
 

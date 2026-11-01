@@ -3432,7 +3432,17 @@ public class MundoInfinitoMod extends Mod{
             };
             rellenar[0].run();
 
-            d.cont.pane(lista).grow().minWidth(520f);
+            // Modos intercambiables: "Simple" (la lista de siempre) y "Planetas" (órbitas y árbol tecnológico)
+            final Table cuerpo = new Table();
+            final Table planetas = VistaPlanetas.crear();
+            final Runnable verSimple = () -> { cuerpo.clear(); cuerpo.pane(lista).grow().minWidth(520f); };
+            final Runnable verPlanetas = () -> { cuerpo.clear(); cuerpo.add(planetas).grow().minWidth(520f); };
+            d.cont.table(modos -> {
+                modos.button("Simple", mindustry.ui.Styles.cleart, verSimple).size(200f, 52f).pad(4f);
+                modos.button("Planetas", mindustry.ui.Styles.cleart, verPlanetas).size(200f, 52f).pad(4f);
+            }).row();
+            d.cont.add(cuerpo).grow().row();
+            verSimple.run();
             d.buttons.button("Nuevo mundo", () -> { d.hide(); abrirNuevo(); }).size(210f, 64f);
             d.addCloseButton();
             d.show();

@@ -74,6 +74,8 @@ final class ArbolPlanetas{
     static void registrar(){
         if(registrado) return;
         registrado = true;
+        // La regla de juego "arbol-activo" ya registra este ajuste (OpenWorldAPI.registrarGameRule): no registrarlo dos veces.
+        if(RegistroAjustes.get(K_ACTIVO) != null) return;
         RegistroAjustes.registrar(AjusteMundo.bool(K_ACTIVO, "Árbol tecnológico por planeta",
             "Cada planeta tiene su árbol: hay que investigar un bloque para construirlo. Se fija al crear el mundo y se puede cambiar después.",
             AjusteMundo.Ambito.JUEGO, false, null));
@@ -200,9 +202,39 @@ final class ArbolPlanetas{
         if(desbloqueado(clave)) return true;
         final MundoInfinitoMod.Meta m = meta();
         if(m == null || !disponible(clave)) return false;
+        if(!pagar(nodo(clave).coste)) return false;   // sin los materiales, no hay investigación (como en campaña)
         m.perfil.fijar(PREF_DESBLOQUEO + clave, 1.0);
         liberarBloque(clave);
         return true;
+    }
+
+    /**
+     * Cobra los materiales al equipo por defecto (el inventario de sus núcleos). Si no alcanza, no cobra nada. Sin núcleo, no se puede investigar.
+     * Un coste vacío es gratis.
+     */
+    static boolean pagar(ItemStack[] coste){
+        if(coste == null || coste.length == 0) return true;
+        if(Vars.state == null || Vars.state.rules == null) return false;
+        final mindustry.game.Team equipo = Vars.state.rules.defaultTeam;
+        if(equipo == null || equipo.core() == null) return false;
+        final mindustry.world.modules.ItemModule items = equipo.items();
+        if(items == null || !items.has(coste)) return false;
+        items.remove(coste);
+        return true;
+    }
+
+    /** Lo que falta para investigar un nodo: materiales que no están en el núcleo. Vacío si ya se puede pagar (o si no hay núcleo: entonces falta todo). */
+    static ItemStack[] faltante(ItemStack[] coste){
+        if(coste == null || coste.length == 0) return new ItemStack[0];
+        if(Vars.state == null || Vars.state.rules == null) return ItemStack.copy(coste);
+        final mindustry.game.Team equipo = Vars.state.rules.defaultTeam;
+        final mindustry.world.modules.ItemModule items = equipo == null ? null : equipo.items();
+        final ArrayList<ItemStack> falta = new ArrayList<ItemStack>();
+        for(ItemStack s : coste){
+            final int tiene = items == null ? 0 : items.get(s.item);
+            if(tiene < s.amount) falta.add(new ItemStack(s.item, s.amount - tiene));
+        }
+        return falta.toArray(new ItemStack[0]);
     }
 
     /**

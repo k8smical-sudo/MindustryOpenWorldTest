@@ -29,6 +29,7 @@ final class CasosBenchmark{
         modpack(out);
         version(out);
         arbol(out);
+        luz(out);
         return out;
     }
 
@@ -182,6 +183,16 @@ final class CasosBenchmark{
     private static void version(List<Bancos.Caso> out){
         out.add(new Bancos.Caso("version", "compatibilidad", 1000000,
             () -> ApiVersion.texto().startsWith("api ") && ApiVersion.compatible(1, 0, 1, 0) && !ApiVersion.compatible(2, 0, 1, 0), "ApiVersion"));
+    }
+
+    // ================================================================== luz solar (ApiLuz)
+
+    private static void luz(List<Bancos.Caso> out){
+        // Un modificador neutro (siempre 1) ejercita la ruta de modificadores sin cambiar el resultado. Erekir no tiene ningún cuerpo entre
+        // la estrella y él en el sistema solar por defecto, así que su factor es exactamente 1 (sin eclipse). Serpulo sí queda tapado por Erekir.
+        ApiLuz.registrarModificador("bench-luz", "bench-luz:neutro", 0, (p, f) -> 1f);
+        out.add(new Bancos.Caso("luz", "factor-erekir-sin-eclipse", 200000,
+            () -> ApiLuz.factorPlaneta(ApiPlaneta.EREKIR) == 1f, "ApiLuz"));
     }
 
     // ================================================================== árbol tecnológico (ApiArbol)

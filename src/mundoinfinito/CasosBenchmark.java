@@ -34,14 +34,34 @@ final class CasosBenchmark{
 
     // ================================================================== desduplicación (M7)
 
-    private static void desduplicacion(List<Bancos.Caso> out){
-        // Trivial: el coste de pasar por la desduplicación frente a llamar directamente. Es la medida del sobrecoste.
-        final Prov<Long> trivial = () -> 42L;
-        out.add(new Bancos.Caso("desduplicacion", "directo-trivial", 2000000, () -> trivial.get().longValue() == 42L, "ApiDesduplicacion"));
-        out.add(new Bancos.Caso("desduplicacion", "acierto-trivial", 2000000,
-            () -> ApiDesduplicacion.calcular("bench-dedup:trivial", trivial, 7L).longValue() == 42L, "ApiDesduplicacion"));
+    /** Sumidero: el JIT no puede eliminar una escritura en un campo volatile, así que el cálculo trivial se mide de verdad. */
+    static volatile long sumidero;
 
-        // Pesado: un cálculo real de ~4096 pasos. Aquí la desduplicación debe ganar.
+    private static void desduplicacion(List<Bancos.Caso> out){
+        // Contribuyentes de prueba: cada caso fija la política que quiere medir.
+        ApiDesduplicacion.registrar("bench-dedup:trivial-auto", 1, 256, ApiDesduplicacion.AUTO);
+        ApiDesduplicacion.registrar("bench-dedup:trivial-siempre", 1, 256, ApiDesduplicacion.SIEMPRE);
+        ApiDesduplicacion.registrar("bench-dedup:pesado-siempre", 1, 256, ApiDesduplicacion.SIEMPRE);
+        ApiDesduplicacion.registrar("bench-dedup:pesado-auto", 1, 256, ApiDesduplicacion.AUTO);
+        ApiDesduplicacion.registrar("bench-dedup:sin-repeticion-auto", 1, 256, ApiDesduplicacion.AUTO);
+        ApiDesduplicacion.registrar("bench-dedup:pesado-nunca", 1, 256, ApiDesduplicacion.NUNCA);
+
+        // Trivial: lo que cuesta pasar por la desduplicación frente a llamar directo. Es el sobrecoste que la política debe evitar.
+        final Prov<Long> trivial = () -> 42L;
+        out.add(new Bancos.Caso("desduplicacion", "directo-trivial", 2000000, () -> {
+            sumidero = trivial.get().longValue();
+            return sumidero == 42L;
+        }, "ApiDesduplicacion"));
+        out.add(new Bancos.Caso("desduplicacion", "auto-trivial", 2000000, () -> {
+            sumidero = ApiDesduplicacion.calcular("bench-dedup:trivial-auto", trivial, 7L).longValue();
+            return sumidero == 42L;
+        }, "ApiDesduplicacion"));
+        out.add(new Bancos.Caso("desduplicacion", "siempre-trivial", 2000000, () -> {
+            sumidero = ApiDesduplicacion.calcular("bench-dedup:trivial-siempre", trivial, 7L).longValue();
+            return sumidero == 42L;
+        }, "ApiDesduplicacion"));
+
+        // Pesado: un cálculo real de ~4096 pasos. Aquí la desduplicación debe ganar cuando hay repeticiones.
         final Prov<Long> pesado = () -> {
             long h = 1469598103934665603L;
             for(int i = 0; i < 4096; i++){
@@ -51,14 +71,21 @@ final class CasosBenchmark{
             return h;
         };
         final long refPesado = pesado.get().longValue();
-        out.add(new Bancos.Caso("desduplicacion", "directo-pesado", 20000, () -> pesado.get().longValue() == refPesado, "ApiDesduplicacion"));
-        out.add(new Bancos.Caso("desduplicacion", "acierto-pesado", 20000,
-            () -> ApiDesduplicacion.calcular("bench-dedup:pesado", pesado, 4096L).longValue() == refPesado, "ApiDesduplicacion"));
+        out.add(new Bancos.Caso("desduplicacion", "directo-pesado", 20000, () -> {
+            sumidero = pesado.get().longValue();
+            return sumidero == refPesado;
+        }, "ApiDesduplicacion"));
+        out.add(new Bancos.Caso("desduplicacion", "siempre-pesado", 20000, () ->
+            ApiDesduplicacion.calcular("bench-dedup:pesado-siempre", pesado, 4096L).longValue() == refPesado, "ApiDesduplicacion"));
+        out.add(new Bancos.Caso("desduplicacion", "auto-pesado", 20000, () ->
+            ApiDesduplicacion.calcular("bench-dedup:pesado-auto", pesado, 4096L).longValue() == refPesado, "ApiDesduplicacion"));
+        out.add(new Bancos.Caso("desduplicacion", "nunca-pesado", 20000, () ->
+            ApiDesduplicacion.calcular("bench-dedup:pesado-nunca", pesado, 4096L).longValue() == refPesado, "ApiDesduplicacion"));
 
-        // Entradas que cambian: 3000 claves distintas, la caché se llena y se reutiliza.
+        // Sin repeticiones: cada llamada trae entradas nuevas. La política debe dejar de guardar y pasar directo.
         final long[] k = new long[1];
-        out.add(new Bancos.Caso("desduplicacion", "entradas-variadas", 20000,
-            () -> ApiDesduplicacion.calcular("bench-dedup:variadas", pesado, k[0]++ % 3000L).longValue() == refPesado, "ApiDesduplicacion"));
+        out.add(new Bancos.Caso("desduplicacion", "auto-sin-repeticion", 20000, () ->
+            ApiDesduplicacion.calcular("bench-dedup:sin-repeticion-auto", pesado, k[0]++).longValue() == refPesado, "ApiDesduplicacion"));
     }
 
     // ================================================================== terreno (corpus)

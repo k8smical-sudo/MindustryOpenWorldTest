@@ -25,7 +25,7 @@ public final class ApiVersion{
     /** La parte del árbol tecnológico por planeta: {@code ApiArbol}. */
     public static final int ARBOL_MAYOR = 1, ARBOL_MENOR = 0;
     /** La parte de desduplicación de cálculos: {@code ApiDesduplicacion}. */
-    public static final int DEDUP_MAYOR = 1, DEDUP_MENOR = 0;
+    public static final int DEDUP_MAYOR = 1, DEDUP_MENOR = 1;   // 1.1: política adaptativa, registro por cálculo, olvidar y modo
     /** La parte de tiempo, calendario y eventos: {@code ApiTiempo}. */
     public static final int TIEMPO_MAYOR = 1, TIEMPO_MENOR = 1;
 

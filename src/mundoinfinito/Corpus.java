@@ -2181,41 +2181,94 @@ public final class Corpus{
         return fallos;
     }
 
-    /** Desduplicación de cálculos (plan v2, M7). Cada contribuyente de prueba usa un id propio, porque la caché es de la sesión. */
+    /**
+     * Desduplicación adaptativa (P8). Las comprobaciones son DETERMINISTAS: no miden tiempos (eso lo hace el banco). Cada contribuyente de prueba usa
+     * un id propio, porque el estado es de la sesión.
+     */
     static int comprobarDesduplicacion(){
         int fallos = 0;
-        final int[] n = new int[1];
-        final Prov<Integer> siete = () -> { n[0]++; return 7; };
-        final Integer a = ApiDesduplicacion.calcular("prueba-dedup:uno", siete, 1L, 2L);
-        final Integer b = ApiDesduplicacion.calcular("prueba-dedup:uno", siete, 1L, 2L);
-        fallos += chequear("el mismo cálculo con las mismas entradas se ejecuta una vez y se reutiliza", n[0] == 1 && a == 7 && b == 7);
 
-        ApiDesduplicacion.calcular("prueba-dedup:uno", siete, 1L, 3L);
-        fallos += chequear("otras entradas son otro cálculo: se ejecuta aparte", n[0] == 2);
+        // SIEMPRE: una vez por entradas, y otras entradas son otro cálculo
+        final int[] n1 = new int[1];
+        final Prov<Integer> siete = () -> { n1[0]++; return 7; };
+        ApiDesduplicacion.registrar("prueba-dedup:siempre", 1, 256, ApiDesduplicacion.SIEMPRE);
+        final Integer a = ApiDesduplicacion.calcular("prueba-dedup:siempre", siete, 1L, 2L);
+        final Integer b = ApiDesduplicacion.calcular("prueba-dedup:siempre", siete, 1L, 2L);
+        fallos += chequear("SIEMPRE: el mismo cálculo con las mismas entradas se ejecuta una vez y se reutiliza", n1[0] == 1 && a == 7 && b == 7);
+        ApiDesduplicacion.calcular("prueba-dedup:siempre", siete, 1L, 3L);
+        fallos += chequear("SIEMPRE: otras entradas son otro cálculo", n1[0] == 2);
 
-        final boolean declarado = ApiDesduplicacion.noDesduplicar("prueba-dedup:dos");
-        final int antes = n[0];
-        ApiDesduplicacion.calcular("prueba-dedup:dos", siete, 5L);
-        ApiDesduplicacion.calcular("prueba-dedup:dos", siete, 5L);
-        fallos += chequear("un addon que declara no desduplicar ve cada cálculo ejecutarse, y el id inválido se rechaza",
-            declarado && n[0] - antes == 2 && !ApiDesduplicacion.noDesduplicar("sin-dos-puntos"));
+        // NUNCA: cada llamada se ejecuta, y su modo es DIRECTO
+        final int[] n2 = new int[1];
+        final Prov<Integer> cuatro = () -> { n2[0]++; return 4; };
+        ApiDesduplicacion.registrar("prueba-dedup:nunca", 1, 256, ApiDesduplicacion.NUNCA);
+        ApiDesduplicacion.calcular("prueba-dedup:nunca", cuatro, 1L);
+        ApiDesduplicacion.calcular("prueba-dedup:nunca", cuatro, 1L);
+        fallos += chequear("NUNCA: cada llamada se ejecuta y el modo es DIRECTO", n2[0] == 2 && "DIRECTO".equals(ApiDesduplicacion.modo("prueba-dedup:nunca")));
 
+        // AUTO sin repeticiones: cada llamada trae entradas nuevas. Tras la primera ventana, la medición debe elegir DIRECTO (es decir, no guardar).
+        final boolean[] correctos = {true};
+        for(int i = 0; i < Desduplicacion.VENTANA * 3; i++){
+            final long v = i;
+            final Long r = ApiDesduplicacion.calcular("prueba-dedup:sin-repeticion", () -> v * 2 + 1, v);
+            if(r.longValue() != v * 2 + 1) correctos[0] = false;
+        }
+        fallos += chequear("AUTO sin repeticiones: la medición elige DIRECTO y los resultados son correctos",
+            "DIRECTO".equals(ApiDesduplicacion.modo("prueba-dedup:sin-repeticion")) && correctos[0]);
+
+        // AUTO con repeticiones y cálculo caro: la medición elige DEDUP, y el cálculo corre una sola vez
+        final int[] nRep = new int[1];
+        final Prov<Long> caro = () -> {
+            nRep[0]++;
+            long h = 1L;
+            for(int i = 0; i < 300000; i++) h = h * 31L + i;
+            return h;
+        };
+        Long refCaro = null;
+        for(int i = 0; i < Desduplicacion.VENTANA * 2; i++){
+            refCaro = ApiDesduplicacion.calcular("prueba-dedup:repetido", caro, 5L);
+        }
+        fallos += chequear("AUTO con repeticiones y cálculo caro: la medición elige DEDUP y el cálculo corre una sola vez",
+            "DEDUP".equals(ApiDesduplicacion.modo("prueba-dedup:repetido")) && nRep[0] == 1 && refCaro != null);
+
+        // Versión: subirla invalida la caché (el código cambió), y olvidar libera el contribuyente
+        final int[] nVer = new int[1];
+        final Prov<Integer> ver = () -> { nVer[0]++; return 1; };
+        ApiDesduplicacion.registrar("prueba-dedup:version", 1, 256, ApiDesduplicacion.SIEMPRE);
+        ApiDesduplicacion.calcular("prueba-dedup:version", ver, 9L);
+        ApiDesduplicacion.registrar("prueba-dedup:version", 2, 256, ApiDesduplicacion.SIEMPRE);
+        ApiDesduplicacion.calcular("prueba-dedup:version", ver, 9L);
+        fallos += chequear("al subir la versión, la caché vieja deja de valer: el cálculo se vuelve a ejecutar", nVer[0] == 2);
+        ApiDesduplicacion.olvidar("prueba-dedup:version");
+        fallos += chequear("olvidar un cálculo lo quita del registro", ApiDesduplicacion.modo("prueba-dedup:version") == null);
+
+        // Tope: nunca guarda más resultados que su tope (todos los terminados)
+        ApiDesduplicacion.registrar("prueba-dedup:tope", 1, 8, ApiDesduplicacion.SIEMPRE);
+        for(int i = 0; i < 50; i++){
+            final long v = i;
+            ApiDesduplicacion.calcular("prueba-dedup:tope", () -> v, v);
+        }
+        fallos += chequear("el tope se respeta: no guarda más de 8 resultados", Desduplicacion.tamanio("prueba-dedup:tope") <= 8);
+
+        // Fallos: no se guardan, así que la siguiente petición vuelve a calcular
         final int[] intentos = new int[1];
         final Prov<Integer> falla = () -> {
             if(intentos[0]++ == 0) throw new IllegalStateException("fallo de prueba");
             return 9;
         };
+        ApiDesduplicacion.registrar("prueba-dedup:fallo", 1, 256, ApiDesduplicacion.SIEMPRE);
         boolean lanzo = false;
         try{
-            ApiDesduplicacion.calcular("prueba-dedup:tres", falla, 1L);
+            ApiDesduplicacion.calcular("prueba-dedup:fallo", falla, 1L);
         }catch(RuntimeException e){
             lanzo = true;
         }
-        final Integer tras = ApiDesduplicacion.calcular("prueba-dedup:tres", falla, 1L);
+        final Integer tras = ApiDesduplicacion.calcular("prueba-dedup:fallo", falla, 1L);
         fallos += chequear("un cálculo que falla no se guarda: la siguiente petición lo vuelve a calcular", lanzo && tras == 9 && intentos[0] == 2);
 
+        // Espera entre hilos: seis hilos piden el mismo cálculo a la vez; se ejecuta una vez
         final java.util.concurrent.atomic.AtomicInteger veces = new java.util.concurrent.atomic.AtomicInteger();
-        final java.util.concurrent.atomic.AtomicInteger correctos = new java.util.concurrent.atomic.AtomicInteger();
+        final java.util.concurrent.atomic.AtomicInteger correctosHilos = new java.util.concurrent.atomic.AtomicInteger();
         final Prov<Integer> lento = () -> {
             veces.incrementAndGet();
             try{
@@ -2225,10 +2278,11 @@ public final class Corpus{
             }
             return 4;
         };
+        ApiDesduplicacion.registrar("prueba-dedup:hilos", 1, 256, ApiDesduplicacion.SIEMPRE);
         final List<Thread> hilos = new ArrayList<Thread>();
         for(int i = 0; i < 6; i++){
             final Thread t = new Thread(() -> {
-                if(Integer.valueOf(4).equals(ApiDesduplicacion.calcular("prueba-dedup:cuatro", lento, 9L))) correctos.incrementAndGet();
+                if(Integer.valueOf(4).equals(ApiDesduplicacion.calcular("prueba-dedup:hilos", lento, 9L))) correctosHilos.incrementAndGet();
             });
             hilos.add(t);
             t.start();
@@ -2241,14 +2295,29 @@ public final class Corpus{
             }
         }
         fallos += chequear("seis hilos piden el mismo cálculo a la vez: se ejecuta una vez y los seis reciben el resultado",
-            veces.get() == 1 && correctos.get() == 6);
+            veces.get() == 1 && correctosHilos.get() == 6);
 
-        for(int i = 0; i < Desduplicacion.MAX_ENTRADAS + 20; i++){
-            final int k = i;
-            ApiDesduplicacion.calcular("prueba-dedup:lleno", () -> k, (long)i);
+        // Ids no válidos: se rechazan, y la política no cambia la versión
+        boolean invalidoLanza = false;
+        try{
+            ApiDesduplicacion.calcular("sin-dos-puntos", siete, 1L);
+        }catch(IllegalArgumentException e){
+            invalidoLanza = true;
         }
-        fallos += chequear("la caché tiene un tope: no pasa de " + Desduplicacion.MAX_ENTRADAS + " resultados",
-            Desduplicacion.tamanio() <= Desduplicacion.MAX_ENTRADAS);
+        ApiDesduplicacion.registrar("prueba-dedup:version-fija", 3, 256, ApiDesduplicacion.AUTO);
+        ApiDesduplicacion.noDesduplicar("prueba-dedup:version-fija");
+        fallos += chequear("un id no válido se rechaza, y declarar NUNCA conserva la versión del cálculo",
+            invalidoLanza && !ApiDesduplicacion.registrar("sin-dos-puntos", 1, 1, ApiDesduplicacion.AUTO)
+                && Desduplicacion.versionDe("prueba-dedup:version-fija") == 3 && "DIRECTO".equals(ApiDesduplicacion.modo("prueba-dedup:version-fija")));
+
+        // Catálogo: cada entrada tiene id único, versión y tope válidos; un id no declarado no está en el catálogo
+        final java.util.Set<String> idsCatalogo = new java.util.HashSet<String>();
+        boolean catalogoOk = true;
+        for(Calculos.Entrada e : Calculos.catalogo()){
+            if(!idsCatalogo.add(e.id) || e.version < 1 || e.tope < 1) catalogoOk = false;
+        }
+        fallos += chequear("catálogo de cálculos: ids únicos, versiones y topes válidos; un id no declarado no aparece",
+            catalogoOk && Calculos.buscar("prueba-dedup:no-declarado") == null);
         return fallos;
     }
 

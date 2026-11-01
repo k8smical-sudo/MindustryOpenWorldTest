@@ -153,6 +153,35 @@ final class Bancos{
         return ok ? 0 : 1;
     }
 
+    /**
+     * Cada cálculo del catálogo ({@link Calculos}) debe tener un caso de rendimiento que lo cubra, y los ids del catálogo no pueden repetirse. Así un
+     * cálculo nuevo, quitado o cambiado queda vigilado sin tocar el banco.
+     */
+    static int comprobarCalculos(List<Caso> casos){
+        final Set<String> cubiertos = new HashSet<String>();
+        for(Caso c : casos) for(String s : c.cubre) cubiertos.add(s);
+        final Set<String> vistos = new HashSet<String>();
+        final List<String> sinCaso = new ArrayList<String>();
+        int fallos = 0;
+        for(Calculos.Entrada e : Calculos.catalogo()){
+            if(!vistos.add(e.id)){
+                System.out.println("[Bench] FALLO: cálculo repetido en el catálogo: " + e.id);
+                fallos++;
+            }
+            if(e.version < 1 || e.tope < 1){
+                System.out.println("[Bench] FALLO: el cálculo " + e.id + " tiene versión o tope no válidos");
+                fallos++;
+            }
+            if(!cubiertos.contains(e.id)) sinCaso.add(e.id);
+        }
+        if(!sinCaso.isEmpty()){
+            System.out.println("[Bench] FALLO: cálculos del catálogo sin caso de rendimiento: " + sinCaso);
+            fallos++;
+        }
+        System.out.println("[Bench] " + (fallos == 0 ? "ok: " : "FALLO: ") + "catálogo de cálculos: " + Calculos.catalogo().size() + " declarados");
+        return fallos;
+    }
+
     /** Ids duplicados: dos casos con el mismo id harían ambiguas la línea base y el reporte. */
     static int comprobarIds(List<Caso> casos){
         final Set<String> vistos = new HashSet<String>();
@@ -190,6 +219,7 @@ final class Bancos{
     static int ejecutar(String archivoResultados, String archivoBase) throws Exception{
         final List<Caso> casos = CasosBenchmark.todos();
         int fallos = comprobarIds(casos);
+        fallos += comprobarCalculos(casos);
         final Set<String> apis = apisPublicas();
         if(apis != null) fallos += comprobarCobertura(casos, apis);
         else{

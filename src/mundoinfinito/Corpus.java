@@ -2493,7 +2493,8 @@ public final class Corpus{
             else if(modo.equals("comprobar")) rc = comprobar();
             else if(modo.equals("base") && args.length > 1) rc = base(args[1]);
             else if(modo.equals("escala") && args.length > 1) rc = escala(args[1]);
-            else System.out.println("Uso: Corpus congelar|verificar|base|escala ARCHIVO   o   Corpus comprobar");
+            else if(modo.equals("bench")) rc = Bancos.ejecutar(args.length > 1 ? args[1] : "build/benchmarks/resultados.txt", args.length > 2 ? args[2] : null);
+            else System.out.println("Uso: Corpus congelar|verificar|base|escala ARCHIVO   o   Corpus comprobar   o   Corpus bench [RESULTADOS] [BASE]");
         }catch(Throwable e){
             e.printStackTrace();
             rc = 3;

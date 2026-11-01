@@ -91,7 +91,7 @@ jobs:
       # Comprobación previa: si una clase de prueba no está compilada, el fallo debe decir qué falta (el fuente no llegó al repo o no está en src/mundoinfinito).
       - name: Comprobar que las clases de prueba están compiladas
         run: |
-          for c in PruebasLuz InventarioApi; do
+          for c in PruebasLuz PruebasWorldgen InventarioApi; do
             if [ ! -f "build/classes/java/main/mundoinfinito/$c.class" ]; then
               echo "::error::Falta build/classes/java/main/mundoinfinito/$c.class. Comprueba que src/mundoinfinito/$c.java está en el repo (y no en otra carpeta)."
               exit 1
@@ -104,6 +104,13 @@ jobs:
         run: |
           mkdir -p build/corpus
           java -cp "build/classes/java/main:libs/MindustryX-Desktop.jar" mundoinfinito.PruebasLuz 2>&1 | tee build/corpus/luz.txt
+          test "${PIPESTATUS[0]}" -eq 0
+        shell: bash
+      # ---- WORLDGEN (plan v5, P4): la API de fuentes (bioma, multiplicadores, valores fijos, prioridades y aislamiento de fallos). Sin el juego. ----
+      - name: Worldgen - pruebas de la API de fuentes (P4)
+        run: |
+          mkdir -p build/corpus
+          java -cp "build/classes/java/main:libs/MindustryX-Desktop.jar" mundoinfinito.PruebasWorldgen 2>&1 | tee build/corpus/worldgen.txt
           test "${PIPESTATUS[0]}" -eq 0
         shell: bash
       # ---- API PÚBLICA (plan v5, sección 10). C1: el inventario sale igual en dos ejecuciones. C2: quitar o cambiar una firma falla salvo que suba

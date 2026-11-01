@@ -88,6 +88,29 @@ jobs:
             echo "::notice::No existe corpus/esperado.txt. Se generó build/corpus/esperado.txt (artefacto corpus): copialo a corpus/esperado.txt en el repo para fijarlo."
           fi
         shell: bash
+      # ---- LUZ SOLAR (plan v5, P1 a P3): factor base, eclipse, orden de carga y aislamiento de modificadores que fallan. Sin el juego. ----
+      - name: Luz solar - pruebas P1 a P3
+        run: |
+          mkdir -p build/corpus
+          java -cp "build/classes/java/main:libs/MindustryX-Desktop.jar" mundoinfinito.PruebasLuz 2>&1 | tee build/corpus/luz.txt
+          test "${PIPESTATUS[0]}" -eq 0
+        shell: bash
+      # ---- API PÚBLICA (plan v5, sección 10). C1: el inventario sale igual en dos ejecuciones. C2: quitar o cambiar una firma falla salvo que suba
+      # la versión mayor. Sin corpus/api-base.txt el paso informa y no falla; el primer artefacto "corpus" trae build/api/inventario.txt para versionarlo. ----
+      - name: API - inventario determinista (C1)
+        run: |
+          mkdir -p build/api
+          CP="build/classes/java/main:libs/MindustryX-Desktop.jar"
+          java -cp "$CP" mundoinfinito.InventarioApi generar build/api/inventario.txt
+          java -cp "$CP" mundoinfinito.InventarioApi generar build/api/inventario-2.txt
+          cmp build/api/inventario.txt build/api/inventario-2.txt
+        shell: bash
+      - name: API - compatibilidad con la línea base (C2)
+        run: |
+          CP="build/classes/java/main:libs/MindustryX-Desktop.jar"
+          java -cp "$CP" mundoinfinito.InventarioApi comparar corpus/api-base.txt build/api/inventario.txt 2>&1 | tee build/api/comparar.txt
+          test "${PIPESTATUS[0]}" -eq 0
+        shell: bash
       - name: Corpus - linea base de coste por chunk
         continue-on-error: true
         run: |
@@ -112,6 +135,7 @@ jobs:
           path: |
             build/corpus/
             build/benchmarks/
+            build/api/
           if-no-files-found: ignore
       - name: Upload built mod artifact as a GitHub Action artifact
         uses: actions/upload-artifact@v7

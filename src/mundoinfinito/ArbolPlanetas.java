@@ -144,7 +144,7 @@ final class ArbolPlanetas{
 
     /** Valor por defecto del dispositivo: lo que tendrán los mundos nuevos. */
     static boolean activoPorDefecto(){
-        return Core.settings != null && Core.settings.getBool(K_DEFECTO, false);
+        return false;   // el interruptor es una regla por mundo: se elige al crearlo (apagado por defecto)
     }
 
     /**
@@ -178,9 +178,16 @@ final class ArbolPlanetas{
     // ================================================================== desbloqueos (en el perfil del mundo)
 
     /** ¿Está desbloqueado este nodo en el mundo abierto? Con el árbol desactivado, todo lo está. Sin mundo abierto, no. */
+    /** Un nodo que está disponible desde el principio: la raíz del árbol de su planeta, o un contenido que Mindustry marca como siempre desbloqueado. */
+    static boolean esInicial(String clave){
+        final Nodo n = nodo(clave);
+        return n != null && (n.padre == null || (n.contenido != null && n.contenido.alwaysUnlocked));
+    }
+
     static boolean desbloqueado(String clave){
         if(!activo()) return true;
         final MundoInfinitoMod.Meta m = meta();
+        if(esInicial(clave)) return true;
         return m != null && clave != null && m.perfil.bool(PREF_DESBLOQUEO + clave, false);
     }
 
@@ -228,7 +235,7 @@ final class ArbolPlanetas{
     /** ¿Algún nodo visible de este contenido en el planeta está desbloqueado en ese mundo? */
     private static boolean contenidoDesbloqueado(MundoInfinitoMod.Meta m, String planeta, String id){
         for(Nodo n : NODOS.values()){
-            if(!n.quitado && n.planeta.equals(planeta) && n.id.equals(id) && m.perfil.bool(PREF_DESBLOQUEO + n.clave, false)) return true;
+            if(!n.quitado && n.planeta.equals(planeta) && n.id.equals(id) && (esInicial(n.clave) || m.perfil.bool(PREF_DESBLOQUEO + n.clave, false))) return true;
         }
         return false;
     }

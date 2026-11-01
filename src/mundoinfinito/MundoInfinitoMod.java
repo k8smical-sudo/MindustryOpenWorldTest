@@ -134,6 +134,9 @@ public class MundoInfinitoMod extends Mod{
         // Drones de carga orbital: puro dato, avanza aunque el jugador esté en la otra dimensión.
         Events.run(Trigger.update, Orbita::tick);
         ApiPlaneta.iniciar();
+        OpenWorldAPI.registrarGameRule(GameRule.nueva(ArbolPlanetas.K_ACTIVO, "Árbol tecnológico por planeta",
+            "Activa el árbol de investigación de cada planeta: los bloques se investigan antes de construirlos. Apagado = sin bloqueos ni costes.",
+            false, (reglas, valor, dim) -> { }));   // la prohibición real la aplica ArbolPlanetas.aplicarReglas al crear el mundo
         ArbolPlanetas.registrar();   // árbol tecnológico por planeta: ajuste del mundo (plan v2, D1)
         CicloDiaNoche.registrar();
         Events.run(Trigger.update, CicloDiaNoche::tick);   // ciclo día/noche de Serpulo (ajuste del mundo)
@@ -2834,7 +2837,6 @@ public class MundoInfinitoMod extends Mod{
             m.api = ApiVersion.texto();
             m.modpack = ConfiguracionModpack.firma();
             if(gamerules != null) for(java.util.Map.Entry<String, Boolean> e : gamerules.entrySet()) m.perfil.fijar(e.getKey(), Boolean.TRUE.equals(e.getValue()) ? 1.0 : 0.0);
-            m.perfil.fijar(ArbolPlanetas.K_ACTIVO, ArbolPlanetas.activoPorDefecto() ? 1.0 : 0.0);   // D1: el árbol se fija al crear el mundo
             m.perfil.sellarGeneracion(semilla);    // resuelve las propuestas de los mods; los parámetros de generación quedan guardados con el mundo y ya no cambian
             m.creado = m.ultimo = System.currentTimeMillis();
             Almacen.guardarMeta(m);

@@ -91,7 +91,7 @@ jobs:
       # Comprobación previa: si una clase de prueba no está compilada, el fallo debe decir qué falta (el fuente no llegó al repo o no está en src/mundoinfinito).
       - name: Comprobar que las clases de prueba están compiladas
         run: |
-          for c in PruebasLuz PruebasWorldgen PruebasApi PruebasNavegacion InventarioApi; do
+          for c in PruebasLuz PruebasWorldgen PruebasApi PruebasNavegacion PruebasSistemas PruebasRadar PruebasViaje InventarioApi; do
             if [ ! -f "build/classes/java/main/mundoinfinito/$c.class" ]; then
               echo "::error::Falta build/classes/java/main/mundoinfinito/$c.class. Comprueba que src/mundoinfinito/$c.java está en el repo (y no en otra carpeta)."
               exit 1
@@ -118,6 +118,27 @@ jobs:
         run: |
           mkdir -p build/corpus
           java -cp "build/classes/java/main:libs/MindustryX-Desktop.jar" mundoinfinito.PruebasNavegacion 2>&1 | tee build/corpus/navegacion.txt
+          test "${PIPESTATUS[0]}" -eq 0
+        shell: bash
+      # ---- SISTEMAS (plan v6, entrega A: F2 a F5). Estado y migración, fichas, órbitas compartidas y capacidad, solitarios y movimiento. Sin el juego. ----
+      - name: Sistemas - pruebas de estado, fichas, slots y movimiento (F2 a F5)
+        run: |
+          mkdir -p build/corpus
+          java -cp "build/classes/java/main:libs/MindustryX-Desktop.jar" mundoinfinito.PruebasSistemas 2>&1 | tee build/corpus/sistemas.txt
+          test "${PIPESTATUS[0]}" -eq 0
+        shell: bash
+      # ---- RADARES (plan v7, entrega A2): barrido por tiers, orden por sistema y distancia, tiempos de detección. Sin el juego. ----
+      - name: Radares - pruebas de alcance, orden y detección
+        run: |
+          mkdir -p build/corpus
+          java -cp "build/classes/java/main:libs/MindustryX-Desktop.jar" mundoinfinito.PruebasRadar 2>&1 | tee build/corpus/radar.txt
+          test "${PIPESTATUS[0]}" -eq 0
+        shell: bash
+      # ---- VIAJES (plan v7, entrega B1): portales por tiers, enlaces, coste de viaje. Sin el juego. ----
+      - name: Viajes - pruebas de portales, enlaces y coste
+        run: |
+          mkdir -p build/corpus
+          java -cp "build/classes/java/main:libs/MindustryX-Desktop.jar" mundoinfinito.PruebasViaje 2>&1 | tee build/corpus/viaje.txt
           test "${PIPESTATUS[0]}" -eq 0
         shell: bash
       # ---- COMPATIBILIDAD (plan v5, sección 10, C2 y C3): casos de fallo y de éxito con inventarios de prueba. Sin el juego. ----

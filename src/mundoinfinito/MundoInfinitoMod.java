@@ -127,12 +127,13 @@ public class MundoInfinitoMod extends Mod{
         });
 
         // Botón en el menú principal cuando el cliente terminó de cargar.
-        Events.on(ClientLoadEvent.class, e -> Time.runTask(10f, () -> { MenuUI.inyectarBoton(); Hud.crear(); MapaVista.crear(); Ajustes.registrar(); ValidadorAddons.alCargar(); }));
+        Events.on(ClientLoadEvent.class, e -> Time.runTask(10f, () -> { MenuUI.inyectarBoton(); Hud.crear(); MapaVista.crear(); Ajustes.registrar(); }));
 
         // Bucle de streaming: se ejecuta cada frame (presupuesto de tiempo propio).
         Events.run(Trigger.update, Streamer::tick);
         // Drones de carga orbital: puro dato, avanza aunque el jugador esté en la otra dimensión.
         Events.run(Trigger.update, Orbita::tick);
+        ApiPlaneta.iniciar();
         CicloDiaNoche.registrar();
         Events.run(Trigger.update, CicloDiaNoche::tick);   // ciclo día/noche de Serpulo (ajuste del mundo)
         Events.run(Trigger.update, CalendarioMundo::tick);   // tiempo del mundo y eventos programados (fase 11)

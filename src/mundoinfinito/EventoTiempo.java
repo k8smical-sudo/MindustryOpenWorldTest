@@ -8,10 +8,14 @@ public final class EventoTiempo{
     private final String temporada;
 
     EventoTiempo(String id, float tiempo){
+        this(id, tiempo, CalendarioMundo.diaEn(tiempo), CalendarioMundo.temporadaEn(tiempo));
+    }
+
+    EventoTiempo(String id, float tiempo, int dia, String temporada){
         this.id = id;
         this.tiempo = tiempo;
-        this.dia = CalendarioMundo.diaEn(tiempo);
-        this.temporada = CalendarioMundo.temporadaEn(tiempo);
+        this.dia = dia;
+        this.temporada = temporada;
     }
 
     /** Id del evento ("fuente:nombre"). */

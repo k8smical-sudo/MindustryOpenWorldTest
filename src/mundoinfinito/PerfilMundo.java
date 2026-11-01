@@ -124,6 +124,11 @@ final class PerfilMundo{
             (float)valorLegado(ParametrosGeneracion.ID_RESP_UMBRAL, 1d));
     }
 
+    /** Valor de un planeta en este mundo: el guardado, o el de entonces (legado) si el mundo es anterior al ajuste. */
+    double valorPlaneta(String id, double legado){
+        return valorLegado(id, legado);
+    }
+
     /** Como valorDe, pero si el mundo no guardó el ajuste (es anterior a él) devuelve el valor de entonces, no el de hoy. */
     private double valorLegado(String id, double legado){
         if(!valores.containsKey(id)) return legado;

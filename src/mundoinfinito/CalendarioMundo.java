@@ -67,6 +67,9 @@ final class CalendarioMundo{
     private long ultimoGuardado = System.currentTimeMillis();
     /** Cada cuánto se escribe el calendario aunque no dispare nada (ms). */
     static final long PERIODO_GUARDADO_MS = 30000L;
+    /** Duración de un día y de un año (órbita) de este mundo, en ticks. Por defecto los de los mundos anteriores. */
+    private float diaTicks = CicloDiaNoche.DIA_TICKS;
+    private float anioTicks = CicloDiaNoche.DIA_TICKS * 28f;
 
     static int diaEn(float tiempo){
         return (int)Math.floor(tiempo / CicloDiaNoche.DIA_TICKS);
@@ -111,11 +114,25 @@ final class CalendarioMundo{
     }
 
     int dia(){
-        return diaEn(tiempo);
+        return (int)Math.floor(tiempo / diaTicks);
     }
 
     String temporada(){
-        return temporadaEn(tiempo);
+        return TEMPORADAS[Math.floorMod((int)Math.floor(tiempo / (anioTicks / 4f)), TEMPORADAS.length)];
+    }
+
+    int diaEnI(float t){
+        return (int)Math.floor(t / diaTicks);
+    }
+
+    String temporadaEnI(float t){
+        return TEMPORADAS[Math.floorMod((int)Math.floor(t / (anioTicks / 4f)), TEMPORADAS.length)];
+    }
+
+    /** Fija la duración del día (rotación) y del año (órbita) de este mundo. Valores no válidos se ignoran. */
+    void configurarPeriodos(float rotacion, float orbita){
+        if(rotacion > 0f && !Float.isInfinite(rotacion)) diaTicks = rotacion;
+        if(orbita > 0f && !Float.isInfinite(orbita)) anioTicks = orbita;
     }
 
     int pendientes(){
@@ -153,7 +170,7 @@ final class CalendarioMundo{
             }
             pendientes.remove(0);   // se quita ANTES de ejecutar: no se repite aunque la acción falle
             if(persistir != null) persistir.run();   // y se escribe a disco ANTES de ejecutar: si el juego cae en la acción, no se repite
-            final EventoTiempo e = new EventoTiempo(p.id, p.tiempo);
+            final EventoTiempo e = new EventoTiempo(p.id, p.tiempo, diaEnI(p.tiempo), temporadaEnI(p.tiempo));
             try{
                 accion.get(e);
             }catch(Throwable t){
@@ -200,7 +217,7 @@ final class CalendarioMundo{
             }
             pared.remove(0);
             if(persistir != null) persistir.run();
-            final EventoTiempo e = new EventoTiempo(p.id, tiempo);
+            final EventoTiempo e = new EventoTiempo(p.id, tiempo, diaEnI(tiempo), temporadaEnI(tiempo));
             try{
                 accion.get(e);
             }catch(Throwable t){
@@ -297,6 +314,7 @@ final class CalendarioMundo{
         final MundoInfinitoMod.Meta m = MundoInfinitoMod.Streamer.meta;
         if(m == null || m.calendario == null) return;
         final CalendarioMundo c = m.calendario;
+        c.configurarPeriodos(ApiPlaneta.rotacionMundo(), ApiPlaneta.orbitaMundo());
         final long ahora = System.currentTimeMillis();
         c.avanzarPared(ahora);
         if(!mindustry.Vars.state.isPaused()) c.avanzar(arc.util.Time.delta);

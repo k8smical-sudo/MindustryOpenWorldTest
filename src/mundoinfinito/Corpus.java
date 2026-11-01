@@ -1866,7 +1866,7 @@ public final class Corpus{
         // ---- superficie pública: solo lo previsto es público, y la API no filtra tipos internos
         final java.util.Set<String> previstas = new java.util.TreeSet<String>(Arrays.asList("AlmacenModulo", "ContextoColocacion", "ContextoFenomeno", "ContextoTerreno", "GameRule",
             "GeneradorEstructura", "GeneradorFenomeno", "GeneradorMundo", "GeneradorTerreno", "MundoInfinitoMod", "MundoRegistrado", "OpenWorldAPI", "PoliticaSueno", "SiloInterdimensional",
-            "Corpus", "ApiVersion", "ApiVisual", "ApiAjustes", "VisualCapa", "VisualCalidad", "VisualPrograma", "VisualEfectoInst", "ApiTiempo", "EventoTiempo", "ApiMundo", "ApiModpack", "ApiAzar"));
+            "Corpus", "ApiVersion", "ApiVisual", "ApiAjustes", "VisualCapa", "VisualCalidad", "VisualPrograma", "VisualEfectoInst", "ApiTiempo", "EventoTiempo", "ApiMundo", "ApiModpack", "ApiAzar", "ApiPlaneta"));
         final java.util.Set<String> publicas = new java.util.TreeSet<String>();
         final URL url = Corpus.class.getResource("Corpus.class");
         if(url == null || !"file".equals(url.getProtocol())){
@@ -1894,7 +1894,7 @@ public final class Corpus{
             fallos += chequear("superficie pública: solo son públicas las " + previstas.size() + " clases previstas (sobran " + sobran + ", faltan " + faltan + ", sin poder cargar " + noCargadas + ")", sobran.isEmpty() && faltan.isEmpty());
         }
         final List<String> filtran = new ArrayList<String>();
-        for(Class<?> api : new Class<?>[]{ApiVisual.class, ApiAjustes.class, ApiVersion.class, ApiTiempo.class, ApiMundo.class, ApiModpack.class, ApiAzar.class}){
+        for(Class<?> api : new Class<?>[]{ApiVisual.class, ApiAjustes.class, ApiVersion.class, ApiTiempo.class, ApiMundo.class, ApiModpack.class, ApiAzar.class, ApiPlaneta.class}){
             for(Method m : api.getDeclaredMethods()){
                 if(!Modifier.isPublic(m.getModifiers())) continue;
                 final List<Class<?>> tipos = new ArrayList<Class<?>>(Arrays.asList(m.getParameterTypes()));
@@ -2181,9 +2181,45 @@ public final class Corpus{
         return fallos;
     }
 
+    static int comprobarPlanetas(){
+        int fallos = 0;
+        fallos += chequear("los valores por defecto de Serpulo son 23 min 38 s de día (85080 ticks) y 11 min de órbita (39600); Erekir, 5 min y 2,5 min (estimados)",
+            ApiPlaneta.rotacion(ApiPlaneta.SERPULO) == 85080 && ApiPlaneta.orbita(ApiPlaneta.SERPULO) == 39600
+                && ApiPlaneta.rotacion(ApiPlaneta.EREKIR) == 18000 && ApiPlaneta.orbita(ApiPlaneta.EREKIR) == 9000);
+        final PerfilMundo viejo = new PerfilMundo();
+        fallos += chequear("un mundo anterior conserva su día de 10 minutos y su año de 28 días (valores de entonces)",
+            viejo.valorPlaneta(ApiPlaneta.ajusteRotacion(ApiPlaneta.SERPULO), ApiPlaneta.LEGADO_ROTACION) == 36000d
+                && viejo.valorPlaneta(ApiPlaneta.ajusteOrbita(ApiPlaneta.SERPULO), ApiPlaneta.LEGADO_ORBITA) == 1008000d);
+        final CalendarioMundo c = new CalendarioMundo();
+        c.configurarPeriodos(85080f, 39600f);
+        c.avanzar(85080f * 2f);
+        fallos += chequear("con la rotación de Serpulo el día avanza cada 23 min 38 s (dos días = 2)", c.dia() == 2);
+        final CalendarioMundo d = new CalendarioMundo();
+        d.configurarPeriodos(85080f, 39600f);
+        d.avanzar(9900f);
+        fallos += chequear("con la órbita de Serpulo el cuarto de año (9900 ticks) pasa a verano", d.temporada().equals("verano"));
+        final CalendarioMundo e = new CalendarioMundo();
+        fallos += chequear("sin configurar, el calendario usa los periodos de los mundos anteriores (7 días por temporada)",
+            e.temporada().equals("primavera") && CalendarioMundo.temporadaEn(CicloDiaNoche.DIA_TICKS * 7f).equals("verano"));
+        fallos += chequear("la luz de Serpulo usa su rotación: a mitad de un día de 85080 ticks es noche (luz 0)",
+            Math.abs(CicloDiaNoche.luz(85080f / 2f, 85080f)) < 1e-5f && Math.abs(CicloDiaNoche.luz(0f, 85080f) - 1f) < 1e-5f);
+        final String prueba = "mundo-infinito:prueba-planeta";
+        final boolean reg = ApiPlaneta.registrar("prueba-planeta", 1000, 2000);
+        final boolean prop1 = ApiPlaneta.proponer("aaa:uno", "aaa:uno-planeta", "prueba-planeta", 500, 700, 0);
+        final boolean prop2 = ApiPlaneta.proponer("bbb:dos", "bbb:dos-planeta", "prueba-planeta", 3000, 4000, 5);
+        final PerfilMundo pp = new PerfilMundo();
+        pp.sellarGeneracion(7);
+        final double rotResuelta = pp.valorPlaneta(ApiPlaneta.ajusteRotacion("prueba-planeta"), 0d);
+        fallos += chequear("un addon gana la resolución de un planeta con la prioridad más baja (500 frente a 3000, prioridad 0 frente a 5)",
+            reg && prop1 && prop2 && rotResuelta == 500d);
+        return fallos;
+    }
+
     static int comprobar() throws Exception{
+        ApiPlaneta.iniciar();
         final List<int[]> es = entradas();
         int fallos = 0;
+        fallos += comprobarPlanetas();
 
         olvidarCaches();
         long t0 = System.nanoTime();
@@ -2226,7 +2262,7 @@ public final class Corpus{
         fallos += comprobarManifiesto();
         fallos += comprobarModpack();
         fallos += comprobarAzarYValidador();
-        fallos += comprobarRespiraderosBioma();   // antes de comprobarPresupuestos: ahí se abre un mundo y los ajustes de generación ya no se pueden registrar
+        fallos += comprobarRespiraderosBioma();
         fallos += comprobarPresupuestos(es, a);
         fallos += comprobarVisual(es, a);
         fallos += comprobarVisual10();

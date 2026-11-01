@@ -19,7 +19,12 @@ final class CicloDiaNoche{
     }
 
     static float luz(float tick){
-        final double fase = (tick % DIA_TICKS) / DIA_TICKS;
+        return luz(tick, DIA_TICKS);
+    }
+
+    /** Luz con el periodo de un día del planeta (su rotación). */
+    static float luz(float tick, float periodo){
+        final double fase = (tick % periodo) / periodo;
         return (float)(0.5 + 0.5 * Math.cos(2 * Math.PI * fase));
     }
 
@@ -39,7 +44,7 @@ final class CicloDiaNoche{
             VisualAmbiente.global().quitarOscuridad(ID);
             return;
         }
-        final float alpha = alfa(luz((float)Vars.state.tick));
+        final float alpha = alfa(luz((float)Vars.state.tick, ApiPlaneta.rotacionMundo()));
         VisualAmbiente.global().fijarOscuridad(ID, 1f - alpha);
     }
 }

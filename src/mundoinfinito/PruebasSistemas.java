@@ -31,6 +31,7 @@ final class PruebasSistemas{
             pruebaFichas();
             pruebaMigracion();
             pruebaRoundTrip();
+            pruebaHexadecimal();
             pruebaPoliticaFallida();
             ApiSistemas.reiniciarPoliticas();
             System.out.println(fallos == 0 ? "[Sist] OK: todas las pruebas pasan." : "[Sist] FALLO: " + fallos + " prueba(s) no pasan.");
@@ -252,6 +253,19 @@ final class PruebasSistemas{
             rechazo = true;
         }
         fallos += chequear("leerEstricto rechaza una cabecera que no es la nuestra", rechazo);
+    }
+
+    private static void pruebaHexadecimal(){
+        final EstadoSistemas e = new EstadoSistemas();
+        ApiSistemas.anadirMundoEnOrbita(e, "h1", "hm1", "serpulo", 100, 10);
+        ApiSistemas.crearSolitario(e, "h2", "hm2", "erekir", 3, 4, 0, 0, 0, 2);
+        final String hex = e.aHex();
+        final EstadoSistemas leido = EstadoSistemas.leer(EstadoSistemas.desdeHex(hex));
+        fallos += chequear("hexadecimal: el estado sobrevive a texto y vuelta con los mismos bytes",
+            leido.sistemas().size() == 2 && java.util.Arrays.equals(e.serializar(), leido.serializar()));
+        fallos += chequear("hexadecimal: texto vacío, impar o no hexadecimal no da bytes; el mundo queda vacío",
+            EstadoSistemas.desdeHex("") == null && EstadoSistemas.desdeHex("abc") == null && EstadoSistemas.desdeHex("zz") == null
+                && EstadoSistemas.leer(EstadoSistemas.desdeHex("zz")).sistemas().isEmpty());
     }
 
     private static void pruebaRoundTrip(){

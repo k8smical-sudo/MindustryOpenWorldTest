@@ -163,6 +163,26 @@ final class EstadoSistemas{
         }
     }
 
+    /** Estado en hexadecimal (dos caracteres por byte), para guardarlo como texto dentro del JSON del mundo. */
+    String aHex(){
+        final byte[] b = serializar();
+        final StringBuilder sb = new StringBuilder(b.length * 2);
+        for(byte x : b) sb.append(Character.forDigit((x >> 4) & 0xF, 16)).append(Character.forDigit(x & 0xF, 16));
+        return sb.toString();
+    }
+
+    /** Bytes de un texto hexadecimal. Null si el texto está vacío, tiene longitud impar o contiene caracteres no hexadecimales. */
+    static byte[] desdeHex(String hex){
+        if(hex == null || hex.isEmpty() || hex.length() % 2 != 0) return null;
+        final byte[] out = new byte[hex.length() / 2];
+        for(int i = 0; i < out.length; i++){
+            final int hi = Character.digit(hex.charAt(2 * i), 16), lo = Character.digit(hex.charAt(2 * i + 1), 16);
+            if(hi < 0 || lo < 0) return null;
+            out[i] = (byte)((hi << 4) | lo);
+        }
+        return out;
+    }
+
     /** Lee el estado. Null, vacío o corrupto: estado vacío (mundo antiguo o dato dañado). No lanza. */
     public static EstadoSistemas leer(byte[] datos){
         try{

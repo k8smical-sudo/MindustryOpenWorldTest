@@ -194,6 +194,8 @@ public class MundoInfinitoMod extends Mod{
         CalendarioMundo calendario = new CalendarioMundo();
         /** Estado de planetas (plan v2, M1 y M2): nombre visible y fase orbital de cada planeta. */
         PlanetasMundo planetas = new PlanetasMundo();
+        /** Sistemas solares y solitarios del mundo (plan v7, F2). Vacío en mundos antiguos. */
+        EstadoSistemas sistemas = new EstadoSistemas();
 
         /** Valor de una gamerule en este mundo. */
         boolean gameRule(GameRule g){
@@ -221,6 +223,7 @@ public class MundoInfinitoMod extends Mod{
             j.put("ajustes", perfil.aJson());
             j.put("calendario", calendario.aJson());
             j.put("planetas", planetas.aJson());
+            j.put("sistemas", sistemas.aHex());   // plan v7, F2: los mundos antiguos no tienen la clave y se leen vacíos
             j.put("gamerules", perfil.aJsonReglas());   // espejo para versiones anteriores del mod
             return j;
         }
@@ -267,6 +270,7 @@ public class MundoInfinitoMod extends Mod{
             }
             m.calendario.persistir = () -> Almacen.escribirCalendario(m);
             m.planetas = PlanetasMundo.desde(j.has("planetas") ? j.get("planetas") : null);   // mundos antiguos: sin nombres, fase 0
+            m.sistemas = EstadoSistemas.leer(EstadoSistemas.desdeHex(j.getString("sistemas", "")));   // mundos antiguos: estado vacío
             return m;
         }
 

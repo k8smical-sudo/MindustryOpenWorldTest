@@ -2410,10 +2410,13 @@ public final class Corpus{
 
         for(int n : new int[]{1, 2, 4}){
             olvidarCaches();
+            Hilos.reiniciarEstadisticas();   // cada ejecución cuenta solo sus propios fallos (los de las pruebas negativas quedan fuera)
             t0 = System.nanoTime();
             final long[] c = calcularConHilos(es, n);
             final long ms = (System.nanoTime() - t0) / 1_000_000L;
-            if(Arrays.equals(a, c)){
+            final boolean sinFallos = Hilos.fallosTotales() == 0L;
+            if(!sinFallos) System.out.println("[Corpus] FALLO: la tarea de hilos falló durante la equivalencia con " + n + " hilo(s): " + Hilos.resumen());
+            if(Arrays.equals(a, c) && sinFallos){
                 System.out.println("[Corpus] equivalencia con " + n + (n == 1 ? " hilo (ruta de un solo hilo)" : " hilos") + ": idéntico (" + ms + " ms). " + Hilos.resumen());
             }else{
                 fallos++;

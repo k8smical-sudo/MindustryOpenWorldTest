@@ -308,6 +308,29 @@ final class Hilos{
     }
 
     /** Una línea para el log: hilos, y por carril ejecutadas/enviadas, cola actual y máxima, tiempo medio de cálculo y de espera. */
+    /**
+     * Pone a cero las estadísticas acumuladas (no toca las tareas en curso ni la cola). Las comprobaciones lo usan para que sus fallos
+     * intencionados no se cuenten como fallos de la ejecución que se mide.
+     */
+    static void reiniciarEstadisticas(){
+        for(int i = 0; i < NC; i++){
+            enviados[i].set(0L);
+            ejecutados[i].set(0L);
+            nsEjecutando[i].set(0L);
+            nsEnCola[i].set(0L);
+            fallos[i].set(0L);
+            descartados[i].set(0L);
+            maxCola[i].set(0);
+        }
+    }
+
+    /** Fallos de tareas desde el último reinicio, en todos los carriles. */
+    static long fallosTotales(){
+        long total = 0L;
+        for(int i = 0; i < NC; i++) total += fallos[i].get();
+        return total;
+    }
+
     static String resumen(){
         final StringBuilder sb = new StringBuilder(128);
         sb.append("hilos=").append(unHilo() ? "1 (un hilo)" : String.valueOf(tam));

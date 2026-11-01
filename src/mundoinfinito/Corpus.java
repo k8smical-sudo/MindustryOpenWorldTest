@@ -2205,13 +2205,13 @@ public final class Corpus{
             Math.abs(CicloDiaNoche.luz(85080f / 2f, 85080f)) < 1e-5f && Math.abs(CicloDiaNoche.luz(0f, 85080f) - 1f) < 1e-5f);
         final String prueba = "mundo-infinito:prueba-planeta";
         final boolean reg = ApiPlaneta.registrar("prueba-planeta", 1000, 2000);
-        final boolean prop1 = ApiPlaneta.proponer("aaa:uno", "aaa:uno-planeta", "prueba-planeta", 500, 700, 0);
+        final boolean prop1 = ApiPlaneta.proponer("aaa:uno", "aaa:uno-planeta", "prueba-planeta", 1200, 700, 0);
         final boolean prop2 = ApiPlaneta.proponer("bbb:dos", "bbb:dos-planeta", "prueba-planeta", 3000, 4000, 5);
         final PerfilMundo pp = new PerfilMundo();
         pp.sellarGeneracion(7);
         final double rotResuelta = pp.valorPlaneta(ApiPlaneta.ajusteRotacion("prueba-planeta"), 0d);
-        fallos += chequear("un addon gana la resolución de un planeta con la prioridad más baja (500 frente a 3000, prioridad 0 frente a 5)",
-            reg && prop1 && prop2 && rotResuelta == 500d);
+        fallos += chequear("un addon gana la resolución de un planeta con la prioridad más baja (1200 frente a 3000, prioridad 0 frente a 5)",
+            reg && prop1 && prop2 && rotResuelta == 1200d);
         return fallos;
     }
 

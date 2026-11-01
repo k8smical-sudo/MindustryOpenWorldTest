@@ -235,8 +235,6 @@ final class FenomenosBase{
 
         @Override
         public boolean valido(ContextoFenomeno c, int x, int y){
-            final float mb = Nucleo.parametros().multBioma[grupoBioma(c.codigoPiso(x, y))];
-            if(c.azar(x, y, 0x7104) >= mb / maxMult()) return false;   // probabilidad por bioma (en mundos anteriores vale 1: no cambia nada)
             if(c.distanciaSpawn(x, y) < Math.max(40f, c.radioClaroSpawn() * 1.8f)) return false;   // nunca en el claro inicial
             if(c.cercaDePozoSpawn(x, y, 8f)) return false;                                         // ni encima de los pozos del spawn
             if(!c.esTipoErekir(x, y)) return false;
@@ -250,7 +248,11 @@ final class FenomenosBase{
                 final int[] o = c.muestra(x + d[0], y + d[1]);
                 if(o[2] != 0 || Muestreo.liquido(o[0])) return false;
             }
-            return abierto(c, x, y) >= umbralAbierto(c) * Nucleo.parametros().umbralRespiraderos;                                            // juicio de balance
+            // Probabilidad (plan v5, D12-D13): bioma, menas cercanas y fuentes de addons. Las comprobaciones de arriba son puras, así que
+            // evaluarla aquí no cambia el resultado; se hace antes del juicio de balance, que es el más caro.
+            final float p = ApiWorldgen.probabilidad(id(), 1f, ApiWorldgen.lugar(c, x, y));
+            if(c.azar(x, y, 0x7104) >= p) return false;
+            return abierto(c, x, y) >= umbralAbierto(c) * Nucleo.parametros().umbralRespiraderos;   // juicio de balance
         }
 
         @Override

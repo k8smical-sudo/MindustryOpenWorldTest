@@ -315,6 +315,11 @@ final class Extensiones{
     }
 
     /** ¿Usa este mundo la generación revisada (Parte A)? Los mundos de gen 3 guardados antes conservan su terreno exacto. */
+    /** Mundos con menas cercanas en los respiraderos (plan v5, P5). Los anteriores conservan la probabilidad de siempre. */
+    static boolean generacionConMenas(){
+        return generacion >= MundoInfinitoMod.GEN_MENAS;
+    }
+
     static boolean generacionNueva(){
         return generacion >= MundoInfinitoMod.GEN_REVISADA;
     }

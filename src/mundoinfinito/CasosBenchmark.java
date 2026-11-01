@@ -19,6 +19,7 @@ final class CasosBenchmark{
 
     static List<Bancos.Caso> todos(){
         ApiPlaneta.iniciar();
+        ApiWorldgen.iniciar();
         final List<Bancos.Caso> out = new ArrayList<Bancos.Caso>();
         desduplicacion(out);
         terreno(out);
@@ -30,6 +31,7 @@ final class CasosBenchmark{
         version(out);
         arbol(out);
         luz(out);
+        worldgen(out);
         return out;
     }
 
@@ -193,6 +195,23 @@ final class CasosBenchmark{
         ApiLuz.registrarModificador("bench-luz", "bench-luz:neutro", 0, (p, f) -> 1f);
         out.add(new Bancos.Caso("luz", "factor-erekir-sin-eclipse", 200000,
             () -> ApiLuz.factorPlaneta(ApiPlaneta.EREKIR) == 1f, "ApiLuz"));
+    }
+
+    // ================================================================== worldgen (ApiWorldgen)
+
+    private static void worldgen(List<Bancos.Caso> out){
+        // Una fuente de prueba con un valor fijo. Se registra una vez; su id es propio del banco.
+        ApiWorldgen.registrar(new ApiWorldgen.Fuente(){
+            @Override public String id(){ return "bench-worldgen:fija"; }
+            @Override public int prioridad(){ return -5; }
+            @Override public float valorFijo(String fenomeno, int bioma, ApiWorldgen.Lugar l){
+                return "bench:fijo".equals(fenomeno) ? 0.25f : Float.NaN;
+            }
+        });
+        final ApiWorldgen.Lugar l = new ApiWorldgen.Lugar(7, 1, 10, -4, MundoInfinitoMod.Muestreo.P_ARKYIC, () -> 5, () -> "arkyic");
+        out.add(new Bancos.Caso("worldgen", "fijo-y-bioma", 200000, () ->
+            ApiWorldgen.bioma(l) == ApiWorldgen.BIOMA_ARKYIC && ApiWorldgen.probabilidad("bench:fijo", 1f, l) == 0.25f
+                && ApiWorldgen.probabilidad("bench:libre", 0.5f, l) == 0.5f, "ApiWorldgen"));
     }
 
     // ================================================================== árbol tecnológico (ApiArbol)

@@ -101,7 +101,8 @@ public class MundoInfinitoMod extends Mod{
     public static final int REGION_CHUNKS = 16;             // 16x16 chunks por archivo de región (512x512 tiles)
     public static final String URL_SEMILLAS = "https://raw.githubusercontent.com/TU_USUARIO/mundo-infinito-semillas/main/semillas/actual.json"; // TODO: URL real
     public static final int TIMEOUT_HTTP_MS = 4000;
-    public static final int GEN_ACTUAL = 4;                 // 4 = generación revisada (Parte A del plan): respiraderos con disco de Poisson, roca caliente y magma en Serpulo.
+    public static final int GEN_ACTUAL = 5;                 // 5 = generación con menas cercanas en los respiraderos (plan v5, P5). Mismo terreno base que la 4.
+    public static final int GEN_MENAS = 5;                  // primera generación con el efecto de las menas cercanas en los respiraderos (FuentesWorldgen)
     public static final int GEN_ANTERIOR = 3;               // 3 = dos dimensiones (Serpulo/Erekir) con la generación anterior: conserva su terreno exacto.
     public static final int GEN_REVISADA = 4;               // primera generación que activa los generadores del mundo base (FenomenosBase)
     public static final int GEN_MEZCLADO = 2;               // 2 = terreno mezclado (mundos antiguos): sigue jugable tal cual.
@@ -134,6 +135,7 @@ public class MundoInfinitoMod extends Mod{
         // Drones de carga orbital: puro dato, avanza aunque el jugador esté en la otra dimensión.
         Events.run(Trigger.update, Orbita::tick);
         ApiPlaneta.iniciar();
+        ApiWorldgen.iniciar();   // fuentes de worldgen del juego (bioma, multiplicadores, menas)
         OpenWorldAPI.registrarGameRule(GameRule.nueva(ArbolPlanetas.K_ACTIVO, "Árbol tecnológico por planeta",
             "Activa el árbol de investigación de cada planeta: los bloques se investigan antes de construirlos. Apagado = sin bloqueos ni costes.",
             false, (reglas, valor, dim) -> { }));   // la prohibición real la aplica ArbolPlanetas.aplicarReglas al crear el mundo
@@ -269,7 +271,8 @@ public class MundoInfinitoMod extends Mod{
         }
 
         boolean compatible(){
-            return gen == GEN_ACTUAL || gen == GEN_ANTERIOR || gen == GEN_MEZCLADO;
+            // La 4 (GEN_REVISADA) sigue siendo compatible: sus mundos guardados no cambian de terreno al pasar a la 5.
+            return gen == GEN_ACTUAL || gen == GEN_REVISADA || gen == GEN_ANTERIOR || gen == GEN_MEZCLADO;
         }
 
         /** true = mundo con dos dimensiones separadas; false = mundo antiguo de terreno mezclado. */

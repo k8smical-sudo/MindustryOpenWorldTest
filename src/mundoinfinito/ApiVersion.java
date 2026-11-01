@@ -24,6 +24,8 @@ public final class ApiVersion{
     public static final int PLANETA_MAYOR = 1, PLANETA_MENOR = 1;
     /** La parte de luz solar (eclipses y modificadores): {@code ApiLuz}. 1.1: un modificador que falla se desactiva con aviso (P3). */
     public static final int LUZ_MAYOR = 1, LUZ_MENOR = 1;
+    /** La parte de worldgen (fuentes de bioma, multiplicadores y valores fijos): {@code ApiWorldgen}. Plan v5, P4. */
+    public static final int WORLDGEN_MAYOR = 1, WORLDGEN_MENOR = 0;
     /** La parte del árbol tecnológico por planeta: {@code ApiArbol}. */
     public static final int ARBOL_MAYOR = 1, ARBOL_MENOR = 0;
     /** La parte de desduplicación de cálculos: {@code ApiDesduplicacion}. */

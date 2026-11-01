@@ -13,9 +13,7 @@ import arc.scene.event.InputListener;
 import arc.scene.ui.Label;
 import arc.scene.ui.layout.Table;
 import arc.util.Time;
-import mindustry.Vars;
 import mindustry.graphics.Pal;
-import mindustry.type.Planet;
 import mindustry.ui.Styles;
 
 import java.util.ArrayList;
@@ -26,8 +24,9 @@ import java.util.Map;
 /**
  * VISTA DE PLANETAS Y SISTEMAS (plan v8, F6 y F7 aproximado). Modo "Planetas" del menú de Mundo abierto.
  *
- * FUENTE: los mundos guardados (Almacen.listar), no los planetas del juego. Cada mundo es un cuerpo en la órbita de su planeta base,
- * colocado con ApiSistemas (mismo tipo = misma órbita; slots; capacidad). Sin mundos guardados, la vista muestra el estado vacío.
+ * FUENTE (P2): el estado de sistemas que cada mundo guarda en su meta (un cuerpo por mundo, ver {@link AsignacionSistemas}). La vista no calcula
+ * posiciones: une los cuerpos guardados y los dibuja. Un mundo antiguo sin cuerpo lo recibe al abrir el modo (migración determinista) y queda
+ * guardado, así que su sitio no cambia entre una apertura y otra. Sin mundos guardados, la vista muestra el estado vacío.
  * Se recarga al abrir el modo y tras borrar un mundo: así no quedan planetas de mundos que ya no existen.
  *
  * MOVIMIENTO: órbitas simuladas con el tiempo del mundo (ApiSistemas.anguloEn y el periodo de ApiPlaneta). Nada inventado.
@@ -104,17 +103,23 @@ final class VistaPlanetas{
     /** Un mundo guardado, como cuerpo en la órbita de su planeta base. */
     private static final class Mundo{
         final String id, nombre, tag;
+        final EstadoSistemas.SistemaSolar sistema;
         final EstadoSistemas.Cuerpo cuerpo;
+        /** Órbita compartida del cuerpo, o null si es un planeta solitario (no ocupa órbita). */
+        final Orbita orbita;
         final boolean actual;
         /** Tiempo del mundo al leerlo (ticks), y periodo de giro del planeta base (ticks). */
         final float tiempoMundo;
         final double periodoGiro;
 
-        Mundo(String id, String nombre, String tag, EstadoSistemas.Cuerpo cuerpo, boolean actual, float tiempoMundo, double periodoGiro){
+        Mundo(String id, String nombre, String tag, EstadoSistemas.SistemaSolar sistema, EstadoSistemas.Cuerpo cuerpo, Orbita orbita,
+              boolean actual, float tiempoMundo, double periodoGiro){
             this.id = id;
             this.nombre = nombre;
             this.tag = tag;
+            this.sistema = sistema;
             this.cuerpo = cuerpo;
+            this.orbita = orbita;
             this.actual = actual;
             this.tiempoMundo = tiempoMundo;
             this.periodoGiro = periodoGiro;
@@ -186,24 +191,34 @@ final class VistaPlanetas{
             });
         }
 
-        /** Vuelve a leer los mundos guardados y recalcula sus posiciones. */
+        /** Vuelve a leer los mundos guardados (migrando los antiguos) y une sus cuerpos en un solo estado. No calcula ninguna posición nueva. */
         void recargar(){
             orbitas.clear();
             mundos.clear();
-            est = new EstadoSistemas();
             final MundoInfinitoMod.Meta actual = MundoInfinitoMod.Streamer.meta;
-            for(MundoInfinitoMod.Meta m : MundoInfinitoMod.Almacen.listar()){
+            final arc.struct.Seq<MundoInfinitoMod.Meta> todos = MundoInfinitoMod.Almacen.listar();
+            MundoInfinitoMod.Sistemas.migrar(todos);   // un mundo antiguo sin cuerpo lo recibe aquí y queda guardado
+            final ArrayList<AsignacionSistemas.Entrada> entradas = new ArrayList<AsignacionSistemas.Entrada>();
+            for(MundoInfinitoMod.Meta m : todos){
                 if(!m.compatible()) continue;
-                final String tag = ApiPlaneta.planetaDeMundo(m);
-                if(tag == null) continue;
-                if(!orbitas.containsKey(tag)){
-                    orbitas.put(tag, new Orbita(tag, radioDe(tag), Math.max(1, ApiPlaneta.orbita(tag))));
+                final EstadoSistemas.Cuerpo c = AsignacionSistemas.cuerpoPropio(m.sistemas, m.id);
+                if(c != null) entradas.add(new AsignacionSistemas.Entrada(m.id, c.planeta, m.semilla, m.creado, m.sistemas));
+            }
+            est = AsignacionSistemas.unir(entradas);
+            for(MundoInfinitoMod.Meta m : todos){
+                final EstadoSistemas.Cuerpo c = est.buscarCuerpo(m.id);
+                if(c == null || !m.compatible()) continue;
+                final EstadoSistemas.SistemaSolar sistema = AsignacionSistemas.sistemaDe(est, m.id);
+                final String tag = c.planeta == null ? ApiPlaneta.SERPULO : c.planeta;
+                Orbita o = null;
+                if(c.orbita != null){
+                    o = orbitas.get(c.orbita);
+                    if(o == null){
+                        o = new Orbita(c.orbita, (float)est.radioOrbita(c.orbita), Math.max(1, ApiPlaneta.orbita(c.orbita)));
+                        orbitas.put(c.orbita, o);
+                    }
                 }
-                final Orbita o = orbitas.get(tag);
-                final ApiSistemas.Resultado r = ApiSistemas.anadirMundoEnOrbita(est, "sistema-" + tag, m.id, tag, o.radio,
-                    ApiFisica.DIAMETRO_PLANETA);
-                if(!r.ok) continue;   // no cabe en esta órbita: hace falta otro sistema solar
-                mundos.add(new Mundo(m.id, m.nombre, tag, est.buscarCuerpo(m.id), actual != null && actual.id.equals(m.id),
+                mundos.add(new Mundo(m.id, m.nombre, tag, sistema, c, o, actual != null && actual.id.equals(m.id),
                     m.calendario.tiempo(), Math.max(1, ApiPlaneta.rotacion(tag))));
             }
             if(seleccionado != null && buscarSeleccionado() == null) seleccionado = null;
@@ -211,15 +226,15 @@ final class VistaPlanetas{
 
         boolean hayMundos(){ return !mundos.isEmpty(); }
 
-        /** Leyenda: cuántos mundos hay en cada planeta base. */
+        /** Leyenda: cuántos cuerpos del estado hay de cada planeta base (con órbita o solitarios). */
         String textoLeyenda(){
+            final Map<String, Integer> cuenta = new LinkedHashMap<String, Integer>();
+            for(Mundo b : mundos) cuenta.merge(b.tag, 1, Integer::sum);
             final StringBuilder sb = new StringBuilder();
-            for(Orbita o : orbitas.values()){
-                int n = 0;
-                for(Mundo b : mundos) if(b.tag.equals(o.tag)) n++;
-                if(n == 0) continue;
+            for(Map.Entry<String, Integer> e : cuenta.entrySet()){
                 if(sb.length() > 0) sb.append("   ");
-                sb.append("[lightgray]").append(ApiPlaneta.nombre(o.tag)).append(" (").append(n).append(" mundos)[]");
+                sb.append("[lightgray]").append(ApiPlaneta.nombre(e.getKey())).append(" (").append(e.getValue())
+                    .append(e.getValue() == 1 ? " mundo)[]" : " mundos)[]");
             }
             return sb.toString();
         }
@@ -238,18 +253,11 @@ final class VistaPlanetas{
             return null;
         }
 
-        /** Radio de la órbita: el del juego si existe; si no, la estimación de D24. */
-        private static float radioDe(String tag){
-            final Planet p = Vars.content == null ? null : Vars.content.planet(tag);
-            if(p != null && p.orbitRadius > 0f) return p.orbitRadius;
-            final float estimado = ApiFisica.distanciaOrbitaEstimada(tag);
-            return estimado > 0f ? estimado : 20f;
-        }
-
         /** Escala base (sin zoom ni paneo): la órbita más grande cabe en la vista. */
         private float escalaBase(){
             float max = 1f;
             for(Orbita o : orbitas.values()) max = Math.max(max, o.radio);
+            for(Mundo b : mundos) if(b.orbita == null) max = Math.max(max, (float)Math.hypot(b.sistema.p0x, b.sistema.p0y));   // solitarios
             return Math.min(getWidth(), getHeight()) * 0.42f / max;
         }
 
@@ -261,17 +269,22 @@ final class VistaPlanetas{
             return b.tiempoMundo + Time.globalTime;
         }
 
-        /** Ángulo del mundo en la órbita simulada. */
+        /** Ángulo del mundo en la órbita simulada. Un solitario no orbita: su ángulo es el de su posición (solo sirve para el orden de dibujo en 3D). */
         private double anguloDe(Mundo b){
-            return ApiSistemas.anguloEn(b.cuerpo, tiempoVisual(b), orbitas.get(b.tag).periodo);
+            if(b.orbita == null) return Math.atan2(b.sistema.p0y, b.sistema.p0x);
+            return ApiSistemas.anguloEn(b.cuerpo, tiempoVisual(b), b.orbita.periodo);
         }
 
         /** Posición del mundo en coordenadas de contenido (sin zoom ni paneo). */
         private float[] contenido(Mundo b){
-            final Orbita o = orbitas.get(b.tag);
-            final float r = o.radio * escalaBase(), cx = getWidth() / 2f, cy = getHeight() / 2f;
+            final float cx = getWidth() / 2f, cy = getHeight() / 2f, esc = escalaBase(), inc = vista3d ? INCLINACION : 1f;
+            if(b.orbita == null){
+                final double[] pos = ApiSistemas.posicion(b.sistema, tiempoVisual(b));   // sin deriva (por defecto) es su posición fija
+                return new float[]{cx + (float)pos[0] * esc, cy + (float)pos[1] * esc * inc};
+            }
+            final float r = b.orbita.radio * esc;
             final double a = anguloDe(b);
-            return new float[]{cx + (float)Math.cos(a) * r, cy + (float)Math.sin(a) * r * (vista3d ? INCLINACION : 1f)};
+            return new float[]{cx + (float)Math.cos(a) * r, cy + (float)Math.sin(a) * r * inc};
         }
 
         /** Posición local (con zoom y paneo) del mundo. */
@@ -321,7 +334,7 @@ final class VistaPlanetas{
 
         @Override
         public void draw(){
-            if(orbitas.isEmpty()) return;
+            if(mundos.isEmpty()) return;
             final float cw = getWidth(), ch = getHeight();
             final float cx = this.x + nav.aPantallaX(cw / 2f), cy = this.y + nav.aPantallaY(ch / 2f);
             final float inc = vista3d ? INCLINACION : 1f;

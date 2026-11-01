@@ -404,6 +404,91 @@ public class MundoInfinitoMod extends Mod{
     }
 
     // ==================================================================
+    // Sistemas: cuerpo de cada mundo en su órbita (plan v8, P1)
+    // ==================================================================
+    /**
+     * Pega la lógica pura de {@link AsignacionSistemas} con el disco y con el mundo abierto. Un mundo nuevo recibe su cuerpo al crearse; un mundo
+     * antiguo sin cuerpo lo recibe al leerlo (menú de planetas o al continuarlo) y queda guardado. Un fallo aquí nunca impide crear ni abrir un mundo.
+     */
+    static final class Sistemas{
+        private Sistemas(){}
+
+        /** Radio de la órbita de un planeta base: el del juego si existe; si no, la estimación de D24; si no, 20. */
+        static double radioDe(String tag){
+            final Planet p = Vars.content == null ? null : Vars.content.planet(tag);
+            if(p != null && p.orbitRadius > 0f) return p.orbitRadius;
+            final float estimado = ApiFisica.distanciaOrbitaEstimada(tag);
+            return estimado > 0f ? estimado : 20.0;
+        }
+
+        /** Los mundos compatibles con planeta conocido, en la forma que usa la asignación. Devuelve también cada meta por id. */
+        private static java.util.ArrayList<AsignacionSistemas.Entrada> entradas(Seq<Meta> todos, java.util.HashMap<String, Meta> porId){
+            final java.util.ArrayList<AsignacionSistemas.Entrada> out = new java.util.ArrayList<>();
+            for(Meta m : todos){
+                if(!m.compatible()) continue;
+                final String tag = ApiPlaneta.planetaDeMundo(m);
+                if(tag == null) continue;
+                out.add(new AsignacionSistemas.Entrada(m.id, tag, m.semilla, m.creado, m.sistemas));
+                porId.put(m.id, m);
+            }
+            return out;
+        }
+
+        /** El mismo mundo abierto, si es el de ese id: su meta en memoria manda sobre la leída del disco. */
+        private static Meta abierto(String id){
+            if(Streamer.meta != null && Streamer.meta.id.equals(id)) return Streamer.meta;
+            if(Mundos.actual != null && Mundos.actual.id.equals(id)) return Mundos.actual;
+            return null;
+        }
+
+        /** Guarda el estado nuevo de un mundo, en la meta leída y en la del mundo abierto (si lo es), para que el siguiente guardado no lo pierda. */
+        private static void guardar(Meta leida, EstadoSistemas nuevo){
+            leida.sistemas = nuevo;
+            final Meta ab = abierto(leida.id);
+            if(ab != null) ab.sistemas = nuevo;
+            Almacen.guardarMeta(ab != null ? ab : leida);
+        }
+
+        /** Asigna cuerpo a todos los mundos que no lo tienen, en orden de creación, y guarda los cambiados. Idempotente. */
+        static void migrar(Seq<Meta> todos){
+            try{
+                final java.util.HashMap<String, Meta> porId = new java.util.HashMap<>();
+                final java.util.ArrayList<AsignacionSistemas.Entrada> es = entradas(todos, porId);
+                for(AsignacionSistemas.Entrada e : AsignacionSistemas.migrar(es, Sistemas::radioDe)){
+                    guardar(porId.get(e.idMundo), e.estado);
+                    Log.info("[MundoInfinito] Sistema asignado al mundo @ (@).", e.idMundo, e.planeta);
+                }
+            }catch(Throwable t){
+                Log.err("[MundoInfinito] No se pudo migrar el estado de sistemas; se sigue sin él.", t);
+            }
+        }
+
+        /** Un mundo recién creado (aún sin guardar): migra los demás primero (los antiguos conservan el orden de creación) y le da su cuerpo. */
+        static void asignarNuevo(Meta m){
+            try{
+                final Seq<Meta> todos = Almacen.listar();
+                migrar(todos);
+                final java.util.HashMap<String, Meta> porId = new java.util.HashMap<>();
+                final EstadoSistemas global = AsignacionSistemas.unir(entradas(todos, porId));
+                final String tag = ApiPlaneta.planetaDeMundo(m);
+                if(tag == null) return;
+                final EstadoSistemas e = AsignacionSistemas.asignar(global, m.id, tag, m.semilla, radioDe(tag), ApiFisica.DIAMETRO_PLANETA);
+                if(e != null) m.sistemas = e;
+            }catch(Throwable t){
+                Log.err("[MundoInfinito] No se pudo asignar el sistema del mundo nuevo; se crea sin él.", t);
+            }
+        }
+
+        /** Al continuar un mundo: lo migra si le falta el cuerpo y deja su meta con el estado ya asignado. */
+        static void asegurar(Meta m){
+            if(m.sistemas != null && AsignacionSistemas.cuerpoPropio(m.sistemas, m.id) != null) return;
+            final Seq<Meta> todos = Almacen.listar();
+            migrar(todos);
+            for(Meta x : todos) if(x.id.equals(m.id)){ m.sistemas = x.sistemas; return; }
+        }
+    }
+
+    // ==================================================================
     // Semillas: online (GitHub) con respaldo offline
     // ==================================================================
     static class Semillas{
@@ -2849,6 +2934,7 @@ public class MundoInfinitoMod extends Mod{
             m.calendario.fijarInicio(ApiInicioMundo.inicio(semilla));   // plan v8: hora aleatoria por semilla, API ready
             m.perfil.sellarGeneracion(semilla);    // resuelve las propuestas de los mods; los parámetros de generación quedan guardados con el mundo y ya no cambian
             m.creado = m.ultimo = System.currentTimeMillis();
+            Sistemas.asignarNuevo(m);              // plan v8, P1: su cuerpo en la órbita de su planeta, guardado desde el principio
             Almacen.guardarMeta(m);
             Regiones.iniciar(m);
             Orbita.reiniciar();          // mundo nuevo: sin drones en tránsito...
@@ -2859,6 +2945,7 @@ public class MundoInfinitoMod extends Mod{
         static void continuar(Meta m){
             if(!m.compatible()) return;
             if(!avisarModsDistintos(m)) return;
+            Sistemas.asegurar(m);                  // plan v8, P1: un mundo antiguo recibe su cuerpo (determinista) y queda guardado
             Fi f = Almacen.archivoEstado(m);
             Datos d = f.exists() ? Datos.leer(f) : null;
             Regiones.iniciar(m);

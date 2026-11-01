@@ -1,5 +1,7 @@
 package mundoinfinito;
 
+import arc.util.Log;
+import mindustry.gen.Icon;
 import arc.Core;
 import arc.func.Cons;
 import arc.graphics.Color;
@@ -55,17 +57,42 @@ final class ArbolUI{
 
     private ArbolUI(){}
 
-    /** Crea el botón de la partida. Llamar una vez al cargar el cliente (ClientLoadEvent). */
+    /** ¿Se ve el acceso al árbol? Solo en un mundo abierto con dimensiones y con el árbol activado (gamerule). */
+    private static boolean accesoVisible(){
+        return MundoInfinitoMod.Streamer.activo && Vars.state.isGame() && ApiArbol.activo()
+            && MundoInfinitoMod.Mundos.actual != null && MundoInfinitoMod.Mundos.actual.dimensional();
+    }
+
+    /**
+     * Crea el acceso al árbol. Llamar una vez al cargar el cliente (ClientLoadEvent). Plan v8, P4: el acceso es un icono dentro de la barra de
+     * iconos del juego (la tabla "mobile buttons" del HUD, junto a menú, esquemas, pausa y árbol/base de datos), no un botón flotante. Solo si esa
+     * barra no existe (por ejemplo en escritorio) se usa el botón flotante de antes, para que el árbol no quede inaccesible.
+     */
     static void crear(){
         if(creado || Vars.headless || Core.scene == null) return;
         creado = true;
+        if(insertarEnBarra()) return;
+        Log.warn("[MundoInfinito] No se encontró la barra de iconos del HUD; se usa el botón flotante del árbol tecnológico.");
         Core.scene.add(new Table(t -> {
             t.setFillParent(true);
             t.top().left();
-            t.visible(() -> MundoInfinitoMod.Streamer.activo && Vars.state.isGame() && ApiArbol.activo()
-                && MundoInfinitoMod.Mundos.actual != null && MundoInfinitoMod.Mundos.actual.dimensional());
+            t.visible(ArbolUI::accesoVisible);
             t.button("Árbol", Styles.cleart, () -> abrir(null)).padTop(92f).padLeft(8f).size(150f, 52f);
         }));
+    }
+
+    /** Añade el icono del árbol al final de la barra de iconos del HUD. false si la barra no existe. */
+    private static boolean insertarEnBarra(){
+        try{
+            if(Vars.ui == null || Vars.ui.hudGroup == null) return false;
+            final Element barra = Vars.ui.hudGroup.find("mobile buttons");
+            if(!(barra instanceof Table)) return false;
+            ((Table)barra).button(Icon.tree, Styles.clearNonei, () -> abrir(null)).visible(ArbolUI::accesoVisible);
+            return true;
+        }catch(Throwable t){
+            Log.err("[MundoInfinito] No se pudo añadir el icono del árbol a la barra del HUD.", t);
+            return false;
+        }
     }
 
     // ================================================================== diseño (mismo algoritmo que Mindustry)

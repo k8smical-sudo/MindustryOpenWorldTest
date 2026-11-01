@@ -6,7 +6,7 @@ import mindustry.content.TechTree;
 import mindustry.content.TechTree.TechNode;
 import mindustry.game.Rules;
 import mindustry.type.ItemStack;
-import mindustry.ctype.UnlockableContent;
+import mindustry.type.UnlockableContent;
 import mindustry.world.Block;
 
 import java.util.ArrayList;

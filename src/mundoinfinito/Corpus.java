@@ -1866,7 +1866,7 @@ public final class Corpus{
         // ---- superficie pública: solo lo previsto es público, y la API no filtra tipos internos
         final java.util.Set<String> previstas = new java.util.TreeSet<String>(Arrays.asList("AlmacenModulo", "ContextoColocacion", "ContextoFenomeno", "ContextoTerreno", "GameRule",
             "GeneradorEstructura", "GeneradorFenomeno", "GeneradorMundo", "GeneradorTerreno", "MundoInfinitoMod", "MundoRegistrado", "OpenWorldAPI", "PoliticaSueno", "SiloInterdimensional",
-            "Corpus", "ApiVersion", "ApiVisual", "ApiAjustes", "VisualCapa", "VisualCalidad", "VisualPrograma", "VisualEfectoInst", "ApiTiempo", "EventoTiempo", "ApiMundo", "ApiModpack", "ApiAzar", "ApiPlaneta", "ApiArbol"));
+            "Corpus", "ApiVersion", "ApiVisual", "ApiAjustes", "VisualCapa", "VisualCalidad", "VisualPrograma", "VisualEfectoInst", "ApiTiempo", "EventoTiempo", "ApiMundo", "ApiModpack", "ApiAzar", "ApiPlaneta", "ApiArbol", "ApiDesduplicacion"));
         final java.util.Set<String> publicas = new java.util.TreeSet<String>();
         final URL url = Corpus.class.getResource("Corpus.class");
         if(url == null || !"file".equals(url.getProtocol())){
@@ -1894,7 +1894,7 @@ public final class Corpus{
             fallos += chequear("superficie pública: solo son públicas las " + previstas.size() + " clases previstas (sobran " + sobran + ", faltan " + faltan + ", sin poder cargar " + noCargadas + ")", sobran.isEmpty() && faltan.isEmpty());
         }
         final List<String> filtran = new ArrayList<String>();
-        for(Class<?> api : new Class<?>[]{ApiVisual.class, ApiAjustes.class, ApiVersion.class, ApiTiempo.class, ApiMundo.class, ApiModpack.class, ApiAzar.class, ApiPlaneta.class, ApiArbol.class}){
+        for(Class<?> api : new Class<?>[]{ApiVisual.class, ApiAjustes.class, ApiVersion.class, ApiTiempo.class, ApiMundo.class, ApiModpack.class, ApiAzar.class, ApiPlaneta.class, ApiArbol.class, ApiDesduplicacion.class}){
             for(Method m : api.getDeclaredMethods()){
                 if(!Modifier.isPublic(m.getModifiers())) continue;
                 final List<Class<?>> tipos = new ArrayList<Class<?>>(Arrays.asList(m.getParameterTypes()));
@@ -2181,6 +2181,77 @@ public final class Corpus{
         return fallos;
     }
 
+    /** Desduplicación de cálculos (plan v2, M7). Cada contribuyente de prueba usa un id propio, porque la caché es de la sesión. */
+    static int comprobarDesduplicacion(){
+        int fallos = 0;
+        final int[] n = new int[1];
+        final Prov<Integer> siete = () -> { n[0]++; return 7; };
+        final Integer a = ApiDesduplicacion.calcular("prueba-dedup:uno", siete, 1L, 2L);
+        final Integer b = ApiDesduplicacion.calcular("prueba-dedup:uno", siete, 1L, 2L);
+        fallos += chequear("el mismo cálculo con las mismas entradas se ejecuta una vez y se reutiliza", n[0] == 1 && a == 7 && b == 7);
+
+        ApiDesduplicacion.calcular("prueba-dedup:uno", siete, 1L, 3L);
+        fallos += chequear("otras entradas son otro cálculo: se ejecuta aparte", n[0] == 2);
+
+        final boolean declarado = ApiDesduplicacion.noDesduplicar("prueba-dedup:dos");
+        final int antes = n[0];
+        ApiDesduplicacion.calcular("prueba-dedup:dos", siete, 5L);
+        ApiDesduplicacion.calcular("prueba-dedup:dos", siete, 5L);
+        fallos += chequear("un addon que declara no desduplicar ve cada cálculo ejecutarse, y el id inválido se rechaza",
+            declarado && n[0] - antes == 2 && !ApiDesduplicacion.noDesduplicar("sin-dos-puntos"));
+
+        final int[] intentos = new int[1];
+        final Prov<Integer> falla = () -> {
+            if(intentos[0]++ == 0) throw new IllegalStateException("fallo de prueba");
+            return 9;
+        };
+        boolean lanzo = false;
+        try{
+            ApiDesduplicacion.calcular("prueba-dedup:tres", falla, 1L);
+        }catch(RuntimeException e){
+            lanzo = true;
+        }
+        final Integer tras = ApiDesduplicacion.calcular("prueba-dedup:tres", falla, 1L);
+        fallos += chequear("un cálculo que falla no se guarda: la siguiente petición lo vuelve a calcular", lanzo && tras == 9 && intentos[0] == 2);
+
+        final java.util.concurrent.atomic.AtomicInteger veces = new java.util.concurrent.atomic.AtomicInteger();
+        final java.util.concurrent.atomic.AtomicInteger correctos = new java.util.concurrent.atomic.AtomicInteger();
+        final Prov<Integer> lento = () -> {
+            veces.incrementAndGet();
+            try{
+                Thread.sleep(80L);
+            }catch(InterruptedException e){
+                Thread.currentThread().interrupt();
+            }
+            return 4;
+        };
+        final List<Thread> hilos = new ArrayList<Thread>();
+        for(int i = 0; i < 6; i++){
+            final Thread t = new Thread(() -> {
+                if(Integer.valueOf(4).equals(ApiDesduplicacion.calcular("prueba-dedup:cuatro", lento, 9L))) correctos.incrementAndGet();
+            });
+            hilos.add(t);
+            t.start();
+        }
+        for(Thread t : hilos){
+            try{
+                t.join();
+            }catch(InterruptedException e){
+                Thread.currentThread().interrupt();
+            }
+        }
+        fallos += chequear("seis hilos piden el mismo cálculo a la vez: se ejecuta una vez y los seis reciben el resultado",
+            veces.get() == 1 && correctos.get() == 6);
+
+        for(int i = 0; i < Desduplicacion.MAX_ENTRADAS + 20; i++){
+            final int k = i;
+            ApiDesduplicacion.calcular("prueba-dedup:lleno", () -> k, (long)i);
+        }
+        fallos += chequear("la caché tiene un tope: no pasa de " + Desduplicacion.MAX_ENTRADAS + " resultados",
+            Desduplicacion.tamanio() <= Desduplicacion.MAX_ENTRADAS);
+        return fallos;
+    }
+
     static int comprobarPlanetas(){
         int fallos = 0;
         fallos += chequear("los valores por defecto de Serpulo son 23 min 38 s de día (85080 ticks) y 11 min de órbita (39600); Erekir, 5 min y 2,5 min (estimados)",
@@ -2220,6 +2291,7 @@ public final class Corpus{
         final List<int[]> es = entradas();
         int fallos = 0;
         fallos += comprobarPlanetas();
+        fallos += comprobarDesduplicacion();
 
         olvidarCaches();
         long t0 = System.nanoTime();

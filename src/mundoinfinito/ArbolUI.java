@@ -9,9 +9,11 @@ import arc.graphics.g2d.Lines;
 import arc.math.Mathf;
 import arc.scene.Element;
 import arc.scene.Group;
+import arc.input.KeyCode;
 import arc.scene.event.ClickListener;
+import arc.scene.event.ElementGestureListener;
+import arc.scene.event.InputListener;
 import arc.scene.event.InputEvent;
-import arc.scene.ui.ScrollPane;
 import arc.scene.ui.layout.Table;
 import mindustry.Vars;
 import mindustry.graphics.Pal;
@@ -33,6 +35,8 @@ import java.util.Map;
  *  - BOTÓN "Árbol" en la partida (arriba a la izquierda), con un mundo dimensional abierto y el árbol activo.
  *  - VISTA GRÁFICA del árbol de un planeta, con el mismo diseño que la investigación de Mindustry: un árbol por raíz, ramas repartidas a los dos
  *    lados, líneas en codo y nodos con su icono. Color del borde: verde = investigado, amarillo = disponible, rojo = bloqueado.
+ *  - ZOOM Y PANEO (plan v6, D14): rueda o pellizco para el zoom, arrastre para mover, botón Centrar. Igual que el árbol de investigación de
+ *    Mindustry. La matemática está en {@link NavegacionVista}, compartida con la vista 2D de planetas.
  *  - PANEL DE INFORMACIÓN al tocar un nodo: nombre, estado, coste, lo que falta en el núcleo y el botón de investigar. Un nodo que comparte sección
  *    con otros planetas lo indica.
  *  - Sin mundo abierto (desde el menú principal) el árbol se ve completo, pero no se puede investigar.
@@ -256,6 +260,85 @@ final class ArbolUI{
         }
     }
 
+    // ================================================================== gestos de vista (zoom y paneo)
+
+    /**
+     * Ventana con recorte y gestos: rueda y pellizco para el zoom, arrastre para mover, botón Centrar. El árbol es un hijo transformado: nodos y
+     * líneas se escalan como un todo. La matemática es {@link NavegacionVista}; aquí solo hay eventos de Arc.
+     */
+    static final class Lienzo extends Group{
+        static final float ESCALA_MIN = 0.25f, ESCALA_MAX = 1.5f, MARGEN = 40f;
+        final Vista vista;
+        final float cw, ch;
+        final NavegacionVista nav = new NavegacionVista(ESCALA_MIN, ESCALA_MAX);
+        private float zoomInicial = -1f;
+        private boolean encajado;
+
+        Lienzo(Vista vista, float cw, float ch){
+            this.vista = vista;
+            this.cw = cw;
+            this.ch = ch;
+            addChild(vista);
+            vista.setOrigin(0f, 0f);
+            vista.setTransform(true);
+
+            addListener(new InputListener(){
+                @Override
+                public boolean scrolled(InputEvent event, float x, float y, float amountX, float amountY){
+                    nav.zoomEn(x, y, nav.escala * (1f - amountY / 10f));
+                    aplicar();
+                    return true;
+                }
+            });
+
+            addCaptureListener(new ElementGestureListener(){
+                @Override
+                public void zoom(InputEvent event, float initialDistance, float distance){
+                    if(zoomInicial < 0f) zoomInicial = nav.escala;
+                    nav.zoomEn(getWidth() / 2f, getHeight() / 2f, zoomInicial * distance / initialDistance);
+                    aplicar();
+                }
+
+                @Override
+                public void touchUp(InputEvent event, float x, float y, int pointer, KeyCode button){
+                    zoomInicial = -1f;
+                }
+
+                @Override
+                public void pan(InputEvent event, float x, float y, float deltaX, float deltaY){
+                    nav.paneo(deltaX, deltaY);
+                    aplicar();
+                }
+            });
+        }
+
+        /** Vuelve a encajar el árbol en la ventana (sin pasar de escala 1) y lo centra. */
+        void centrar(){
+            if(getWidth() <= 0f || getHeight() <= 0f) return;
+            nav.encajar(getWidth(), getHeight(), cw, ch, MARGEN);
+            aplicar();
+        }
+
+        private void aplicar(){
+            if(getWidth() <= 0f || getHeight() <= 0f) return;
+            nav.ajustar(getWidth(), getHeight(), cw, ch, MARGEN);
+            vista.setScale(nav.escala);
+            vista.setPosition(nav.panX, nav.panY);
+        }
+
+        @Override
+        protected void drawChildren(){
+            if(!encajado && getWidth() > 0f && getHeight() > 0f){
+                encajado = true;
+                centrar();
+            }
+            if(clipBegin()){
+                super.drawChildren();
+                clipEnd();
+            }
+        }
+    }
+
     // ================================================================== diálogo
 
     /** Planeta que se muestra al abrir: el del mundo abierto, o el primero con árbol. Null si no hay ninguno. */
@@ -287,8 +370,9 @@ final class ArbolUI{
         final Table info = new Table();
         info.add("[lightgray]Toca un nodo para ver su coste y su estado.[]").left().row();
         final Vista vista = new Vista(nodos, tam[0], tam[1], n -> pintarInfo(info, d, n, planeta));
-        final ScrollPane pane = new ScrollPane(vista);
-        d.cont.add(pane).grow().minHeight(Core.graphics.getHeight() * 0.4f).row();
+        final Lienzo lienzo = new Lienzo(vista, tam[0], tam[1]);
+        d.cont.add(lienzo).grow().minHeight(Core.graphics.getHeight() * 0.4f).row();
+        selector.button("Centrar", Styles.cleart, lienzo::centrar).size(120f, 44f).pad(4f);
         d.cont.add(info).growX().padTop(6f).row();
         d.addCloseButton();
         d.show();

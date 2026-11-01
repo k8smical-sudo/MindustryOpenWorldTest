@@ -190,6 +190,7 @@ public final class ApiSistemas{
             estado.anadir(sistema);
         }
         sistema.anadirCuerpo(cuerpo);
+        notificarOrbita(tipoPlaneta, ocupados.length + 1, r, diametro);
         return new Resultado(true, Motivo.OK, "", sistema);
     }
 
@@ -262,6 +263,53 @@ public final class ApiSistemas{
 
     /** Solo para pruebas. */
     static void reiniciarDeriva(){ derivas.clear(); }
+
+    // ================================================================== consecuencias de órbita (API lista para addons; por defecto, ninguna)
+
+    /**
+     * Efecto de añadir un cuerpo a una órbita compartida: gravedad entre planetas, colisiones, destrucción, o lo que el addon defina.
+     * Se llama después de cada alta correcta, con el número de cuerpos que tiene la órbita ahora.
+     */
+    @FunctionalInterface
+    public interface ConsecuenciaOrbita{
+        void alAnadir(String orbita, int cuerpos, double radio, double diametro);
+    }
+
+    private static final class RegistroOrbita{
+        final String id;
+        final ConsecuenciaOrbita consecuencia;
+        boolean activa = true;
+
+        RegistroOrbita(String id, ConsecuenciaOrbita consecuencia){
+            this.id = id;
+            this.consecuencia = consecuencia;
+        }
+    }
+
+    private static final ArrayList<RegistroOrbita> consecuenciasOrbita = new ArrayList<RegistroOrbita>();
+
+    /** Registra una consecuencia de órbita. Devuelve false si el id es nulo, la consecuencia es nula o el id ya existe. */
+    public static boolean proponerConsecuenciaOrbita(String id, ConsecuenciaOrbita consecuencia){
+        if(id == null || consecuencia == null) return false;
+        for(RegistroOrbita r : consecuenciasOrbita) if(r.id.equals(id)) return false;
+        consecuenciasOrbita.add(new RegistroOrbita(id, consecuencia));
+        return true;
+    }
+
+    /** Solo para pruebas. */
+    static void reiniciarConsecuenciasOrbita(){ consecuenciasOrbita.clear(); }
+
+    private static void notificarOrbita(String orbita, int cuerpos, double radio, double diametro){
+        for(RegistroOrbita r : new ArrayList<RegistroOrbita>(consecuenciasOrbita)){
+            if(!r.activa) continue;
+            try{
+                r.consecuencia.alAnadir(orbita, cuerpos, radio, diametro);
+            }catch(RuntimeException e){
+                r.activa = false;
+                Log.err("[MundoInfinito] La consecuencia de órbita '@' falla y se desactiva: @", r.id, e.toString());
+            }
+        }
+    }
 
     // ================================================================== auxiliares
 

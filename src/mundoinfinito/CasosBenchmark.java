@@ -255,7 +255,7 @@ final class CasosBenchmark{
             ApiSistemas.crearSolitario(e, "v-b", "v-m2", "serpulo", 50, 0, 0, 0, 0, 2);
             final ApiViaje.Enlaces enlaces = new ApiViaje.Enlaces();
             if(!ApiViaje.establecer(e, enlaces, "v-e", "v-m1", "v-m2", ApiViaje.portal(1), 0, p -> 0.0).ok) return false;
-            return ApiViaje.viajar(e, enlaces, "v-m2", "v-m1", 0, p -> 0.0).ticks == 400L;
+            return ApiViaje.viajar(e, enlaces, "v-m2", "v-m1", 1, java.util.Map.of("copper", 50, "lead", 30), 0, p -> 0.0).ticks == 100L;
         }, "ApiViaje"));
     }
 

@@ -33,6 +33,7 @@ final class PruebasSistemas{
             pruebaRoundTrip();
             pruebaHexadecimal();
             pruebaPoliticaFallida();
+            pruebaConsecuenciaOrbita();
             ApiSistemas.reiniciarPoliticas();
             System.out.println(fallos == 0 ? "[Sist] OK: todas las pruebas pasan." : "[Sist] FALLO: " + fallos + " prueba(s) no pasan.");
             rc = fallos == 0 ? 0 : 1;
@@ -287,6 +288,17 @@ final class PruebasSistemas{
     }
 
     // ================================================================== F4: políticas que fallan
+
+    private static void pruebaConsecuenciaOrbita(){
+        ApiSistemas.reiniciarConsecuenciasOrbita();
+        final int[] vistos = {0};
+        ApiSistemas.proponerConsecuenciaOrbita("prueba-orbita", (orbita, cuerpos, radio, diametro) -> vistos[0] = cuerpos);
+        final EstadoSistemas e = new EstadoSistemas();
+        ApiSistemas.anadirMundoEnOrbita(e, "o1", "om1", "serpulo", 100, 10);
+        ApiSistemas.anadirMundoEnOrbita(e, "o2", "om2", "serpulo", 100, 10);
+        fallos += chequear("una consecuencia de órbita recibe el número de cuerpos tras cada alta", vistos[0] == 2);
+        ApiSistemas.reiniciarConsecuenciasOrbita();
+    }
 
     private static void pruebaPoliticaFallida(){
         ApiSistemas.reiniciarPoliticas();

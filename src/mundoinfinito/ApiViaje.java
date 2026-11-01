@@ -1,51 +1,86 @@
 package mundoinfinito;
 
+import arc.util.Log;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.function.ToDoubleFunction;
 
 /**
- * API DE VIAJES (plan v7, entrega B; D26). Portales por tiers que enlazan dos cuerpos y permiten viajar entre ellos, dentro de un sistema
- * o entre sistemas. Sin Arc: se prueba en CI sin el juego.
+ * API DE VIAJES (plan v8, entrega B; respuesta 3 de la sección 10). Portales por tiers que enlazan dos cuerpos, y viajes entre ellos
+ * dentro de un sistema o entre sistemas. Sin Arc salvo el log de avisos: se prueba en CI sin el juego.
  *
- * Flujo: un portal de tier T establece un enlace entre dos cuerpos si están dentro de su alcance. Un viaje usa un enlace existente y
- * cuesta {@code ticksBase + distancia · ticksPorUnidad} ticks. Las distancias se toman de la posición simulada de cada cuerpo (ApiRadar).
+ * COSTE Y TIEMPO (respuesta 3): el coste de un viaje es proporcional a su distancia y al tier de la unidad que viaja:
+ *     coste = distancia · tierUnidad · COSTE_POR_UNIDAD
+ * El teletransporte tarda proporcional a la distancia y al tier de la unidad, y se acelera con el tier del portal (igual que subir el tier
+ * de una fábrica):
+ *     ticks = distancia · TICKS_POR_UNIDAD · tierUnidad / tierPortal
  *
- * Defaults declarados (tiers 1 a 3): alcance 60, 300 y 1000 unidades; ticks base 300, 900 y 2400; 2, 1 y 0.5 ticks por unidad. Los
- * costes en materiales quedan para cuando se decida qué piden los portales (pregunta 3 del plan v7).
+ * REQUISITOS: cada tier de portal pide materiales ("item:cantidad"). Un viaje falla si el inventario no los cubre.
+ *
+ * CONSECUENCIAS: por defecto, ninguna. Un addon puede registrar consecuencias (interferencias, daños) con {@link #proponerConsecuencia}.
+ * Una consecuencia que falla se desactiva con aviso.
+ *
+ * Valores por defecto declarados (pendientes de calibrar en F17): alcance 60, 300 y 1000; ticks para establecer 300, 900 y 2400;
+ * materiales de los tiers 1 a 3 (ver {@link #portal}).
  */
 public final class ApiViaje{
     public static final int TIER_MINIMO = 1, TIER_MAXIMO = 3;
+    /** Ticks de teletransporte por unidad de distancia, con tier de unidad 1 y tier de portal 1. Default declarado. */
+    public static final double TICKS_POR_UNIDAD = 2.0;
+    /** Coste por unidad de distancia, con tier de unidad 1. Default declarado. */
+    public static final double COSTE_POR_UNIDAD = 1.0;
 
     private ApiViaje(){}
 
-    /** Un portal: tier, alcance máximo del enlace, coste base en ticks y coste por unidad de distancia. */
+    /** Un portal: tier, alcance del enlace, ticks para establecerlo y materiales que pide para funcionar ("item:cantidad"). */
     public static final class Portal{
         public final int tier;
         public final double alcance;
-        public final long ticksBase;
-        public final double ticksPorUnidad;
+        public final long ticksEstablecer;
+        private final String[] requisitos;
 
-        public Portal(int tier, double alcance, long ticksBase, double ticksPorUnidad){
+        public Portal(int tier, double alcance, long ticksEstablecer, String... requisitos){
             if(!(alcance > 0.0) || !Double.isFinite(alcance)) throw new IllegalArgumentException("alcance no válido: " + alcance);
-            if(ticksBase < 0L) throw new IllegalArgumentException("ticks base no válidos: " + ticksBase);
-            if(!(ticksPorUnidad >= 0.0) || !Double.isFinite(ticksPorUnidad)) throw new IllegalArgumentException("ticks por unidad no válidos");
+            if(ticksEstablecer < 0L) throw new IllegalArgumentException("ticks para establecer no válidos: " + ticksEstablecer);
             this.tier = tier;
             this.alcance = alcance;
-            this.ticksBase = ticksBase;
-            this.ticksPorUnidad = ticksPorUnidad;
+            this.ticksEstablecer = ticksEstablecer;
+            this.requisitos = requisitos == null ? new String[0] : requisitos.clone();
+        }
+
+        public String[] requisitos(){ return requisitos.clone(); }
+    }
+
+    /** Acota un tier al rango válido. */
+    static int acotarTier(int t){ return Math.max(TIER_MINIMO, Math.min(TIER_MAXIMO, t)); }
+
+    /**
+     * Portal por defecto de un tier. Materiales declarados (nombres internos de Mindustry): tier 1, cobre y plomo; tier 2, silicio, titanio
+     * y plomo; tier 3, aleación de sobrecarga, tejido de fase y silicio.
+     */
+    public static Portal portal(int tier){
+        switch(acotarTier(tier)){
+            case 1: return new Portal(1, 60.0, 300L, "copper:50", "lead:30");
+            case 2: return new Portal(2, 300.0, 900L, "silicon:40", "titanium:20", "lead:40");
+            default: return new Portal(3, 1000.0, 2400L, "surge-alloy:20", "phase-fabric:20", "silicon:60");
         }
     }
 
-    /** Portal por defecto de un tier. Un tier fuera de [1, 3] se acota. */
-    public static Portal portal(int tier){
-        final int t = Math.max(TIER_MINIMO, Math.min(TIER_MAXIMO, tier));
-        switch(t){
-            case 1: return new Portal(1, 60.0, 300L, 2.0);
-            case 2: return new Portal(2, 300.0, 900L, 1.0);
-            default: return new Portal(3, 1000.0, 2400L, 0.5);
+    /** Materiales que faltan para un portal de ese tier, con la cantidad que falta ("item cantidad"). Vacío si está completo. */
+    public static List<String> faltan(int tier, Map<String, Integer> inventario){
+        final List<String> out = new ArrayList<String>();
+        for(String req : portal(tier).requisitos()){
+            final int sep = req.lastIndexOf(':');
+            final String item = req.substring(0, sep);
+            final int cantidad = Integer.parseInt(req.substring(sep + 1));
+            final Integer tiene = inventario == null ? null : inventario.get(item);
+            final int disponible = tiene == null ? 0 : tiene;
+            if(disponible < cantidad) out.add(item + " " + (cantidad - disponible));
         }
+        return out;
     }
 
     /** Enlace entre dos cuerpos creado por un portal de un tier. */
@@ -66,16 +101,25 @@ public final class ApiViaje{
         public final boolean ok;
         public final String mensaje;
         public final long ticks;
+        public final double coste;
         public final double distancia;
         public final Enlace enlace;
+        /** Efectos de las consecuencias registradas (vacío por defecto). */
+        public final List<String> consecuencias;
 
-        Resultado(boolean ok, String mensaje, long ticks, double distancia, Enlace enlace){
+        Resultado(boolean ok, String mensaje, long ticks, double coste, double distancia, Enlace enlace, List<String> consecuencias){
             this.ok = ok;
             this.mensaje = mensaje;
             this.ticks = ticks;
+            this.coste = coste;
             this.distancia = distancia;
             this.enlace = enlace;
+            this.consecuencias = Collections.unmodifiableList(consecuencias);
         }
+    }
+
+    private static Resultado fallo(String mensaje){
+        return new Resultado(false, mensaje, 0L, 0.0, 0.0, null, new ArrayList<String>());
     }
 
     /** Enlaces existentes. Un enlace une dos cuerpos en cualquier sentido. */
@@ -127,38 +171,88 @@ public final class ApiViaje{
 
     /**
      * Establece un enlace entre dos cuerpos con un portal de un tier. Falla si los cuerpos no existen, son el mismo, ya están enlazados, o
-     * están fuera del alcance del portal. El resultado lleva el coste de establecerlo ({@code ticksBase}).
+     * están fuera del alcance del portal. Lleva el coste de establecerlo en ticks ({@code ticksEstablecer}).
      */
     public static Resultado establecer(EstadoSistemas est, Enlaces enlaces, String id, String a, String b, Portal portal, double t,
                                        ToDoubleFunction<String> periodo){
-        if(id == null || a == null || b == null || portal == null || enlaces == null) return new Resultado(false, "datos no válidos", 0L, 0.0, null);
-        if(a.equals(b)) return new Resultado(false, "un portal no puede enlazar un cuerpo consigo mismo", 0L, 0.0, null);
-        if(enlaces.buscar(id) != null) return new Resultado(false, "ya existe un enlace con el id " + id, 0L, 0.0, null);
-        if(enlaces.entre(a, b) != null) return new Resultado(false, "ya hay un enlace entre " + a + " y " + b, 0L, 0.0, null);
+        if(id == null || a == null || b == null || portal == null || enlaces == null) return fallo("datos no válidos");
+        if(a.equals(b)) return fallo("un portal no puede enlazar un cuerpo consigo mismo");
+        if(enlaces.buscar(id) != null) return fallo("ya existe un enlace con el id " + id);
+        if(enlaces.entre(a, b) != null) return fallo("ya hay un enlace entre " + a + " y " + b);
         final double d = distancia(est, a, b, t, periodo);
-        if(Double.isNaN(d)) return new Resultado(false, "cuerpo no encontrado", 0L, 0.0, null);
+        if(Double.isNaN(d)) return fallo("cuerpo no encontrado");
         if(d > portal.alcance){
-            return new Resultado(false, "fuera de alcance del portal tier " + portal.tier + ": distancia " + d + ", alcance " + portal.alcance,
-                0L, d, null);
+            return fallo("fuera de alcance del portal tier " + portal.tier + ": distancia " + d + ", alcance " + portal.alcance);
         }
         final Enlace e = new Enlace(id, a, b, portal.tier);
         enlaces.lista.add(e);
-        return new Resultado(true, "enlace establecido", portal.ticksBase, d, e);
+        return new Resultado(true, "enlace establecido", portal.ticksEstablecer, 0.0, d, e, new ArrayList<String>());
     }
 
     /**
-     * Viaje entre dos cuerpos enlazados. Falla si no hay un enlace entre ellos o si algún cuerpo no existe. El coste es
-     * {@code ticksBase + distancia · ticksPorUnidad} del tier del enlace, redondeado.
+     * Viaje entre dos cuerpos enlazados. Falla si no hay enlace, si falta algún cuerpo o material del portal, o si el tier de la unidad no
+     * es válido. Coste y ticks según la fórmula de la cabecera. Al completar el viaje se aplican las consecuencias registradas.
      */
-    public static Resultado viajar(EstadoSistemas est, Enlaces enlaces, String origen, String destino, double t,
-                                   ToDoubleFunction<String> periodo){
-        if(enlaces == null || origen == null || destino == null) return new Resultado(false, "datos no válidos", 0L, 0.0, null);
+    public static Resultado viajar(EstadoSistemas est, Enlaces enlaces, String origen, String destino, int tierUnidad,
+                                   Map<String, Integer> inventario, double t, ToDoubleFunction<String> periodo){
+        if(enlaces == null || origen == null || destino == null) return fallo("datos no válidos");
         final Enlace e = enlaces.entre(origen, destino);
-        if(e == null) return new Resultado(false, "no hay enlace entre " + origen + " y " + destino, 0L, 0.0, null);
+        if(e == null) return fallo("no hay enlace entre " + origen + " y " + destino);
         final double d = distancia(est, origen, destino, t, periodo);
-        if(Double.isNaN(d)) return new Resultado(false, "cuerpo no encontrado", 0L, 0.0, null);
-        final Portal p = portal(e.tier);
-        final long ticks = p.ticksBase + Math.round(d * p.ticksPorUnidad);
-        return new Resultado(true, "viaje listo", ticks, d, e);
+        if(Double.isNaN(d)) return fallo("cuerpo no encontrado");
+        final List<String> faltan = faltan(e.tier, inventario);
+        if(!faltan.isEmpty()) return fallo("faltan materiales para el portal tier " + e.tier + ": " + faltan);
+        final int u = acotarTier(tierUnidad);
+        final long ticks = Math.max(1L, (long)Math.ceil(d * TICKS_POR_UNIDAD * u / e.tier));
+        final double coste = d * u * COSTE_POR_UNIDAD;
+        final Resultado base = new Resultado(true, "viaje listo", ticks, coste, d, e, new ArrayList<String>());
+        return new Resultado(true, "viaje listo", ticks, coste, d, e, aplicarConsecuencias(base));
+    }
+
+    // ================================================================== consecuencias (API lista para addons; por defecto, ninguna)
+
+    /** Efecto de un viaje completado (interferencias, daños, etc.). Devuelve el texto del efecto, o null si no aplica. */
+    @FunctionalInterface
+    public interface Consecuencia{
+        String aplicar(Resultado viaje);
+    }
+
+    private static final class Registrada{
+        final String id;
+        final Consecuencia consecuencia;
+        boolean activa = true;
+
+        Registrada(String id, Consecuencia consecuencia){
+            this.id = id;
+            this.consecuencia = consecuencia;
+        }
+    }
+
+    private static final ArrayList<Registrada> consecuencias = new ArrayList<Registrada>();
+
+    /** Registra una consecuencia de viajes. Devuelve false si el id es nulo, la consecuencia es nula o el id ya existe. */
+    public static boolean proponerConsecuencia(String id, Consecuencia consecuencia){
+        if(id == null || consecuencia == null) return false;
+        for(Registrada r : consecuencias) if(r.id.equals(id)) return false;
+        consecuencias.add(new Registrada(id, consecuencia));
+        return true;
+    }
+
+    /** Solo para pruebas. */
+    static void reiniciarConsecuencias(){ consecuencias.clear(); }
+
+    private static List<String> aplicarConsecuencias(Resultado viaje){
+        final List<String> out = new ArrayList<String>();
+        for(Registrada r : new ArrayList<Registrada>(consecuencias)){
+            if(!r.activa) continue;
+            try{
+                final String efecto = r.consecuencia.aplicar(viaje);
+                if(efecto != null) out.add(efecto);
+            }catch(RuntimeException e){
+                r.activa = false;
+                Log.err("[MundoInfinito] La consecuencia de viaje '@' falla y se desactiva: @", r.id, e.toString());
+            }
+        }
+        return out;
     }
 }

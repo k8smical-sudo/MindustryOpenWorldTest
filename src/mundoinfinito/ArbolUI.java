@@ -241,7 +241,7 @@ final class ArbolUI{
         @Override
         public void draw(){
             final float parentAlpha = color.a;
-            final float w = getWidth(), h = getHeight(), x = getX(), y = getY();
+            final float w = getWidth(), h = getHeight(), x = this.x, y = this.y;
             Draw.color(0f, 0f, 0f, 0.75f * parentAlpha);
             Fill.rect(x + w / 2f, y + h / 2f, w, h);
             final Color borde = n.desbloqueado ? Pal.heal : n.disponible ? Pal.accent : Pal.remove;

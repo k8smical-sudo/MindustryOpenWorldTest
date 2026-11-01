@@ -117,7 +117,7 @@ final class VistaPlanetas{
         @Override
         public void draw(){
             if(orbitas.isEmpty()) return;
-            final float cx = getX() + getWidth() / 2f, cy = getY() + getHeight() / 2f, k = escala();
+            final float cx = this.x + getWidth() / 2f, cy = this.y + getHeight() / 2f, k = escala();
 
             Draw.color(Pal.gray);
             Lines.stroke(2f);

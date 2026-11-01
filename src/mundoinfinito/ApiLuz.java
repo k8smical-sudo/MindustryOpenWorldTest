@@ -14,7 +14,11 @@ public final class ApiLuz{
         double fase();
     }
 
-    /** Factor de luz de un planeta en este instante. 1 = sin cambio; menor = menos luz; mayor = más luz (limitado a 2). */
+    /**
+     * Factor de luz de un planeta en este instante. 1 = sin cambio; menor = menos luz; mayor = más luz (limitado a 2).
+     * Si el modificador lanza una excepción o devuelve un valor no finito, queda desactivado (con un aviso en el log) hasta quitarlo o reiniciar el juego;
+     * el resto de modificadores y el eclipse siguen funcionando.
+     */
     public interface Modificador{
         float factor(String planeta, double fase);
     }

@@ -21,6 +21,8 @@ final class LuzSolar{
         final String fuente, id;
         final int prioridad;
         final ApiLuz.Modificador fn;
+        /** Un modificador que falla se desactiva (plan v5, P3): no vuelve a llamarse hasta quitarlo o reiniciar el juego. */
+        boolean activo = true;
 
         Mod(String fuente, String id, int prioridad, ApiLuz.Modificador fn){
             this.fuente = fuente;
@@ -43,6 +45,7 @@ final class LuzSolar{
         }
     }
 
+    private static boolean avisoTope;
     private static final Map<String, Cuerpo> CUERPOS = new HashMap<String, Cuerpo>();
     private static final List<Mod> MODS = new ArrayList<Mod>();
     private static final Comparator<Mod> ORDEN = new Comparator<Mod>(){
@@ -139,16 +142,23 @@ final class LuzSolar{
         float f = eclipse(planeta);
         synchronized(LuzSolar.class){
             for(Mod m : MODS){
+                if(!m.activo) continue;
                 try{
                     final float v = m.fn.factor(planeta, fase);
-                    if(Float.isNaN(v) || Float.isInfinite(v)) continue;
+                    if(Float.isNaN(v) || Float.isInfinite(v)) throw new IllegalStateException("valor no finito: " + v);
                     f *= v;
                 }catch(Throwable t){
-                    Log.warn("[MundoInfinito] Luz: el modificador '@' lanzó una excepción (@); se ignora en este fotograma.", m.id, t.toString());
+                    // Un fallo desactiva el modificador y se avisa una sola vez; el resto de modificadores y el eclipse siguen.
+                    m.activo = false;
+                    Log.err("[MundoInfinito] Luz: el modificador '@' (fuente '@') falló (@) y queda desactivado hasta quitarlo o reiniciar el juego.", m.id, m.fuente, t.toString());
                 }
             }
         }
         if(f > FACTOR_MAX){
+            if(!avisoTope){
+                avisoTope = true;
+                Log.warn("[MundoInfinito] Luz: el factor de un planeta supera el tope (@) y se limita. Revisa los modificadores de luz.", FACTOR_MAX);
+            }
             f = FACTOR_MAX;
         }
         return f < 0f ? 0f : f;

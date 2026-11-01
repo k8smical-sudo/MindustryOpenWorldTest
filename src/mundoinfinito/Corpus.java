@@ -1864,9 +1864,10 @@ public final class Corpus{
                 && ApiAjustes.procedencia(0, 0) == null);
 
         // ---- superficie pública: solo lo previsto es público, y la API no filtra tipos internos
-        final java.util.Set<String> previstas = new java.util.TreeSet<String>(Arrays.asList("AlmacenModulo", "ContextoColocacion", "ContextoFenomeno", "ContextoTerreno", "GameRule",
-            "GeneradorEstructura", "GeneradorFenomeno", "GeneradorMundo", "GeneradorTerreno", "MundoInfinitoMod", "MundoRegistrado", "OpenWorldAPI", "PoliticaSueno", "SiloInterdimensional",
-            "Corpus", "ApiVersion", "ApiVisual", "ApiAjustes", "VisualCapa", "VisualCalidad", "VisualPrograma", "VisualEfectoInst", "ApiTiempo", "EventoTiempo", "ApiMundo", "ApiModpack", "ApiAzar", "ApiPlaneta", "ApiArbol", "ApiDesduplicacion"));
+        final String[] legado = {"OpenWorldAPI", "GameRule", "GeneradorTerreno", "GeneradorFenomeno", "GeneradorEstructura", "GeneradorMundo",
+            "ContextoTerreno", "ContextoFenomeno", "ContextoColocacion", "MundoRegistrado", "AlmacenModulo", "PoliticaSueno", "SiloInterdimensional",
+            "MundoInfinitoMod", "Corpus", "VisualCapa", "VisualCalidad", "VisualPrograma", "VisualEfectoInst", "EventoTiempo"};
+        final java.util.Set<String> legadoSet = new java.util.TreeSet<String>(Arrays.asList(legado));
         final java.util.Set<String> publicas = new java.util.TreeSet<String>();
         final URL url = Corpus.class.getResource("Corpus.class");
         if(url == null || !"file".equals(url.getProtocol())){
@@ -1887,11 +1888,12 @@ public final class Corpus{
                     }
                 }
             }
-            final java.util.Set<String> sobran = new java.util.TreeSet<String>(publicas);
-            sobran.removeAll(previstas);
-            final java.util.Set<String> faltan = new java.util.TreeSet<String>(previstas);
+            // Regla: toda clase pública es Api* (la API nueva se registra sola) o está en la lista de legado. Una clase pública nueva sin prefijo Api falla.
+            final java.util.Set<String> sobran = new java.util.TreeSet<String>();
+            for(String n : publicas) if(!n.startsWith("Api") && !legadoSet.contains(n)) sobran.add(n);
+            final java.util.Set<String> faltan = new java.util.TreeSet<String>(legadoSet);
             faltan.removeAll(publicas);
-            fallos += chequear("superficie pública: solo son públicas las " + previstas.size() + " clases previstas (sobran " + sobran + ", faltan " + faltan + ", sin poder cargar " + noCargadas + ")", sobran.isEmpty() && faltan.isEmpty());
+            fallos += chequear("superficie pública: " + publicas.size() + " clases públicas; toda clase pública es Api* o de legado (no cumplen: " + sobran + "; legado que falta: " + faltan + "; sin poder cargar " + noCargadas + ")", sobran.isEmpty() && faltan.isEmpty());
         }
         final List<String> filtran = new ArrayList<String>();
         for(Class<?> api : new Class<?>[]{ApiVisual.class, ApiAjustes.class, ApiVersion.class, ApiTiempo.class, ApiMundo.class, ApiModpack.class, ApiAzar.class, ApiPlaneta.class, ApiArbol.class, ApiDesduplicacion.class}){

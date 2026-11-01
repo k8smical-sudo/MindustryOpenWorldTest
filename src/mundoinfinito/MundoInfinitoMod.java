@@ -139,7 +139,9 @@ public class MundoInfinitoMod extends Mod{
             false, (reglas, valor, dim) -> { }));   // la prohibición real la aplica ArbolPlanetas.aplicarReglas al crear el mundo
         ArbolPlanetas.registrar();   // árbol tecnológico por planeta: ajuste del mundo (plan v2, D1)
         CicloDiaNoche.registrar();
-        Events.run(Trigger.update, CicloDiaNoche::tick);   // ciclo día/noche de Serpulo (ajuste del mundo)
+        EclipseLuz.registrar();
+        Events.run(Trigger.update, CicloDiaNoche::tick);
+        Events.run(Trigger.update, EclipseLuz::tick);   // ciclo día/noche de Serpulo (ajuste del mundo)
         Events.run(Trigger.update, CalendarioMundo::tick);   // tiempo del mundo y eventos programados (fase 11)
         Events.run(Trigger.update, PlanetasMundo::tick);     // fase orbital de los planetas (plan v2, M1)
 

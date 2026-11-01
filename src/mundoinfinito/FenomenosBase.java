@@ -35,11 +35,12 @@ final class FenomenosBase{
         return 0.30f + 0.25f * c.azar(1, 1, 0x7001);
     }
 
-    /** Grupo de bioma de un código de piso de Erekir: 0 riolita, 1 arkyic, 2 amarillo, 3 rojo. */
+    /** Grupo de bioma de un código de piso de Erekir: 0 riolita, 1 arkyic, 2 amarillo, 3 rojo, 4 carbono. */
     static int grupoBioma(int code){
         if(code == Muestreo.P_BERYL || code == Muestreo.P_ARKYIC) return 1;
         if(code == Muestreo.P_YELLOW || code == Muestreo.P_YPLATES || code == Muestreo.P_REGO) return 2;
         if(code == Muestreo.P_RED || code == Muestreo.P_DENSERED) return 3;
+        if(code == Muestreo.P_CARBON) return 4;
         return 0;
     }
 

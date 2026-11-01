@@ -2167,15 +2167,15 @@ public final class Corpus{
         int fallos = 0;
         fallos += chequear("los biomas agrupan los pisos de Erekir: arkyic 1, amarillo 2, rojo 3 y el resto 0",
             FenomenosBase.grupoBioma(MundoInfinitoMod.Muestreo.P_ARKYIC) == 1 && FenomenosBase.grupoBioma(MundoInfinitoMod.Muestreo.P_YELLOW) == 2
-                && FenomenosBase.grupoBioma(MundoInfinitoMod.Muestreo.P_RED) == 3 && FenomenosBase.grupoBioma(MundoInfinitoMod.Muestreo.P_ARKYIC + 1000) == 0);
+                && FenomenosBase.grupoBioma(MundoInfinitoMod.Muestreo.P_RED) == 3 && FenomenosBase.grupoBioma(MundoInfinitoMod.Muestreo.P_ARKYIC + 1000) == 0 && FenomenosBase.grupoBioma(MundoInfinitoMod.Muestreo.P_CARBON) == 4);
         final PerfilMundo viejo = new PerfilMundo();
         fallos += chequear("un mundo anterior conserva sus respiraderos: multiplicadores 1 y umbral 1",
             viejo.parametros().multBioma[0] == 1f && viejo.parametros().multBioma[3] == 1f && viejo.parametros().umbralRespiraderos == 1f);
         final PerfilMundo nuevo = new PerfilMundo();
         nuevo.sellarGeneracion(7);
         final ParametrosGeneracion pn = PerfilMundo.desde(archivoDe(nuevo)).parametros();
-        fallos += chequear("un mundo nuevo guarda multiplicadores 1,6 y umbral 0,85, y los conserva al guardar y leer",
-            pn.multBioma[2] == 1.6f && Math.abs(pn.umbralRespiraderos - 0.85f) < 1e-5f);
+        fallos += chequear("un mundo nuevo guarda los multiplicadores de campaña (riolita 1, resto 0,35) y umbral 1, y los conserva al guardar y leer",
+            pn.multBioma[0] == 1f && Math.abs(pn.multBioma[1] - 0.35f) < 1e-5f && pn.multBioma.length == 5 && Math.abs(pn.umbralRespiraderos - 1f) < 1e-5f);
         fallos += chequear("con multiplicadores iguales el máximo es esa cifra y el cociente de cada bioma vale 1",
             FenomenosBase.maxMult() >= 1f);
         return fallos;

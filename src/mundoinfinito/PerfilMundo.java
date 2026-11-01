@@ -119,7 +119,8 @@ final class PerfilMundo{
                 (float)valorLegado(ParametrosGeneracion.ID_RESP_BIOMA[0], 1d),
                 (float)valorLegado(ParametrosGeneracion.ID_RESP_BIOMA[1], 1d),
                 (float)valorLegado(ParametrosGeneracion.ID_RESP_BIOMA[2], 1d),
-                (float)valorLegado(ParametrosGeneracion.ID_RESP_BIOMA[3], 1d)},
+                (float)valorLegado(ParametrosGeneracion.ID_RESP_BIOMA[3], 1d),
+                (float)valorLegado(ParametrosGeneracion.ID_RESP_BIOMA[4], 1d)},
             (float)valorLegado(ParametrosGeneracion.ID_RESP_UMBRAL, 1d));
     }
 

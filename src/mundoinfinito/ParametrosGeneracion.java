@@ -18,9 +18,14 @@ final class ParametrosGeneracion{
     static final String ID_RESPIRADEROS_RADIO_MIN = "mundo-infinito:respiraderos-radio-min";
     static final String ID_RESPIRADEROS_RADIO_MAX = "mundo-infinito:respiraderos-radio-max";
     static final String ID_POZOS_SPAWN = "mundo-infinito:pozos-spawn";
-    /** Probabilidad de respiraderos por bioma (multiplicador de la densidad base): riolita, arkyic, amarillo, rojo. */
+    /**
+     * Probabilidad de respiraderos por bioma (multiplicador de la densidad base), en el orden: riolita, arkyic, amarillo, rojo, carbono.
+     * Calibrado con la campaña (ErekirPlanetGenerator): el respiradero principal solo sale sobre riolita; en el resto de biomas solo llega la
+     * garantía mínima de la campaña, de modo que su multiplicador es bajo. Cualquier addon puede proponer otro valor con estos ids.
+     */
     static final String[] ID_RESP_BIOMA = {"mundo-infinito:respiraderos-bioma-riolita", "mundo-infinito:respiraderos-bioma-arkyic",
-        "mundo-infinito:respiraderos-bioma-amarillo", "mundo-infinito:respiraderos-bioma-rojo"};
+        "mundo-infinito:respiraderos-bioma-amarillo", "mundo-infinito:respiraderos-bioma-rojo",
+        "mundo-infinito:respiraderos-bioma-carbono"};
     /** Multiplicador del umbral de terreno abierto (menor = más respiraderos). */
     static final String ID_RESP_UMBRAL = "mundo-infinito:respiraderos-umbral";
 
@@ -28,12 +33,12 @@ final class ParametrosGeneracion{
     static final float LEGADO_MEZCLA_RESPIRADEROS = 1f;
     static final int LEGADO_RADIO_MIN = 6, LEGADO_RADIO_MAX = 14;
     static final boolean LEGADO_POZOS_SPAWN = true;
-    static final float[] LEGADO_MULT_BIOMA = {1f, 1f, 1f, 1f};
+    static final float[] LEGADO_MULT_BIOMA = {1f, 1f, 1f, 1f, 1f};
     static final float LEGADO_UMBRAL_RESPIRADEROS = 1f;
 
     /** Valores de los mundos NUEVOS. */
-    static final float[] DEFECTO_MULT_BIOMA = {1.6f, 1.6f, 1.6f, 1.6f};
-    static final float DEFECTO_UMBRAL_RESPIRADEROS = 0.85f;
+    static final float[] DEFECTO_MULT_BIOMA = {1f, 0.35f, 0.35f, 0.35f, 0.35f};
+    static final float DEFECTO_UMBRAL_RESPIRADEROS = 1f;
 
     static final ParametrosGeneracion DEFECTO = new ParametrosGeneracion(Muestreo.K_ALTURA, Muestreo.K_TEMP_S, Muestreo.K_HUM_S, 0, 100, 120, 0.5f, 4, 12, LEGADO_POZOS_SPAWN,
         DEFECTO_MULT_BIOMA, DEFECTO_UMBRAL_RESPIRADEROS);
@@ -46,7 +51,7 @@ final class ParametrosGeneracion{
     final int radioMezclaMin, radioMezclaMax;
     final boolean pozosSpawn;
     /** Multiplicador de la probabilidad de respiradero por grupo de bioma (riolita, arkyic, amarillo, rojo). */
-    final float[] multBioma;
+    final float[] multBioma;   // 5 grupos: riolita, arkyic, amarillo, rojo, carbono
     /** Multiplicador del umbral de terreno abierto de un respiradero. */
     final float umbralRespiraderos;
 
@@ -91,8 +96,8 @@ final class ParametrosGeneracion{
         this.radioMezclaMin = radioMezclaMin;
         this.radioMezclaMax = radioMezclaMax;
         this.pozosSpawn = pozosSpawn;
-        this.multBioma = new float[4];
-        for(int i = 0; i < 4; i++) this.multBioma[i] = multBioma != null && i < multBioma.length && multBioma[i] >= 0f ? multBioma[i] : 1f;
+        this.multBioma = new float[5];
+        for(int i = 0; i < 5; i++) this.multBioma[i] = multBioma != null && i < multBioma.length && multBioma[i] >= 0f ? multBioma[i] : 1f;
         this.umbralRespiraderos = umbralRespiraderos > 0f ? umbralRespiraderos : 1f;
     }
 }

@@ -1866,7 +1866,7 @@ public final class Corpus{
         // ---- superficie pública: solo lo previsto es público, y la API no filtra tipos internos
         final java.util.Set<String> previstas = new java.util.TreeSet<String>(Arrays.asList("AlmacenModulo", "ContextoColocacion", "ContextoFenomeno", "ContextoTerreno", "GameRule",
             "GeneradorEstructura", "GeneradorFenomeno", "GeneradorMundo", "GeneradorTerreno", "MundoInfinitoMod", "MundoRegistrado", "OpenWorldAPI", "PoliticaSueno", "SiloInterdimensional",
-            "Corpus", "ApiVersion", "ApiVisual", "ApiAjustes", "VisualCapa", "VisualCalidad", "VisualPrograma", "VisualEfectoInst", "ApiTiempo", "EventoTiempo", "ApiMundo", "ApiModpack", "ApiAzar", "ApiPlaneta"));
+            "Corpus", "ApiVersion", "ApiVisual", "ApiAjustes", "VisualCapa", "VisualCalidad", "VisualPrograma", "VisualEfectoInst", "ApiTiempo", "EventoTiempo", "ApiMundo", "ApiModpack", "ApiAzar", "ApiPlaneta", "ApiArbol"));
         final java.util.Set<String> publicas = new java.util.TreeSet<String>();
         final URL url = Corpus.class.getResource("Corpus.class");
         if(url == null || !"file".equals(url.getProtocol())){
@@ -1894,7 +1894,7 @@ public final class Corpus{
             fallos += chequear("superficie pública: solo son públicas las " + previstas.size() + " clases previstas (sobran " + sobran + ", faltan " + faltan + ", sin poder cargar " + noCargadas + ")", sobran.isEmpty() && faltan.isEmpty());
         }
         final List<String> filtran = new ArrayList<String>();
-        for(Class<?> api : new Class<?>[]{ApiVisual.class, ApiAjustes.class, ApiVersion.class, ApiTiempo.class, ApiMundo.class, ApiModpack.class, ApiAzar.class, ApiPlaneta.class}){
+        for(Class<?> api : new Class<?>[]{ApiVisual.class, ApiAjustes.class, ApiVersion.class, ApiTiempo.class, ApiMundo.class, ApiModpack.class, ApiAzar.class, ApiPlaneta.class, ApiArbol.class}){
             for(Method m : api.getDeclaredMethods()){
                 if(!Modifier.isPublic(m.getModifiers())) continue;
                 final List<Class<?>> tipos = new ArrayList<Class<?>>(Arrays.asList(m.getParameterTypes()));

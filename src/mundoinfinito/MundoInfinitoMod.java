@@ -134,6 +134,7 @@ public class MundoInfinitoMod extends Mod{
         // Drones de carga orbital: puro dato, avanza aunque el jugador esté en la otra dimensión.
         Events.run(Trigger.update, Orbita::tick);
         ApiPlaneta.iniciar();
+        ArbolPlanetas.registrar();   // árbol tecnológico por planeta: ajuste del mundo (plan v2, D1)
         CicloDiaNoche.registrar();
         Events.run(Trigger.update, CicloDiaNoche::tick);   // ciclo día/noche de Serpulo (ajuste del mundo)
         Events.run(Trigger.update, CalendarioMundo::tick);   // tiempo del mundo y eventos programados (fase 11)
@@ -2833,6 +2834,7 @@ public class MundoInfinitoMod extends Mod{
             m.api = ApiVersion.texto();
             m.modpack = ConfiguracionModpack.firma();
             if(gamerules != null) for(java.util.Map.Entry<String, Boolean> e : gamerules.entrySet()) m.perfil.fijar(e.getKey(), Boolean.TRUE.equals(e.getValue()) ? 1.0 : 0.0);
+            m.perfil.fijar(ArbolPlanetas.K_ACTIVO, ArbolPlanetas.activoPorDefecto() ? 1.0 : 0.0);   // D1: el árbol se fija al crear el mundo
             m.perfil.sellarGeneracion(semilla);    // resuelve las propuestas de los mods; los parámetros de generación quedan guardados con el mundo y ya no cambian
             m.creado = m.ultimo = System.currentTimeMillis();
             Almacen.guardarMeta(m);
@@ -3185,6 +3187,7 @@ public class MundoInfinitoMod extends Mod{
                 r.env = ENTORNO_COMBINADO;
                 r.loadout = ItemStack.list(Items.copper, 400, Items.lead, 250, Items.sand, 100, Items.beryllium, 200, Items.graphite, 150);
             }
+            ArbolPlanetas.aplicarReglas(actual, r, r.planet == null ? null : r.planet.name);   // árbol del planeta: bloques sin investigar prohibidos
             Extensiones.aplicarGameRules(actual, r);   // gamerules elegidas al crear el mundo (las del base y las de otros mods)
             OpenWorldAPI.aplicarReglas(r);   // los mods que dependen de este ajustan las reglas aquí (enemigos, oleadas, equipos...)
             Log.info("[MundoInfinito] Reglas del mundo: planeta=@, env=@ (calor abrasador: @)", r.planet == null ? "?" : r.planet.name, r.env, (r.env & Env.scorching) != 0 ? "sí" : "no");

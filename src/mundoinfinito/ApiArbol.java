@@ -11,8 +11,8 @@ import java.util.List;
  * Cada planeta tiene su árbol: el de Mindustry por defecto (Serpulo y Erekir). Un nodo se identifica por su CLAVE "planeta/nombre": Serpulo y
  * Erekir usan el nombre de contenido de Mindustry (p. ej. "serpulo/conveyor"); un nodo de un addon usa su id "fuente:nombre".
  *
- * Los cambios de los addons (añadir, quitar, mover, coste) son de SESIÓN: cada mod los vuelve a aplicar al cargarse. Los desbloqueos sí se
- * guardan, en el dispositivo. Con el árbol desactivado (ajuste "ow-arbol", por defecto apagado) no hay bloqueos ni costes.
+ * El interruptor y los desbloqueos son del MUNDO (se guardan con él). Los cambios de los addons (añadir, quitar, mover, coste) son de SESIÓN:
+ * cada mod los vuelve a aplicar al cargarse. Con el árbol desactivado en el mundo no hay bloqueos ni costes.
  */
 public final class ApiArbol{
     private ApiArbol(){}
@@ -41,9 +41,17 @@ public final class ApiArbol{
         }
     }
 
-    /** ¿Está activado el árbol por planeta? Lo elige el jugador en Ajustes; sin él no hay bloqueos ni costes. */
+    /** ¿Tiene el mundo abierto el árbol por planeta activo? Si no, no hay bloqueos ni costes. Sin mundo abierto: el valor por defecto. */
     public static boolean activo(){
         return ArbolPlanetas.activo();
+    }
+
+    /**
+     * Activa o desactiva el árbol del mundo abierto. Al activarlo se prohíben los bloques sin desbloquear del planeta; al desactivarlo se quitan.
+     * Sin mundo abierto devuelve false.
+     */
+    public static boolean fijarActivo(boolean valor){
+        return ArbolPlanetas.fijarActivo(valor);
     }
 
     /** Nodos visibles de un planeta, en orden. Un planeta sin árbol devuelve lista vacía. */

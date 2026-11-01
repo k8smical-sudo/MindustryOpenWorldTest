@@ -127,7 +127,7 @@ public class MundoInfinitoMod extends Mod{
         });
 
         // Botón en el menú principal cuando el cliente terminó de cargar.
-        Events.on(ClientLoadEvent.class, e -> Time.runTask(10f, () -> { MenuUI.inyectarBoton(); Hud.crear(); MapaVista.crear(); Ajustes.registrar(); }));
+        Events.on(ClientLoadEvent.class, e -> Time.runTask(10f, () -> { MenuUI.inyectarBoton(); Hud.crear(); MapaVista.crear(); ArbolUI.crear(); Ajustes.registrar(); }));
 
         // Bucle de streaming: se ejecuta cada frame (presupuesto de tiempo propio).
         Events.run(Trigger.update, Streamer::tick);

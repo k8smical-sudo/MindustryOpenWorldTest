@@ -52,6 +52,13 @@ final class ArbolPlanetas{
         String padre;
         ItemStack[] coste;
         boolean quitado;
+        /**
+         * Grupo de SECCIÓN: nodos de distintos planetas con el mismo grupo comparten desbloqueo. Sale del id, los costes y el grupo del padre; así
+         * dos nodos solo comparten sección si tienen los mismos requisitos desde la raíz. Lo calcula el código al crear el nodo.
+         */
+        String grupo;
+        /** Grupo fijado por un addon (ApiArbol.fijarGrupo). Null o vacío = el grupo de sección. */
+        String grupoPropio;
 
         Nodo(String clave, String planeta, String id, UnlockableContent contenido, String padre, ItemStack[] coste, boolean propio){
             this.clave = clave;
@@ -66,7 +73,8 @@ final class ArbolPlanetas{
 
     /** Todos los nodos de todos los planetas, en orden de recorrido (incluidos los quitados, para conservar sus desbloqueos). */
     private static final LinkedHashMap<String, Nodo> NODOS = new LinkedHashMap<String, Nodo>();
-    private static boolean construido;
+    /** Raíces ya leídas (por identidad). Un planeta que aparece después se lee en la siguiente llamada. */
+    private static final java.util.Set<TechNode> RAICES_LEIDAS = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<TechNode, Boolean>());
 
     private ArbolPlanetas(){}
 
@@ -85,21 +93,82 @@ final class ArbolPlanetas{
 
     /** Lee los árboles de Mindustry la primera vez que hacen falta. Si el contenido aún no está cargado, no hace nada y se reintenta. */
     static synchronized void construir(){
-        if(construido || TechTree.roots == null || TechTree.roots.isEmpty()) return;
-        construido = true;
+        if(TechTree.roots == null) return;
+        // Detección automática: cada raíz de TechTree es un planeta con árbol (lo registre el juego o un addon).
         for(TechNode raiz : TechTree.roots){
-            if(raiz.name == null) continue;
-            recorrer(raiz, raiz.name, null);
+            if(raiz.name == null || !RAICES_LEIDAS.add(raiz)) continue;
+            recorrer(raiz, raiz.name, null, null);
         }
     }
 
-    private static void recorrer(TechNode n, String planeta, String padreClave){
+    private static void recorrer(TechNode n, String planeta, String padreClave, String grupoPadre){
         final String id = n.content == null ? "?" : n.content.name;
         String clave = planeta + "/" + id;
         for(int k = 2; NODOS.containsKey(clave); k++) clave = planeta + "/" + id + "#" + k;
         final ItemStack[] coste = n.requirements == null ? new ItemStack[0] : ItemStack.copy(n.requirements);
-        NODOS.put(clave, new Nodo(clave, planeta, id, n.content, padreClave, coste, false));
-        for(TechNode h : n.children) recorrer(h, planeta, clave);
+        final Nodo nodo = new Nodo(clave, planeta, id, n.content, padreClave, coste, false);
+        nodo.grupo = grupoPara(id, coste, grupoPadre);
+        NODOS.put(clave, nodo);
+        for(TechNode h : n.children) recorrer(h, planeta, clave, nodo.grupo);
+    }
+
+    /**
+     * Grupo de sección: md5 de (id, costes ordenados, grupo del padre). Dos nodos con la misma cadena de requisitos desde la raíz producen el mismo
+     * grupo, aunque sean de planetas distintos. El mismo id con otros requisitos da otro grupo.
+     */
+    static String grupoPara(String id, ItemStack[] coste, String grupoPadre){
+        final String[] partes = new String[coste == null ? 0 : coste.length];
+        for(int i = 0; i < partes.length; i++) partes[i] = coste[i].item.name + "x" + coste[i].amount;
+        java.util.Arrays.sort(partes);
+        return md5(id + "|" + java.util.Arrays.toString(partes) + "|" + (grupoPadre == null ? "raiz" : grupoPadre));
+    }
+
+    private static String md5(String texto){
+        try{
+            final byte[] d = java.security.MessageDigest.getInstance("MD5").digest(texto.getBytes("UTF-8"));
+            final StringBuilder sb = new StringBuilder(d.length * 2);
+            for(byte b : d) sb.append(String.format(java.util.Locale.ROOT, "%02x", b & 0xff));
+            return sb.toString();
+        }catch(Exception e){
+            return Integer.toHexString(texto.hashCode());
+        }
+    }
+
+    /** Grupo efectivo de un nodo: el fijado por un addon, o el de sección. */
+    static String grupoDe(Nodo n){
+        return n.grupoPropio != null && !n.grupoPropio.isEmpty() ? n.grupoPropio : n.grupo;
+    }
+
+    /** Grupo efectivo de un nodo por clave, o null si no existe. */
+    static String grupoDe(String clave){
+        final Nodo n = nodo(clave);
+        return n == null ? null : grupoDe(n);
+    }
+
+    /** Cuántos nodos visibles (de cualquier planeta) comparten sección con este: 1 = ninguno más. */
+    static int copias(String clave){
+        final Nodo base = nodo(clave);
+        if(base == null) return 0;
+        final String g = grupoDe(base);
+        int n = 0;
+        for(Nodo x : NODOS.values()) if(!x.quitado && g.equals(grupoDe(x))) n++;
+        return n;
+    }
+
+    /** Fija el grupo de un nodo (un addon decide qué comparte con qué). Null o vacío vuelve al grupo de sección. Solo de sesión. */
+    static boolean fijarGrupo(String clave, String grupo){
+        final Nodo n = nodo(clave);
+        if(n == null || n.quitado) return false;
+        n.grupoPropio = grupo == null || grupo.isEmpty() ? null : grupo;
+        return true;
+    }
+
+    /** Planetas que tienen árbol, detectados (en orden de aparición). */
+    static List<String> planetas(){
+        construir();
+        final java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<String>();
+        for(Nodo n : NODOS.values()) if(!n.quitado) out.add(n.planeta);
+        return new ArrayList<String>(out);
     }
 
     /** Nodo por clave, o null. Incluye los quitados (usar {@link #visible} para lo que ve el jugador). */
@@ -190,7 +259,8 @@ final class ArbolPlanetas{
         if(!activo()) return true;
         final MundoInfinitoMod.Meta m = meta();
         if(esInicial(clave)) return true;
-        return m != null && clave != null && m.perfil.bool(PREF_DESBLOQUEO + clave, false);
+        final Nodo n = nodo(clave);
+        return m != null && n != null && m.perfil.bool(PREF_DESBLOQUEO + grupoDe(n), false);
     }
 
     /**
@@ -203,7 +273,7 @@ final class ArbolPlanetas{
         final MundoInfinitoMod.Meta m = meta();
         if(m == null || !disponible(clave)) return false;
         if(!pagar(nodo(clave).coste)) return false;   // sin los materiales, no hay investigación (como en campaña)
-        m.perfil.fijar(PREF_DESBLOQUEO + clave, 1.0);
+        m.perfil.fijar(PREF_DESBLOQUEO + grupoDe(nodo(clave)), 1.0);   // desbloquea a todos los nodos de su sección, en cualquier planeta
         liberarBloque(clave);
         return true;
     }
@@ -267,7 +337,7 @@ final class ArbolPlanetas{
     /** ¿Algún nodo visible de este contenido en el planeta está desbloqueado en ese mundo? */
     private static boolean contenidoDesbloqueado(MundoInfinitoMod.Meta m, String planeta, String id){
         for(Nodo n : NODOS.values()){
-            if(!n.quitado && n.planeta.equals(planeta) && n.id.equals(id) && (esInicial(n.clave) || m.perfil.bool(PREF_DESBLOQUEO + n.clave, false))) return true;
+            if(!n.quitado && n.planeta.equals(planeta) && n.id.equals(id) && (esInicial(n.clave) || m.perfil.bool(PREF_DESBLOQUEO + grupoDe(n), false))) return true;
         }
         return false;
     }
@@ -333,13 +403,18 @@ final class ArbolPlanetas{
         construir();
         if(fuente == null || id == null || !id.startsWith(fuente + ":") || id.length() == fuente.length() + 1) return false;
         if(!ApiPlaneta.existe(planeta)) return false;
+        String grupoPadre = null;
         if(padre != null){
             final Nodo p = nodo(padre);
             if(p == null || p.quitado || !p.planeta.equals(planeta)) return false;
+            grupoPadre = p.grupo;
         }
         final String clave = planeta + "/" + id;
         if(NODOS.containsKey(clave)) return false;
-        NODOS.put(clave, new Nodo(clave, planeta, id, null, padre, coste == null ? new ItemStack[0] : ItemStack.copy(coste), true));
+        final ItemStack[] c = coste == null ? new ItemStack[0] : ItemStack.copy(coste);
+        final Nodo nuevo = new Nodo(clave, planeta, id, null, padre, c, true);
+        nuevo.grupo = grupoPara(id, c, grupoPadre);
+        NODOS.put(clave, nuevo);
         return true;
     }
 }

@@ -28,6 +28,12 @@ public final class ApiArbol{
         public final boolean propio;
         public final boolean desbloqueado;
         public final boolean disponible;
+        /** Nombre visible del contenido (el de Mindustry, o el id si es de un addon). */
+        public final String nombre;
+        /** Grupo de sección: los nodos con el mismo grupo se desbloquean a la vez, estén en el planeta que estén. */
+        public final String grupo;
+        /** Cuántos nodos visibles (de cualquier planeta) comparten esta sección, incluido este. */
+        public final int copias;
 
         NodoInfo(ArbolPlanetas.Nodo n){
             this.clave = n.clave;
@@ -38,6 +44,9 @@ public final class ApiArbol{
             this.propio = n.propio;
             this.desbloqueado = ArbolPlanetas.desbloqueado(n.clave);
             this.disponible = ArbolPlanetas.disponible(n.clave);
+            this.nombre = n.contenido != null && n.contenido.localizedName != null ? n.contenido.localizedName : n.id;
+            this.grupo = ArbolPlanetas.grupoDe(n);
+            this.copias = ArbolPlanetas.copias(n.clave);
         }
     }
 
@@ -52,6 +61,28 @@ public final class ApiArbol{
      */
     public static boolean fijarActivo(boolean valor){
         return ArbolPlanetas.fijarActivo(valor);
+    }
+
+    /**
+     * Planetas que tienen árbol, detectados automáticamente (cada raíz del árbol de Mindustry o de un addon). Un planeta nuevo aparece aquí en cuanto
+     * su árbol existe.
+     */
+    public static List<String> planetas(){
+        return ArbolPlanetas.planetas();
+    }
+
+    /** Materiales que faltan en el núcleo para investigar un nodo. Vacío si ya se pueden pagar. */
+    public static ItemStack[] faltante(String clave){
+        final ArbolPlanetas.Nodo n = ArbolPlanetas.nodo(clave);
+        return n == null ? new ItemStack[0] : ArbolPlanetas.faltante(n.coste);
+    }
+
+    /**
+     * Fija el grupo de sección de un nodo. Dos nodos con el mismo grupo se desbloquean juntos, aunque sean de planetas distintos. Null o vacío
+     * vuelve al grupo que calcula el código. Solo de sesión: el addon lo vuelve a fijar al cargarse.
+     */
+    public static boolean fijarGrupo(String clave, String grupo){
+        return ArbolPlanetas.fijarGrupo(clave, grupo);
     }
 
     /** Nodos visibles de un planeta, en orden. Un planeta sin árbol devuelve lista vacía. */

@@ -45,6 +45,8 @@ final class CicloDiaNoche{
             return;
         }
         final float alpha = alfa(luz((float)Vars.state.tick, ApiPlaneta.rotacionMundo()));
-        VisualAmbiente.global().fijarOscuridad(ID, 1f - alpha);
+        final String planeta = ApiPlaneta.planetaDeMundo(m);
+        final float luzEf = Mathf.clamp(alpha * ApiLuz.factorPlaneta(planeta));   // eclipse por defecto y modificadores (plan v4, D11)
+        VisualAmbiente.global().fijarOscuridad(ID, 1f - luzEf);
     }
 }

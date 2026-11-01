@@ -4,7 +4,7 @@ package mundoinfinito;
  * FICHA FÍSICA DE UN CUERPO (plan v6, D24). Medidas en unidades del sistema solar. Son estimaciones salvo que el origen sea
  * {@link #ORIGEN_DECLARADA}. Inmutable. Las fichas inválidas se sustituyen con {@link ApiFisica#validar} (F3).
  */
-public final class FichaFisica{
+final class FichaFisica{
     public static final String ORIGEN_ESTIMADA = "estimada", ORIGEN_DECLARADA = "declarada";
     /** Índices de las distancias: a la estrella, entre cuerpos de la misma órbita y entre sistemas. */
     public static final int DIST_ESTRELLA = 0, DIST_CUERPOS = 1, DIST_SISTEMAS = 2, NUM_DISTANCIAS = 3;

@@ -17,7 +17,7 @@ import java.util.List;
  * antiguos) se lee como estado vacío: el terreno no depende de este dato. Una versión mayor desconocida se rechaza en
  * {@link #leerEstricto}; {@link #leer} la trata como estado vacío.
  */
-public final class EstadoSistemas{
+final class EstadoSistemas{
     static final int MAGICO = 0x45535331;   // "ESS1"
     private static final int MAX_SISTEMAS = 1000000, MAX_CUERPOS = 1000000, MAX_DISTANCIAS = 64;
 

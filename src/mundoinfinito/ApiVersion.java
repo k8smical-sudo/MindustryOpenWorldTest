@@ -9,7 +9,7 @@ import arc.util.Log;
  */
 public final class ApiVersion{
     /** Conjunto de la API pública (sube cuando cambia cualquiera de las partes). */
-    public static final int PUBLICA_MAYOR = 1, PUBLICA_MENOR = 4;   // 1.4: SISTEMAS 1.0, FISICA 1.0, RADAR 1.0 y VIAJE 1.0 (plan v7, entregas A2 y B1)
+    public static final int PUBLICA_MAYOR = 1, PUBLICA_MENOR = 5;   // 1.5: SISTEMAS, FISICA, RADAR, VIAJE 1.0 e INICIO 1.0 (plan v8)
     /** La parte visual: {@code ApiVisual}. */
     public static final int VISUAL_MAYOR = 1, VISUAL_MENOR = 1;
     /** La parte de ajustes y propuestas de valor: {@code ApiAjustes}. */
@@ -40,6 +40,8 @@ public final class ApiVersion{
     public static final int RADAR_MAYOR = 1, RADAR_MENOR = 0;
     /** La parte de viajes (portales por tiers, enlaces, coste de viaje): {@code ApiViaje}. Plan v7, B1. */
     public static final int VIAJE_MAYOR = 1, VIAJE_MENOR = 0;
+    /** La parte de hora inicial de un mundo nuevo: {@code ApiInicioMundo}. Plan v8. */
+    public static final int INICIO_MAYOR = 1, INICIO_MENOR = 0;
     /** Formato del estado de sistemas guardado con el mundo: {@code EstadoSistemas}. Plan v6, F2. No es una API de mods. */
     public static final int ESTADO_MAYOR = 1, ESTADO_MENOR = 0;
 

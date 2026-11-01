@@ -12,6 +12,7 @@ import arc.scene.event.InputEvent;
 import arc.scene.event.InputListener;
 import arc.scene.ui.Label;
 import arc.scene.ui.layout.Table;
+import arc.util.Time;
 import mindustry.Vars;
 import mindustry.graphics.Pal;
 import mindustry.type.Planet;
@@ -105,13 +106,18 @@ final class VistaPlanetas{
         final String id, nombre, tag;
         final EstadoSistemas.Cuerpo cuerpo;
         final boolean actual;
+        /** Tiempo del mundo al leerlo (ticks), y periodo de giro del planeta base (ticks). */
+        final float tiempoMundo;
+        final double periodoGiro;
 
-        Mundo(String id, String nombre, String tag, EstadoSistemas.Cuerpo cuerpo, boolean actual){
+        Mundo(String id, String nombre, String tag, EstadoSistemas.Cuerpo cuerpo, boolean actual, float tiempoMundo, double periodoGiro){
             this.id = id;
             this.nombre = nombre;
             this.tag = tag;
             this.cuerpo = cuerpo;
             this.actual = actual;
+            this.tiempoMundo = tiempoMundo;
+            this.periodoGiro = periodoGiro;
         }
     }
 
@@ -134,7 +140,6 @@ final class VistaPlanetas{
         private final Map<String, Orbita> orbitas = new LinkedHashMap<String, Orbita>();
         private final List<Mundo> mundos = new ArrayList<Mundo>();
         private EstadoSistemas est = new EstadoSistemas();
-        private double tiempo;
         private boolean vista3d;
         private String seleccionado;
         private float zoomInicial = -1f;
@@ -186,7 +191,6 @@ final class VistaPlanetas{
             orbitas.clear();
             mundos.clear();
             est = new EstadoSistemas();
-            tiempo = 0.0;
             final MundoInfinitoMod.Meta actual = MundoInfinitoMod.Streamer.meta;
             for(MundoInfinitoMod.Meta m : MundoInfinitoMod.Almacen.listar()){
                 if(!m.compatible()) continue;
@@ -199,8 +203,8 @@ final class VistaPlanetas{
                 final ApiSistemas.Resultado r = ApiSistemas.anadirMundoEnOrbita(est, "sistema-" + tag, m.id, tag, o.radio,
                     ApiFisica.DIAMETRO_PLANETA);
                 if(!r.ok) continue;   // no cabe en esta órbita: hace falta otro sistema solar
-                mundos.add(new Mundo(m.id, m.nombre, tag, est.buscarCuerpo(m.id), actual != null && actual.id.equals(m.id)));
-                tiempo = Math.max(tiempo, m.calendario.tiempo());
+                mundos.add(new Mundo(m.id, m.nombre, tag, est.buscarCuerpo(m.id), actual != null && actual.id.equals(m.id),
+                    m.calendario.tiempo(), Math.max(1, ApiPlaneta.rotacion(tag))));
             }
             if(seleccionado != null && buscarSeleccionado() == null) seleccionado = null;
         }
@@ -249,9 +253,17 @@ final class VistaPlanetas{
             return Math.min(getWidth(), getHeight()) * 0.42f / max;
         }
 
-        /** Ángulo del mundo en el tiempo del mundo, con la órbita simulada. */
+        /**
+         * Tiempo visual del mundo: su tiempo al leerlo más el tiempo de pantalla transcurrido (Time.globalTime, en ticks). Así la órbita y el giro
+         * se mueven en el menú, aunque el juego esté cerrado.
+         */
+        private double tiempoVisual(Mundo b){
+            return b.tiempoMundo + Time.globalTime;
+        }
+
+        /** Ángulo del mundo en la órbita simulada. */
         private double anguloDe(Mundo b){
-            return ApiSistemas.anguloEn(b.cuerpo, tiempo, orbitas.get(b.tag).periodo);
+            return ApiSistemas.anguloEn(b.cuerpo, tiempoVisual(b), orbitas.get(b.tag).periodo);
         }
 
         /** Posición del mundo en coordenadas de contenido (sin zoom ni paneo). */
@@ -346,6 +358,12 @@ final class VistaPlanetas{
                         final float rad = vista3d ? RADIO_PLANETA * (1f + 0.15f * (float)seno) : RADIO_PLANETA;
                         Draw.color(b.actual ? Pal.heal : (b.id.equals(seleccionado) ? Pal.accent : Color.white));
                         Fill.circle(this.x + p[0], this.y + p[1], rad);
+                        // Giro: una marca en el disco que da la vuelta según el periodo de rotación; solo se ve la mitad de delante.
+                        final double giro = ApiSistemas.rotacionEn(tiempoVisual(b), b.periodoGiro);
+                        if(Math.cos(giro) > 0){
+                            Draw.color(Color.gray);
+                            Fill.circle(this.x + p[0] + (float)Math.sin(giro) * rad * 0.55f, this.y + p[1], rad * 0.22f);
+                        }
                     }
                 }
                 Draw.reset();

@@ -113,6 +113,11 @@ final class CalendarioMundo{
         return tiempo;
     }
 
+    /** Fija la hora inicial de un mundo recién creado. Solo tiene efecto si el mundo aún no ha avanzado (plan v8). */
+    void fijarInicio(float ticks){
+        if(tiempo == 0f && Float.isFinite(ticks) && ticks >= 0f) tiempo = ticks;
+    }
+
     int dia(){
         return (int)Math.floor(tiempo / diaTicks);
     }

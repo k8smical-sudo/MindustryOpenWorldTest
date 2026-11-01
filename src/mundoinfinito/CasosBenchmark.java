@@ -35,6 +35,7 @@ final class CasosBenchmark{
         sistemasYFisica(out);
         radar(out);
         viaje(out);
+        inicio(out);
         return out;
     }
 
@@ -257,6 +258,15 @@ final class CasosBenchmark{
             if(!ApiViaje.establecer(e, enlaces, "v-e", "v-m1", "v-m2", ApiViaje.portal(1), 0, p -> 0.0).ok) return false;
             return ApiViaje.viajar(e, enlaces, "v-m2", "v-m1", 1, java.util.Map.of("copper", 50, "lead", 30), 0, p -> 0.0).ticks == 100L;
         }, "ApiViaje"));
+    }
+
+    // ================================================================== hora inicial de un mundo nuevo (ApiInicioMundo; plan v8)
+
+    private static void inicio(List<Bancos.Caso> out){
+        out.add(new Bancos.Caso("tiempo", "inicio-aleatorio-determinista", 200000, () -> {
+            final float a = ApiInicioMundo.inicio(42);
+            return a == ApiInicioMundo.inicio(42) && a >= 0f && a < CicloDiaNoche.DIA_TICKS;
+        }, "ApiInicioMundo"));
     }
 
     // ================================================================== árbol tecnológico (ApiArbol)

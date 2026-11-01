@@ -32,6 +32,7 @@ final class PruebasSistemas{
             pruebaMigracion();
             pruebaRoundTrip();
             pruebaHexadecimal();
+            pruebaInicio();
             pruebaPoliticaFallida();
             pruebaConsecuenciaOrbita();
             ApiSistemas.reiniciarPoliticas();
@@ -298,6 +299,23 @@ final class PruebasSistemas{
         ApiSistemas.anadirMundoEnOrbita(e, "o2", "om2", "serpulo", 100, 10);
         fallos += chequear("una consecuencia de órbita recibe el número de cuerpos tras cada alta", vistos[0] == 2);
         ApiSistemas.reiniciarConsecuenciasOrbita();
+    }
+
+    private static void pruebaInicio(){
+        ApiInicioMundo.reiniciar();
+        final float a = ApiInicioMundo.inicio(7), b = ApiInicioMundo.inicio(7), c = ApiInicioMundo.inicio(8);
+        fallos += chequear("hora inicial aleatoria pero determinista por semilla, dentro de un día",
+            a == b && a >= 0f && a < CicloDiaNoche.DIA_TICKS);
+        fallos += chequear("semillas distintas empiezan a horas distintas", a != c);
+        ApiInicioMundo.proponer("prueba-fija", 100, s -> 1234f);
+        fallos += chequear("un inicio propuesto con prioridad manda", ApiInicioMundo.inicio(7) == 1234f);
+        ApiInicioMundo.reiniciar();
+        ApiInicioMundo.proponer("prueba-rota", 100, s -> {
+            throw new IllegalStateException("prueba");
+        });
+        fallos += chequear("un inicio que falla se desactiva y vuelve el de defecto",
+            ApiInicioMundo.inicio(7) == a && ApiInicioMundo.inicio(7) == a);
+        ApiInicioMundo.reiniciar();
     }
 
     private static void pruebaPoliticaFallida(){

@@ -1,6 +1,7 @@
 package mundoinfinito;
 
 import java.util.Map;
+import java.util.Set;
 
 /**
  * PRUEBAS DE VIAJES (plan v8, entrega B). Sin el juego: solo EstadoSistemas, ApiRadar y ApiViaje.
@@ -23,6 +24,7 @@ final class PruebasViaje{
             pruebaCosteYTiempo();
             pruebaAceleracionPorPortal();
             pruebaConsecuencias();
+            pruebaBoostersYCaos();
             System.out.println(fallos == 0 ? "[Viaje] OK: todas las pruebas pasan." : "[Viaje] FALLO: " + fallos + " prueba(s) no pasan.");
             rc = fallos == 0 ? 0 : 1;
         }catch(Throwable e){
@@ -115,6 +117,39 @@ final class PruebasViaje{
         // ticks = 50·2·3/2 = 150; con portal tier 1 serían 300.
         fallos += chequear("un portal de tier 2 acelera el viaje de la unidad tier 3: 150 ticks en lugar de 300",
             r.ok && r.ticks == 150L);
+    }
+
+    /** P7: boosters (alcance, velocidad, estabilidad), probabilidad y decisión del caos, y viaje con caos apagado (por defecto). */
+    private static void pruebaBoostersYCaos(){
+        final Set<String> vacio = Set.of();
+        final Set<String> alcance = Set.of(ApiViaje.BOOSTER_ALCANCE);
+        fallos += chequear("el booster de alcance da 75 de alcance al portal tier 1 (60 · 1,25), y sin booster queda 60",
+            Math.abs(ApiViaje.portalEfectivo(ApiViaje.portal(1), alcance).alcance - 75.0) < 1e-9
+                && ApiViaje.portalEfectivo(ApiViaje.portal(1), vacio).alcance == 60.0);
+        fallos += chequear("el booster de velocidad baja 100 ticks a 80; sin booster se quedan igual; nunca baja de 1",
+            ApiViaje.ticksEfectivos(100L, Set.of(ApiViaje.BOOSTER_VELOCIDAD)) == 80L
+                && ApiViaje.ticksEfectivos(100L, vacio) == 100L && ApiViaje.ticksEfectivos(1L, Set.of(ApiViaje.BOOSTER_VELOCIDAD)) == 1L);
+        final double p1 = ApiViaje.probabilidadCaos(50, 300, 3, vacio);
+        fallos += chequear("probabilidad del caos: 2 % · tier 3 · (50 ÷ 300) = 0,01",
+            Math.abs(p1 - 0.01) < 1e-9);
+        fallos += chequear("el booster de estabilidad divide la probabilidad entre dos",
+            Math.abs(ApiViaje.probabilidadCaos(50, 300, 3, Set.of(ApiViaje.BOOSTER_ESTABILIDAD)) - 0.005) < 1e-9);
+        fallos += chequear("la probabilidad se topa en 25 % y no es negativa ni sale de datos no válidos",
+            ApiViaje.probabilidadCaos(1000, 1, 3, vacio) == ApiViaje.CAOS_TOPE
+                && ApiViaje.probabilidadCaos(-5, 300, 3, vacio) == 0.0 && ApiViaje.probabilidadCaos(5, 0, 3, vacio) == 0.0);
+        fallos += chequear("sin incidente la tirada no decide nada; con tirada baja hay incidente y el tercio de efecto decide cuál",
+            !ApiViaje.evaluarCaos(0.01, 0.5, 0.0, 100L, 50.0).incidente
+                && ApiViaje.evaluarCaos(0.01, 0.001, 0.1, 100L, 50.0).efecto.equals("retraso")
+                && ApiViaje.evaluarCaos(0.01, 0.001, 0.5, 100L, 50.0).efecto.equals("coste")
+                && ApiViaje.evaluarCaos(0.01, 0.001, 0.9, 100L, 50.0).efecto.equals("desvio"));
+        final EstadoSistemas e = escenario();
+        final ApiViaje.Enlaces enlaces = new ApiViaje.Enlaces();
+        ApiViaje.establecer(e, enlaces, "e1", "cuerpo-a", "cuerpo-b", ApiViaje.portal(1), 0, SIN_MOVIMIENTO);
+        final Map<String, Integer> materiales = Map.of("copper", 50, "lead", 30);
+        final ApiViaje.Viaje sinCaos = ApiViaje.viajarConCaos(e, enlaces, "cuerpo-a", "cuerpo-b", 1, materiales, 0, SIN_MOVIMIENTO,
+            Set.of(ApiViaje.BOOSTER_VELOCIDAD), 1, 0);
+        fallos += chequear("con el caos apagado (por defecto) el viaje no tiene incidente y solo aplica el booster de velocidad: 100 → 80 ticks",
+            sinCaos.resultado.ok && sinCaos.caos == null && sinCaos.resultado.ticks == 80L && Math.abs(sinCaos.resultado.coste - 50.0) < 1e-9);
     }
 
     private static void pruebaConsecuencias(){

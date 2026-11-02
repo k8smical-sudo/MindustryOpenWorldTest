@@ -9,7 +9,7 @@ import arc.util.Log;
  */
 public final class ApiVersion{
     /** Conjunto de la API pública (sube cuando cambia cualquiera de las partes). */
-    public static final int PUBLICA_MAYOR = 1, PUBLICA_MENOR = 9;   // 1.9: ... DIFICULTAD 1.0 y FENOMENO_COSMICO 1.0 (P10), OBJETIVOS 1.0 (P11)
+    public static final int PUBLICA_MAYOR = 1, PUBLICA_MENOR = 10;   // 1.10: ... OBJETIVOS 1.0 (P11), VIAJE 1.1 con boosters y caos (P7)
     /** La parte visual: {@code ApiVisual}. */
     public static final int VISUAL_MAYOR = 1, VISUAL_MENOR = 1;
     /** La parte de ajustes y propuestas de valor: {@code ApiAjustes}. */
@@ -40,7 +40,7 @@ public final class ApiVersion{
     /** La parte de radares (barrido por tiers, orden por sistema y distancia, tiempo de detección): {@code ApiRadar}. Plan v7, A2. */
     public static final int RADAR_MAYOR = 1, RADAR_MENOR = 0;
     /** La parte de viajes (portales por tiers, enlaces, coste de viaje): {@code ApiViaje}. Plan v7, B1. */
-    public static final int VIAJE_MAYOR = 1, VIAJE_MENOR = 0;
+    public static final int VIAJE_MAYOR = 1, VIAJE_MENOR = 1;
     /** La parte de hora inicial de un mundo nuevo: {@code ApiInicioMundo}. Plan v8. */
     public static final int INICIO_MAYOR = 1, INICIO_MENOR = 0;
     /** El motor de dificultad (perfiles de los addons, ajuste al crear el mundo, sin conexión por defecto): {@code ApiDificultad}. Plan v9, P10. */

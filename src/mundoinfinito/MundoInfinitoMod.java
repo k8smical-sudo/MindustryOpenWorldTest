@@ -142,6 +142,7 @@ public class MundoInfinitoMod extends Mod{
         ArbolPlanetas.registrar();   // árbol tecnológico por planeta: ajuste del mundo (plan v2, D1)
         ApiDificultad.iniciar();     // motor de dificultad (plan v9, P10): el ajuste aparece al crear un mundo; neutro por defecto
         FenomenosCosmicos.registrar(); // fenómenos cósmicos (plan v9, P10): agujero negro, apagado por defecto
+        ApiViaje.iniciarAjustes();     // caos de viajes (plan v9, P7): apagado por defecto, se elige al crear el mundo
         OpenWorldAPI.registrarGameRule(GameRule.nueva(ApiObjetivos.REGLA_ACTIVA, "Objetivos de sector",
             "Muestra la barra de objetivos de sector en partida. Los objetivos los define cada addon.",
             false, (reglas, valor, dim) -> { }));   // apagada por defecto (plan v9, P11)

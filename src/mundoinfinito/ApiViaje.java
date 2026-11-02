@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.ToDoubleFunction;
 
 /**
@@ -207,6 +208,123 @@ public final class ApiViaje{
         final double coste = d * u * COSTE_POR_UNIDAD;
         final Resultado base = new Resultado(true, "viaje listo", ticks, coste, d, e, new ArrayList<String>());
         return new Resultado(true, "viaje listo", ticks, coste, d, e, aplicarConsecuencias(base));
+    }
+
+    // ================================================================== boosters y caos (plan v9, P7; ApiViaje 1.1)
+
+    /** Boosters de viaje: se consumen del inventario del núcleo (quien llama decide qué boosters están instalados). */
+    public static final String BOOSTER_ALCANCE = "booster:alcance", BOOSTER_VELOCIDAD = "booster:velocidad", BOOSTER_ESTABILIDAD = "booster:estabilidad";
+    /** Factores de los boosters: alcance +25 %, velocidad −20 % de tiempo, estabilidad a la mitad el caos. (calibrar) */
+    public static final double FACTOR_ALCANCE = 1.25, FACTOR_VELOCIDAD = 0.80, FACTOR_ESTABILIDAD = 0.5;
+    /** Caos: probabilidad base 2 % × tier de unidad × (distancia ÷ alcance), con tope 25 %. Coste extra 10 %, retraso ×1,5. (calibrar) */
+    public static final double CAOS_BASE = 0.02, CAOS_TOPE = 0.25, CAOS_COSTE_EXTRA = 0.10, CAOS_RETRASO = 1.5;
+    /** Ajuste de mundo que activa el caos. Apagado por defecto. Lo registra {@link #iniciarAjustes}. */
+    public static final String CAOS_AJUSTE = "mundo-infinito:viaje-caos";
+
+    /** Registra el ajuste del caos. Lo llama el mod al cargar, antes de abrir el primer mundo. */
+    static void iniciarAjustes(){
+        ApiAjustes.registrarBooleano(CAOS_AJUSTE, "Caos en viajes", "Incidentes aleatorios en los viajes entre mundos. Se elige al crear el mundo.", false, null);
+    }
+
+    /** ¿Está activo el caos en el mundo abierto? Falso sin mundo o si el ajuste no existe. */
+    public static boolean caosActivo(){
+        final double v = ApiAjustes.valor(CAOS_AJUSTE);
+        return !Double.isNaN(v) && v != 0.0;
+    }
+
+    /** Portal con el alcance que da el booster de alcance (si está instalado). Los demás datos del portal no cambian. */
+    public static Portal portalEfectivo(Portal p, Set<String> boosters){
+        final double alcance = has(boosters, BOOSTER_ALCANCE) ? p.alcance * FACTOR_ALCANCE : p.alcance;
+        return new Portal(p.tier, alcance, p.ticksEstablecer, p.requisitos());
+    }
+
+    /** Ticks con el booster de velocidad (si está instalado). Nunca menos de 1. */
+    public static long ticksEfectivos(long ticks, Set<String> boosters){
+        if(!has(boosters, BOOSTER_VELOCIDAD)) return ticks;
+        return Math.max(1L, (long)Math.ceil(ticks * FACTOR_VELOCIDAD));
+    }
+
+    /**
+     * Probabilidad de incidente de un viaje: 2 % × tier de unidad × (distancia ÷ alcance), con tope 25 %. El booster de estabilidad la divide
+     * entre dos. Distancia o alcance no válidos: 0.
+     */
+    public static double probabilidadCaos(double distancia, double alcance, int tierUnidad, Set<String> boosters){
+        if(!(distancia >= 0.0) || !Double.isFinite(distancia) || !(alcance > 0.0) || !Double.isFinite(alcance)) return 0.0;
+        double p = CAOS_BASE * acotarTier(tierUnidad) * (distancia / alcance);
+        if(has(boosters, BOOSTER_ESTABILIDAD)) p *= FACTOR_ESTABILIDAD;
+        return Math.min(CAOS_TOPE, p);
+    }
+
+    /** Incidente de un viaje. Sin incidente: {@link #incidente} es false y los demás campos son neutros. */
+    public static final class Caos{
+        public final boolean incidente;
+        /** "retraso", "coste" o "desvio" (el desvío lo aplica quien llama: elige otro destino detectado). Null sin incidente. */
+        public final String efecto;
+        public final long ticksExtra;
+        public final double costeExtra;
+
+        Caos(boolean incidente, String efecto, long ticksExtra, double costeExtra){
+            this.incidente = incidente;
+            this.efecto = efecto;
+            this.ticksExtra = ticksExtra;
+            this.costeExtra = costeExtra;
+        }
+    }
+
+    /**
+     * Decide un incidente a partir de dos tiradas en [0, 1): la primera decide si hay incidente (tirada menor que la probabilidad); la segunda
+     * elige el efecto: el tercio bajo retrasa, el medio encarece y el alto desvía.
+     */
+    public static Caos evaluarCaos(double probabilidad, double tirada, double tiradaEfecto, long ticks, double coste){
+        if(!(tirada < probabilidad)) return new Caos(false, null, 0L, 0.0);
+        if(tiradaEfecto < 1.0 / 3.0){
+            return new Caos(true, "retraso", (long)Math.ceil(ticks * (CAOS_RETRASO - 1.0)), 0.0);
+        }
+        if(tiradaEfecto < 2.0 / 3.0){
+            return new Caos(true, "coste", 0L, coste * CAOS_COSTE_EXTRA);
+        }
+        return new Caos(true, "desvio", 0L, 0.0);
+    }
+
+    /** Resultado de un viaje con boosters y caos. {@link #caos} es null si no hubo incidente o el caos está apagado. */
+    public static final class Viaje{
+        public final Resultado resultado;
+        public final String caos;
+
+        Viaje(Resultado resultado, String caos){
+            this.resultado = resultado;
+            this.caos = caos;
+        }
+    }
+
+    /**
+     * Viaje con boosters y caos (ApiViaje 1.1). Sin caos activo, solo aplica el booster de velocidad: el resultado es igual al de
+     * {@link #viajar} salvo por los ticks. Con el caos activo, las tiradas salen de {@link ApiAzar} con el enlace y el tiempo, así que el mismo viaje
+     * en el mismo instante da siempre el mismo resultado.
+     */
+    public static Viaje viajarConCaos(EstadoSistemas est, Enlaces enlaces, String origen, String destino, int tierUnidad,
+                                      Map<String, Integer> inventario, double t, ToDoubleFunction<String> periodo,
+                                      Set<String> boosters, int semilla, int dimension){
+        final Resultado base = viajar(est, enlaces, origen, destino, tierUnidad, inventario, t, periodo);
+        if(!base.ok) return new Viaje(base, null);
+        final long ticks = ticksEfectivos(base.ticks, boosters);
+        if(!caosActivo()){
+            return new Viaje(new Resultado(true, "viaje listo", ticks, base.coste, base.distancia, base.enlace, new ArrayList<String>(base.consecuencias)), null);
+        }
+        final Portal portal = portal(base.enlace.tier);
+        final double prob = probabilidadCaos(base.distancia, portal.alcance, tierUnidad, boosters);
+        final String clave = "viaje/caos/" + origen + "/" + destino;
+        final int bloque = (int)Math.floor(t);
+        final double tirada = ApiAzar.unidad(semilla, dimension, clave, bloque, 0);
+        final double tiradaEfecto = ApiAzar.unidad(semilla, dimension, clave + "/efecto", bloque, 0);
+        final Caos caos = evaluarCaos(prob, tirada, tiradaEfecto, ticks, base.coste);
+        final Resultado r = new Resultado(true, caos.incidente ? "viaje listo con incidente: " + caos.efecto : "viaje listo",
+            ticks + caos.ticksExtra, base.coste + caos.costeExtra, base.distancia, base.enlace, new ArrayList<String>(base.consecuencias));
+        return new Viaje(r, caos.efecto);
+    }
+
+    private static boolean has(Set<String> boosters, String id){
+        return boosters != null && boosters.contains(id);
     }
 
     // ================================================================== consecuencias (API lista para addons; por defecto, ninguna)

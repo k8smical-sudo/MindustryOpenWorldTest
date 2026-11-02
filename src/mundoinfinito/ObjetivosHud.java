@@ -20,7 +20,7 @@ final class ObjetivosHud{
             t.setFillParent(true);
             t.top();
             t.visible(ObjetivosHud::visible);
-            t.label(ObjetivosHud::texto).style(Styles.outlineLabel).padTop(96f).touchable(arc.scene.Touchable.disabled);
+            t.label(ObjetivosHud::texto).style(Styles.outlineLabel).padTop(96f).touchable(arc.scene.event.Touchable.disabled);
         }));
     }
 

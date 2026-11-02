@@ -140,6 +140,8 @@ public class MundoInfinitoMod extends Mod{
             "Activa el árbol de investigación de cada planeta: los bloques se investigan antes de construirlos. Apagado = sin bloqueos ni costes.",
             false, (reglas, valor, dim) -> { }));   // la prohibición real la aplica ArbolPlanetas.aplicarReglas al crear el mundo
         ArbolPlanetas.registrar();   // árbol tecnológico por planeta: ajuste del mundo (plan v2, D1)
+        ApiDificultad.iniciar();     // motor de dificultad (plan v9, P10): el ajuste aparece al crear un mundo; neutro por defecto
+        FenomenosCosmicos.registrar(); // fenómenos cósmicos (plan v9, P10): agujero negro, apagado por defecto
         CicloDiaNoche.registrar();
         EclipseLuz.registrar();
         Events.run(Trigger.update, CicloDiaNoche::tick);

@@ -32,6 +32,7 @@ final class CasosBenchmark{
         arbol(out);
         luz(out);
         worldgen(out);
+        dificultadYFenomenos(out);
         sistemasYFisica(out);
         radar(out);
         viaje(out);
@@ -202,6 +203,18 @@ final class CasosBenchmark{
         // P8 (ApiLuz 1.2): consultar la intensidad de la estrella de un cuerpo sin asignación, que es 1.
         out.add(new Bancos.Caso("luz", "estrella-intensidad-por-defecto", 200000,
             () -> ApiLuz.intensidadEstrellaDe(ApiPlaneta.SERPULO) == 1f, "ApiLuz"));
+    }
+
+    // ================================================================== dificultad y fenómenos cósmicos (P10)
+
+    private static void dificultadYFenomenos(List<Bancos.Caso> out){
+        // Sin mundo abierto el perfil es el neutro: la consulta devuelve el valor base sin tocarlo.
+        out.add(new Bancos.Caso("dificultad", "valor-neutro-deja-la-base", 200000,
+            () -> ApiDificultad.valor("bench:clave", 0.5) == 0.5, "ApiDificultad"));
+        // El agujero negro está registrado y apagado por defecto: sin addon, no hay efectos ni dibujo.
+        FenomenosCosmicos.registrar();
+        out.add(new Bancos.Caso("fenomenos", "agujero-apagado-por-defecto", 200000,
+            () -> !ApiFenomenoCosmico.activo(FenomenosCosmicos.AGUJERO_NEGRO), "ApiFenomenoCosmico"));
     }
 
     // ================================================================== worldgen (ApiWorldgen)

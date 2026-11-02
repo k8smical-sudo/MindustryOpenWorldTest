@@ -20,6 +20,7 @@ final class PruebasWorldgen{
             pruebaPrioridadBioma();
             pruebaIdsRepetidos();
             pruebaAzar();
+            pruebaFicha();
             System.out.println(fallos == 0 ? "[Worldgen] OK: todas las pruebas pasan." : "[Worldgen] FALLO: " + fallos + " prueba(s) no pasan.");
             rc = fallos == 0 ? 0 : 1;
         }catch(Throwable e){
@@ -63,6 +64,23 @@ final class PruebasWorldgen{
         public float valorFijo(String f, int b, ApiWorldgen.Lugar l){
             return fenomeno.equals(f) ? fijo : Float.NaN;
         }
+    }
+
+    /** P9: el lugar da su planeta base y la ficha del planeta (la misma en cada consulta, con la distancia de ApiFisica). */
+    private static void pruebaFicha(){
+        final ApiWorldgen.Lugar serpulo = lugar(1, 0, 3, 3, 0);
+        final ApiWorldgen.Lugar erekir = lugar(1, MundoInfinitoMod.DIM_EREKIR, 3, 3, 0);
+        final ApiWorldgen.Lugar explicito = new ApiWorldgen.Lugar(1, 0, 3, 3, 0, () -> 0, () -> "prueba", ApiPlaneta.EREKIR);
+        fallos += chequear("P9: la dimensión decide el planeta base (serpulo en Serpulo, erekir en Erekir)",
+            ApiPlaneta.SERPULO.equals(serpulo.planeta()) && ApiPlaneta.EREKIR.equals(erekir.planeta()));
+        fallos += chequear("P9: un planeta indicado al crear el lugar prevalece sobre la dimensión", ApiPlaneta.EREKIR.equals(explicito.planeta()));
+        fallos += chequear("P9: la distancia a la estrella es la estimada de ApiFisica para cada planeta",
+            Math.abs(serpulo.distanciaEstrella() - ApiFisica.ORBITA_SERPULO) < 1e-6 && Math.abs(erekir.distanciaEstrella() - ApiFisica.ORBITA_EREKIR) < 1e-6);
+        fallos += chequear("P9: el tamaño y el origen vienen de la ficha estimada del planeta",
+            serpulo.tamano().equals(ApiFisica.categoria(ApiFisica.DIAMETRO_PLANETA)) && "estimada".equals(serpulo.origenFicha()));
+        final ApiWorldgen.Lugar otra = lugar(9, 0, -20, 7, 0);   // otra semilla y coordenada: la ficha depende solo del planeta
+        fallos += chequear("P9: la ficha es la misma para cualquier coordenada del mismo planeta",
+            serpulo.distanciaEstrella() == otra.distanciaEstrella() && serpulo.tamano().equals(otra.tamano()));
     }
 
     private static ApiWorldgen.Lugar lugar(int semilla, int dimension, int x, int y, int codigoPiso){

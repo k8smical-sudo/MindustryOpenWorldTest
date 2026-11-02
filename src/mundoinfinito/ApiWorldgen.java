@@ -22,6 +22,8 @@ import java.util.function.Supplier;
  *  - Multiplicadores: se multiplican todos los que devuelvan un valor (no NaN). Un multiplicador negativo o infinito desactiva su fuente.
  *
  * Una fuente que lanza una excepción queda desactivada con un aviso en el log, sin afectar a las demás.
+ * 1.1 (plan v9, P9): cada {@link Lugar} da el planeta base y la ficha física estimada de ese planeta ({@link ApiFisica}). Las consultas de
+ * fuentes del juego no cambian con esto: el terreno sigue igual (corpus congelado).
  * Todas las decisiones deben depender solo de la semilla, la dimensión, la coordenada y los datos declarados: usa {@link #azar} para el azar.
  * Ver docs/WORLDGEN_API.md.
  */
@@ -55,10 +57,17 @@ public final class ApiWorldgen{
         final int codigoPiso;
         private final IntSupplier menas;
         private final Supplier<String> nombre;
+        /** Planeta base del lugar (ApiPlaneta.SERPULO o EREKIR). Se fija al crear el lugar. */
+        private final String planetaBase;
         private int menasMemo = -1;
         private String nombreMemo;
+        private FichaFisica fichaMemo;
 
         Lugar(int semilla, int dimension, int x, int y, int codigoPiso, IntSupplier menas, Supplier<String> nombre){
+            this(semilla, dimension, x, y, codigoPiso, menas, nombre, planetaDeDimension(dimension));
+        }
+
+        Lugar(int semilla, int dimension, int x, int y, int codigoPiso, IntSupplier menas, Supplier<String> nombre, String planetaBase){
             this.semilla = semilla;
             this.dimension = dimension;
             this.x = x;
@@ -66,6 +75,33 @@ public final class ApiWorldgen{
             this.codigoPiso = codigoPiso;
             this.menas = menas;
             this.nombre = nombre;
+            this.planetaBase = planetaBase;
+        }
+
+        /** Planeta base del lugar: "serpulo" o "erekir". Lo da la dimensión si no se indicó. */
+        public String planeta(){
+            return planetaBase;
+        }
+
+        /** Categoría de tamaño de la ficha física del planeta del lugar ("pequeno", "medio" o "grande"; cadena vacía si no hay dato). */
+        public String tamano(){
+            return ficha().tamano;
+        }
+
+        /** Distancia estimada del planeta a su estrella (unidades del sistema solar). 0 si el planeta no es base. */
+        public double distanciaEstrella(){
+            return ficha().distancia(FichaFisica.DIST_ESTRELLA);
+        }
+
+        /** Origen de la ficha: "estimada" mientras no haya medidas declaradas. */
+        public String origenFicha(){
+            return ficha().origen;
+        }
+
+        /** Ficha física del planeta del lugar. Se calcula al primer uso; las lecturas son idénticas y no cambian el terreno. */
+        private FichaFisica ficha(){
+            if(fichaMemo == null) fichaMemo = ApiFisica.estimadaPlaneta(planetaBase, ApiFisica.DIAMETRO_PLANETA);
+            return fichaMemo;
         }
 
         /** Casillas con mena (mineral) en la vecindad de 7 x 7 alrededor de la coordenada: de 0 a 49. Se calcula al primer uso. */
@@ -207,6 +243,11 @@ public final class ApiWorldgen{
 
     private static void asegurarIniciado(){
         if(!iniciado) iniciar();
+    }
+
+    /** Planeta base de una dimensión del mundo abierto: Erekir para la dimensión de Erekir, Serpulo para cualquier otra. */
+    static String planetaDeDimension(int dimension){
+        return dimension == MundoInfinitoMod.DIM_EREKIR ? ApiPlaneta.EREKIR : ApiPlaneta.SERPULO;
     }
 
     /** Lugar de un generador de fenómenos: la coordenada del terreno base y las consultas del contexto. */

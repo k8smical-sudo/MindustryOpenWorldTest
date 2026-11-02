@@ -219,6 +219,10 @@ final class CasosBenchmark{
         out.add(new Bancos.Caso("worldgen", "fijo-y-bioma", 200000, () ->
             ApiWorldgen.bioma(l) == ApiWorldgen.BIOMA_ARKYIC && ApiWorldgen.probabilidad("bench:fijo", 1f, l) == 0.25f
                 && ApiWorldgen.probabilidad("bench:libre", 0.5f, l) == 0.5f, "ApiWorldgen"));
+        // P9 (ApiWorldgen 1.1): el lugar da su planeta y la distancia de la ficha estimada.
+        final ApiWorldgen.Lugar e = new ApiWorldgen.Lugar(7, 1, 10, -4, MundoInfinitoMod.Muestreo.P_ARKYIC, () -> 5, () -> "arkyic");
+        out.add(new Bancos.Caso("worldgen", "ficha-del-lugar", 200000, () ->
+            ApiPlaneta.EREKIR.equals(e.planeta()) && Math.abs(e.distanciaEstrella() - ApiFisica.ORBITA_EREKIR) < 1e-6, "ApiWorldgen"));
     }
 
     // ================================================================== física y sistemas (ApiFisica, ApiSistemas; plan v6, F3 a F5)

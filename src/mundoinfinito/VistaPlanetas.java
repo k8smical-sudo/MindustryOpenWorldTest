@@ -22,7 +22,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * VISTA DE PLANETAS Y SISTEMAS (plan v8, F6 y F7 aproximado). Modo "Planetas" del menú de Mundo abierto.
+ * VISTA DE PLANETAS Y SISTEMAS (plan v9, solo 2D). Modo "Planetas" del menú de Mundo abierto.
  *
  * FUENTE (P2): el estado de sistemas que cada mundo guarda en su meta (un cuerpo por mundo, ver {@link AsignacionSistemas}). La vista no calcula
  * posiciones: une los cuerpos guardados y los dibuja. Un mundo antiguo sin cuerpo lo recibe al abrir el modo (migración determinista) y queda
@@ -31,8 +31,8 @@ import java.util.Map;
  *
  * MOVIMIENTO: órbitas simuladas con el tiempo del mundo (ApiSistemas.anguloEn y el periodo de ApiPlaneta). Nada inventado.
  *
- * MODOS: 2D (órbitas circulares) y 3D aproximado (órbitas inclinadas, con planetas delante y detrás). El 3D completo (F7) queda para
- * la siguiente entrega y su verificación en dispositivo.
+ * SOLO 2D (decisión del plan v9): órbitas circulares vistas desde arriba. No hay render 3D de planetas ni clon de la vista de planetas de
+ * la campaña; el modo 3D aproximado de entregas anteriores se quitó.
  *
  * Tocar un mundo lo selecciona y abre el árbol tecnológico de su planeta. Rueda y pellizco hacen zoom; arrastre mueve la vista; Centrar
  * lleva la vista al mundo seleccionado. Misma matemática que el árbol: {@link NavegacionVista}.
@@ -40,9 +40,6 @@ import java.util.Map;
 final class VistaPlanetas{
     static final float RADIO_ESTRELLA = 16f, RADIO_PLANETA = 9f;
     static final float ESCALA_MIN = 0.5f, ESCALA_MAX = 4f, MARGEN = 40f, ESCALA_CENTRADO = 2f;
-    /** Aplastamiento vertical de las órbitas en el modo 3D aproximado. */
-    static final float INCLINACION = 0.45f;
-    static final int SEGMENTOS = 64;
 
     private static Panel ultimo;
 
@@ -63,8 +60,6 @@ final class VistaPlanetas{
         final Table cuerpo = new Table();
 
         final Table botones = new Table();
-        botones.button("2D", Styles.cleart, () -> lienzo.setModo(false)).size(120f, 52f).padRight(8f);
-        botones.button("3D", Styles.cleart, () -> lienzo.setModo(true)).size(120f, 52f).padRight(8f);
         botones.button("Centrar", Styles.cleart, lienzo::centrar).size(160f, 52f).padRight(8f);
         botones.button("Árbol tecnológico", Styles.cleart, () -> ArbolUI.abrir(lienzo.tagSeleccionado())).size(260f, 52f);
 
@@ -145,7 +140,6 @@ final class VistaPlanetas{
         private final Map<String, Orbita> orbitas = new LinkedHashMap<String, Orbita>();
         private final List<Mundo> mundos = new ArrayList<Mundo>();
         private EstadoSistemas est = new EstadoSistemas();
-        private boolean vista3d;
         private String seleccionado;
         private float zoomInicial = -1f;
 
@@ -250,8 +244,6 @@ final class VistaPlanetas{
             return sb.toString();
         }
 
-        void setModo(boolean tresD){ vista3d = tresD; }
-
         /** Planeta base del mundo seleccionado, o null. */
         String tagSeleccionado(){
             final Mundo b = buscarSeleccionado();
@@ -280,7 +272,7 @@ final class VistaPlanetas{
             return b.tiempoMundo + Time.globalTime;
         }
 
-        /** Ángulo del mundo en la órbita simulada. Un solitario no orbita: su ángulo es el de su posición (solo sirve para el orden de dibujo en 3D). */
+        /** Ángulo del mundo en la órbita simulada. Un solitario no orbita: su ángulo es el de su posición. */
         private double anguloDe(Mundo b){
             if(b.orbita == null) return Math.atan2(b.sistema.p0y, b.sistema.p0x);
             return ApiSistemas.anguloEn(b.cuerpo, tiempoVisual(b), b.orbita.periodo);
@@ -288,14 +280,14 @@ final class VistaPlanetas{
 
         /** Posición del mundo en coordenadas de contenido (sin zoom ni paneo). */
         private float[] contenido(Mundo b){
-            final float cx = getWidth() / 2f, cy = getHeight() / 2f, esc = escalaBase(), inc = vista3d ? INCLINACION : 1f;
+            final float cx = getWidth() / 2f, cy = getHeight() / 2f, esc = escalaBase();
             if(b.orbita == null){
                 final double[] pos = ApiSistemas.posicion(b.sistema, tiempoVisual(b));   // sin deriva (por defecto) es su posición fija
-                return new float[]{cx + (float)pos[0] * esc, cy + (float)pos[1] * esc * inc};
+                return new float[]{cx + (float)pos[0] * esc, cy + (float)pos[1] * esc};
             }
             final float r = b.orbita.radio * esc;
             final double a = anguloDe(b);
-            return new float[]{cx + (float)Math.cos(a) * r, cy + (float)Math.sin(a) * r * inc};
+            return new float[]{cx + (float)Math.cos(a) * r, cy + (float)Math.sin(a) * r};
         }
 
         /** Posición local (con zoom y paneo) del mundo. */
@@ -348,51 +340,33 @@ final class VistaPlanetas{
             if(mundos.isEmpty()) return;
             final float cw = getWidth(), ch = getHeight();
             final float cx = this.x + nav.aPantallaX(cw / 2f), cy = this.y + nav.aPantallaY(ch / 2f);
-            final float inc = vista3d ? INCLINACION : 1f;
 
             if(clipBegin()){
                 Draw.color(Pal.gray);
                 Lines.stroke(2f);
                 for(Orbita o : orbitas.values()){
                     final float r = o.radio * escalaBase() * nav.escala;
-                    if(!vista3d){
-                        Lines.circle(cx, cy, r);
-                        continue;
-                    }
-                    float px0 = 0f, py0 = 0f;
-                    for(int i = 0; i <= SEGMENTOS; i++){
-                        final double a = 2.0 * Math.PI * i / SEGMENTOS;
-                        final float px = cx + (float)Math.cos(a) * r, py = cy + (float)Math.sin(a) * r * inc;
-                        if(i > 0) Lines.line(px0, py0, px, py);
-                        px0 = px;
-                        py0 = py;
-                    }
+                    Lines.circle(cx, cy, r);
                 }
 
                 Draw.color(Pal.accent);
                 Fill.circle(cx, cy, RADIO_ESTRELLA);
 
-                // 3D: primero los cuerpos de atrás (seno negativo), luego los de delante. 2D: una sola pasada.
-                final int pasadas = vista3d ? 2 : 1;
-                for(int pasada = 0; pasada < pasadas; pasada++){
-                    for(Mundo b : mundos){
-                        final double seno = Math.sin(anguloDe(b));
-                        if(vista3d && (seno < 0) != (pasada == 0)) continue;
-                        final float[] p = local(b);
-                        final float rad = vista3d ? RADIO_PLANETA * (1f + 0.15f * (float)seno) : RADIO_PLANETA;
-                        Draw.color(b.actual ? Pal.heal : (b.id.equals(seleccionado) ? Pal.accent : Color.white));
-                        Fill.circle(this.x + p[0], this.y + p[1], rad);
-                        if(Radares.detectados.containsKey(b.id)){   // detectado por un radar (P6): un anillo alrededor
-                            Draw.color(Pal.lancerLaser);
-                            Lines.stroke(2f);
-                            Lines.circle(this.x + p[0], this.y + p[1], rad + 4f);
-                        }
-                        // Giro: una marca en el disco que da la vuelta según el periodo de rotación; solo se ve la mitad de delante.
-                        final double giro = ApiSistemas.rotacionEn(tiempoVisual(b), b.periodoGiro);
-                        if(Math.cos(giro) > 0){
-                            Draw.color(Color.gray);
-                            Fill.circle(this.x + p[0] + (float)Math.sin(giro) * rad * 0.55f, this.y + p[1], rad * 0.22f);
-                        }
+                for(Mundo b : mundos){
+                    final float[] p = local(b);
+                    final float rad = RADIO_PLANETA;
+                    Draw.color(b.actual ? Pal.heal : (b.id.equals(seleccionado) ? Pal.accent : Color.white));
+                    Fill.circle(this.x + p[0], this.y + p[1], rad);
+                    if(Radares.detectados.containsKey(b.id)){   // detectado por un radar (P6): un anillo alrededor
+                        Draw.color(Pal.lancerLaser);
+                        Lines.stroke(2f);
+                        Lines.circle(this.x + p[0], this.y + p[1], rad + 4f);
+                    }
+                    // Giro: una marca en el disco que da la vuelta según el periodo de rotación; solo se ve la mitad de delante.
+                    final double giro = ApiSistemas.rotacionEn(tiempoVisual(b), b.periodoGiro);
+                    if(Math.cos(giro) > 0){
+                        Draw.color(Color.gray);
+                        Fill.circle(this.x + p[0] + (float)Math.sin(giro) * rad * 0.55f, this.y + p[1], rad * 0.22f);
                     }
                 }
                 Draw.reset();

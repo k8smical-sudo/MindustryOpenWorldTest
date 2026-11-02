@@ -26,7 +26,9 @@ import java.util.TreeSet;
  *  - Mide la mediana de tiempo por operación sobre {@link #REPETICIONES} repeticiones (con calentamiento previo).
  *  - COBERTURA AUTOMÁTICA: toda clase pública cuyo nombre empieza por "Api" debe estar cubierta por algún caso ({@link Caso#cubre}) o figurar en
  *    {@link #SIN_CASO} con el motivo. Así, una API nueva o eliminada se detecta sola en la siguiente ejecución, sin tocar esta lista.
- *  - Compara con una línea base (si existe): un caso más de {@link #UMBRAL_REGRESION} veces más lento se avisa. El rendimiento NO bloquea,
+ *  - Compara con una línea base (si existe): un caso cuyo MÍNIMO sea más de {@link #UMBRAL_REGRESION} veces el mínimo de la base se avisa.
+ *    El mínimo de cinco repeticiones es el dato menos ruidoso (el ruido de la máquina solo añade tiempo); la mediana se sigue imprimiendo.
+ *    El rendimiento NO bloquea,
  *    porque depende de la máquina; la línea base debe generarse en el mismo tipo de máquina de CI.
  *
  * Para añadir un benchmark: añade un caso en {@link CasosBenchmark}. Para quitar una API: quita sus casos; si la clase desaparece, el banco avisa
@@ -195,6 +197,23 @@ final class Bancos{
         return fallos;
     }
 
+    /** Línea base: id -> mínimo (ns), columna 3 del TSV. Null si el archivo no existe o no tiene esa columna. */
+    static Map<String, Double> leerBaseMinimos(String ruta) throws Exception{
+        if(ruta == null || !new File(ruta).exists()) return null;
+        final Map<String, Double> out = new LinkedHashMap<String, Double>();
+        final BufferedReader r = new BufferedReader(new FileReader(ruta));
+        try{
+            String linea;
+            while((linea = r.readLine()) != null){
+                final String[] p = linea.split("\t");
+                if(p.length >= 3) out.put(p[0], Double.valueOf(p[2]));
+            }
+        }finally{
+            r.close();
+        }
+        return out;
+    }
+
     /** Línea base: id -> mediana (ns). Null si el archivo no existe (primera ejecución: no hay comparación). */
     static Map<String, Double> leerBase(String ruta) throws Exception{
         if(ruta == null || !new File(ruta).exists()) return null;
@@ -227,7 +246,7 @@ final class Bancos{
             fallos++;
         }
 
-        final Map<String, Double> base = leerBase(archivoBase);
+        final Map<String, Double> base = leerBaseMinimos(archivoBase);
         if(base == null) System.out.println("[Bench] no hay línea base (" + archivoBase + "): esta ejecución la puede generar");
 
         final StringBuilder tsv = new StringBuilder();
@@ -241,10 +260,10 @@ final class Bancos{
                 System.out.println("[Bench] " + c.id() + ": " + num(r.medianaNs) + " ns/op (mín " + num(r.minNs) + ", máx " + num(r.maxNs) + ") " + estado);
                 if(!r.ok) fallos++;
                 if(base != null && base.containsKey(c.id())){
-                    final double ratio = r.medianaNs / base.get(c.id()).doubleValue();
+                    final double ratio = r.minNs / base.get(c.id()).doubleValue();
                     if(ratio > UMBRAL_REGRESION){
                         regresiones++;
-                        System.out.println("[Bench] AVISO regresión " + c.id() + ": x" + String.format(java.util.Locale.ROOT, "%.2f", ratio) + " frente a la línea base");
+                        System.out.println("[Bench] AVISO regresión " + c.id() + ": x" + String.format(java.util.Locale.ROOT, "%.2f", ratio) + " (mínimo) frente a la línea base");
                     }
                 }
             }

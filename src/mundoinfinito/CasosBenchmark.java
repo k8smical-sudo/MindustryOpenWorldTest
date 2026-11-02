@@ -33,6 +33,7 @@ final class CasosBenchmark{
         luz(out);
         worldgen(out);
         dificultadYFenomenos(out);
+        objetivos(out);
         sistemasYFisica(out);
         radar(out);
         viaje(out);
@@ -215,6 +216,13 @@ final class CasosBenchmark{
         FenomenosCosmicos.registrar();
         out.add(new Bancos.Caso("fenomenos", "agujero-apagado-por-defecto", 200000,
             () -> !ApiFenomenoCosmico.activo(FenomenosCosmicos.AGUJERO_NEGRO), "ApiFenomenoCosmico"));
+    }
+
+    // ================================================================== objetivos de sector (P11)
+
+    private static void objetivos(List<Bancos.Caso> out){
+        out.add(new Bancos.Caso("objetivos", "progreso-acotado-a-la-meta", 200000,
+            () -> ApiObjetivos.progreso(70, 60) == 60 && ApiObjetivos.progreso(-3, 60) == 0 && ApiObjetivos.completo(60, 60), "ApiObjetivos"));
     }
 
     // ================================================================== worldgen (ApiWorldgen)

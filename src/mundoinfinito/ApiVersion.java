@@ -9,7 +9,7 @@ import arc.util.Log;
  */
 public final class ApiVersion{
     /** Conjunto de la API pública (sube cuando cambia cualquiera de las partes). */
-    public static final int PUBLICA_MAYOR = 1, PUBLICA_MENOR = 8;   // 1.8: ... LUZ 1.2 (P8), WORLDGEN 1.1 (P9), DIFICULTAD 1.0 y FENOMENO_COSMICO 1.0 (P10)
+    public static final int PUBLICA_MAYOR = 1, PUBLICA_MENOR = 9;   // 1.9: ... DIFICULTAD 1.0 y FENOMENO_COSMICO 1.0 (P10), OBJETIVOS 1.0 (P11)
     /** La parte visual: {@code ApiVisual}. */
     public static final int VISUAL_MAYOR = 1, VISUAL_MENOR = 1;
     /** La parte de ajustes y propuestas de valor: {@code ApiAjustes}. */
@@ -47,6 +47,8 @@ public final class ApiVersion{
     public static final int DIFICULTAD_MAYOR = 1, DIFICULTAD_MENOR = 0;
     /** Fenómenos cósmicos (marco con variables, efectos y dibujo; el agujero negro es el primero): {@code ApiFenomenoCosmico}. Plan v9, P10. */
     public static final int FENOMENO_COSMICO_MAYOR = 1, FENOMENO_COSMICO_MENOR = 0;
+    /** Objetivos de sector (contadores de ítems en el núcleo, con barra): {@code ApiObjetivos}. Plan v9, P11. */
+    public static final int OBJETIVOS_MAYOR = 1, OBJETIVOS_MENOR = 0;
     /** Formato del estado de sistemas guardado con el mundo: {@code EstadoSistemas}. Plan v6, F2. No es una API de mods. */
     public static final int ESTADO_MAYOR = 1, ESTADO_MENOR = 0;
 

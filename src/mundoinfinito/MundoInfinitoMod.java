@@ -128,7 +128,7 @@ public class MundoInfinitoMod extends Mod{
         });
 
         // Botón en el menú principal cuando el cliente terminó de cargar.
-        Events.on(ClientLoadEvent.class, e -> Time.runTask(10f, () -> { MenuUI.inyectarBoton(); Hud.crear(); MapaVista.crear(); ArbolUI.crear(); Ajustes.registrar(); }));
+        Events.on(ClientLoadEvent.class, e -> Time.runTask(10f, () -> { MenuUI.inyectarBoton(); Hud.crear(); MapaVista.crear(); ArbolUI.crear(); ObjetivosHud.crear(); Ajustes.registrar(); }));
 
         // Bucle de streaming: se ejecuta cada frame (presupuesto de tiempo propio).
         Events.run(Trigger.update, Streamer::tick);
@@ -142,6 +142,9 @@ public class MundoInfinitoMod extends Mod{
         ArbolPlanetas.registrar();   // árbol tecnológico por planeta: ajuste del mundo (plan v2, D1)
         ApiDificultad.iniciar();     // motor de dificultad (plan v9, P10): el ajuste aparece al crear un mundo; neutro por defecto
         FenomenosCosmicos.registrar(); // fenómenos cósmicos (plan v9, P10): agujero negro, apagado por defecto
+        OpenWorldAPI.registrarGameRule(GameRule.nueva(ApiObjetivos.REGLA_ACTIVA, "Objetivos de sector",
+            "Muestra la barra de objetivos de sector en partida. Los objetivos los define cada addon.",
+            false, (reglas, valor, dim) -> { }));   // apagada por defecto (plan v9, P11)
         CicloDiaNoche.registrar();
         EclipseLuz.registrar();
         Events.run(Trigger.update, CicloDiaNoche::tick);

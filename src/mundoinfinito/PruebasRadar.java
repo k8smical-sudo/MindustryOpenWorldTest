@@ -23,6 +23,7 @@ final class PruebasRadar{
             pruebaOrdenCuerposDentroDeSistema();
             pruebaDeterminismo();
             pruebaOrbitaEnMovimiento();
+            pruebaBarridoDeMundo();
             System.out.println(fallos == 0 ? "[Radar] OK: todas las pruebas pasan." : "[Radar] FALLO: " + fallos + " prueba(s) no pasan.");
             rc = fallos == 0 ? 0 : 1;
         }catch(Throwable e){
@@ -112,5 +113,35 @@ final class PruebasRadar{
             cerca(pos[0], 0) && cerca(pos[1], 30));
         fallos += chequear("sin periodo válido, el cuerpo queda en su ángulo de creación (x = 30)",
             cerca(ApiRadar.posicionCuerpo(s, c, 25, periodo -> 0.0)[0], 30));
+    }
+
+    // ================================================================== P6: barrido de un radar en el estado del mundo
+
+    private static void pruebaBarridoDeMundo(){
+        ApiSistemas.reiniciarPoliticas();
+        final EstadoSistemas e = new EstadoSistemas();
+        ApiSistemas.anadirMundoEnOrbita(e, "sistema-serpulo", "A", "serpulo", 31, 2);   // en (31, 0)
+        ApiSistemas.anadirMundoEnOrbita(e, "sistema-serpulo", "B", "serpulo", 31, 2);   // en (-31, 0): a 62 de A
+        ApiSistemas.anadirMundoEnOrbita(e, "sistema-erekir", "C", "erekir", 17, 2);     // en (17, 0): a 14 de A
+
+        final BarridoRadar.Barrido t1 = BarridoRadar.preparar(e, "A", 1, 1000, SIN_MOVIMIENTO);
+        fallos += chequear("P6: un radar tier 1 en A detecta a C (a 14) y no a B (a 62); el propio mundo no se detecta",
+            t1.hallazgos.size() == 1 && "C".equals(t1.hallazgos.get(0).cuerpoId) && cerca(t1.hallazgos.get(0).distancia, 14));
+
+        final BarridoRadar.Barrido t2 = BarridoRadar.preparar(e, "A", 2, 1000, SIN_MOVIMIENTO);
+        final List<ApiRadar.Hallazgo> directo = ApiRadar.escanear(BarridoRadar.sin(e, "A"), 31, 0, ApiRadar.nivel(2), 1000, SIN_MOVIMIENTO);
+        boolean igual = t2.hallazgos.size() == directo.size() && t2.hallazgos.size() == 2;
+        for(int i = 0; igual && i < directo.size(); i++){
+            igual = t2.hallazgos.get(i).cuerpoId.equals(directo.get(i).cuerpoId) && t2.hallazgos.get(i).tickDeteccion == directo.get(i).tickDeteccion;
+        }
+        fallos += chequear("P6: el barrido del radar da el mismo orden y tiempos que ApiRadar sobre el estado sin el propio mundo", igual);
+
+        fallos += chequear("P6: los cuerpos se detectan de uno en uno: tier 2 detecta el 1.º a los 240 ticks y el 2.º a los 480",
+            t2.detectadosEn(239) == 0 && t2.detectadosEn(240) == 1 && t2.detectadosEn(479) == 1 && t2.detectadosEn(480) == 2
+                && t2.duracion() == 480L);
+
+        fallos += chequear("P6: sin cuerpos a la vista o sin estado, el barrido sale vacío y dura un tramo (no falla)",
+            BarridoRadar.preparar(e, "no-existe", 3, 0, SIN_MOVIMIENTO).hallazgos.isEmpty()
+                && BarridoRadar.preparar(null, "A", 3, 0, SIN_MOVIMIENTO).duracion() == ApiRadar.nivel(3).ticksPorCuerpo);
     }
 }

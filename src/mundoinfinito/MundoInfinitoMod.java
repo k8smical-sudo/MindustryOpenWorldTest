@@ -158,6 +158,7 @@ public class MundoInfinitoMod extends Mod{
     @Override
     public void loadContent(){
         SiloInterdimensional.cargar();
+        RadarPlanetario.cargar();   // plan v8, P6
     }
 
     /**
@@ -477,6 +478,13 @@ public class MundoInfinitoMod extends Mod{
             }catch(Throwable t){
                 Log.err("[MundoInfinito] No se pudo asignar el sistema del mundo nuevo; se crea sin él.", t);
             }
+        }
+
+        /** Estado de todos los mundos guardados (cuerpos unidos), tras migrar los antiguos. Para los radares. */
+        static EstadoSistemas global(){
+            final Seq<Meta> todos = Almacen.listar();
+            migrar(todos);
+            return AsignacionSistemas.unir(entradas(todos, new java.util.HashMap<>()));
         }
 
         /** Al continuar un mundo: lo migra si le falta el cuerpo y deja su meta con el estado ya asignado. */
@@ -3043,6 +3051,7 @@ public class MundoInfinitoMod extends Mod{
          */
         static void abrir(Meta m, Datos datos, double vx, double vy){
             actual = m;
+            Radares.limpiar();   // plan v8, P6: cada mundo empieza sin detecciones
             m.tam = ventana();
             liberarMundo();
             OpenWorldAPI.registrarEnLog();

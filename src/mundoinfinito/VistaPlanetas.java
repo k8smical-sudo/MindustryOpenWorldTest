@@ -236,6 +236,17 @@ final class VistaPlanetas{
                 sb.append("[lightgray]").append(ApiPlaneta.nombre(e.getKey())).append(" (").append(e.getValue())
                     .append(e.getValue() == 1 ? " mundo)[]" : " mundos)[]");
             }
+            final List<String> radar = Radares.enOrden();
+            if(!radar.isEmpty()){
+                sb.append("\n[accent]Radar:[] ");
+                int k = 0;
+                for(String id : radar){
+                    for(Mundo b : mundos) if(b.id.equals(id)){
+                        sb.append(k++ > 0 ? ", " : "").append(b.nombre);
+                        break;
+                    }
+                }
+            }
             return sb.toString();
         }
 
@@ -371,6 +382,11 @@ final class VistaPlanetas{
                         final float rad = vista3d ? RADIO_PLANETA * (1f + 0.15f * (float)seno) : RADIO_PLANETA;
                         Draw.color(b.actual ? Pal.heal : (b.id.equals(seleccionado) ? Pal.accent : Color.white));
                         Fill.circle(this.x + p[0], this.y + p[1], rad);
+                        if(Radares.detectados.containsKey(b.id)){   // detectado por un radar (P6): un anillo alrededor
+                            Draw.color(Pal.lancerLaser);
+                            Lines.stroke(2f);
+                            Lines.circle(this.x + p[0], this.y + p[1], rad + 4f);
+                        }
                         // Giro: una marca en el disco que da la vuelta según el periodo de rotación; solo se ve la mitad de delante.
                         final double giro = ApiSistemas.rotacionEn(tiempoVisual(b), b.periodoGiro);
                         if(Math.cos(giro) > 0){

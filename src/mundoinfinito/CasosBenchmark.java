@@ -199,6 +199,9 @@ final class CasosBenchmark{
         ApiLuz.registrarModificador("bench-luz", "bench-luz:neutro", 0, (p, f) -> 1f);
         out.add(new Bancos.Caso("luz", "factor-erekir-sin-eclipse", 200000,
             () -> ApiLuz.factorPlaneta(ApiPlaneta.EREKIR) == 1f, "ApiLuz"));
+        // P8 (ApiLuz 1.2): consultar la intensidad de la estrella de un cuerpo sin asignación, que es 1.
+        out.add(new Bancos.Caso("luz", "estrella-intensidad-por-defecto", 200000,
+            () -> ApiLuz.intensidadEstrellaDe(ApiPlaneta.SERPULO) == 1f, "ApiLuz"));
     }
 
     // ================================================================== worldgen (ApiWorldgen)

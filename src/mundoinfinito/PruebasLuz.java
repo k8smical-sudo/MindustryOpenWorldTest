@@ -25,6 +25,7 @@ final class PruebasLuz{
             pruebaOrdenCarga();
             pruebaAislamiento();
             pruebaTope();
+            pruebaEstrellas();
             pruebaIdsRepetidos();
             System.out.println(fallos == 0 ? "[Luz] OK: todas las pruebas pasan." : "[Luz] FALLO: " + fallos + " prueba(s) no pasan.");
             rc = fallos == 0 ? 0 : 1;
@@ -104,6 +105,35 @@ final class PruebasLuz{
         final float f = ApiLuz.factorPlaneta(PLANETA);
         quitar("prueba:grande");
         fallos += chequear("el factor se limita a " + LuzSolar.FACTOR_MAX + " (medido " + f + ")", cerca(f, LuzSolar.FACTOR_MAX, 1e-4f));
+    }
+
+    /** P8: la intensidad de la estrella asignada multiplica el factor; sin asignación es 1; los rechazos no cambian nada. */
+    private static void pruebaEstrellas(){
+        FASE_SOMBRA[0] = 0.25;
+        final boolean registrada = ApiLuz.registrarEstrella("prueba:estrella", 0.5f);
+        final boolean repetida = ApiLuz.registrarEstrella("prueba:estrella", 0.7f);
+        final boolean fueraDeRango = ApiLuz.registrarEstrella("prueba:fuera", 3f);
+        final boolean noFinita = ApiLuz.registrarEstrella("prueba:nan", Float.NaN);
+        fallos += chequear("P8: una estrella se registra una vez, y rechaza repetidas, fuera de rango y no finitas",
+            registrada && !repetida && !fueraDeRango && !noFinita);
+
+        final boolean asignada = ApiLuz.asignarEstrella(PLANETA, "prueba:estrella");
+        final float con = ApiLuz.factorPlaneta(PLANETA);
+        fallos += chequear("P8: el factor del cuerpo es la intensidad de su estrella (0,5; medido " + con + ")",
+            asignada && cerca(con, 0.5f, 1e-4f) && cerca(ApiLuz.intensidadEstrellaDe(PLANETA), 0.5f, 1e-4f));
+
+        final boolean cuerpoInexistente = ApiLuz.asignarEstrella("prueba:no-existe", "prueba:estrella");
+        final boolean estrellaInexistente = ApiLuz.asignarEstrella(PLANETA, "prueba:no-registrada");
+        fallos += chequear("P8: asignar a un cuerpo o una estrella que no existen se rechaza, y la asignación anterior se mantiene",
+            !cuerpoInexistente && !estrellaInexistente && cerca(ApiLuz.factorPlaneta(PLANETA), 0.5f, 1e-4f));
+
+        // Solo la intensidad: el factor de Erekir depende de su fase real, así que no es determinista en la prueba.
+        fallos += chequear("P8: un cuerpo sin estrella asignada tiene intensidad 1",
+            cerca(ApiLuz.intensidadEstrellaDe(ApiPlaneta.EREKIR), 1f, 1e-4f));
+
+        ApiLuz.asignarEstrella(PLANETA, null);
+        fallos += chequear("P8: quitar la asignación devuelve la intensidad 1 al cuerpo",
+            cerca(ApiLuz.factorPlaneta(PLANETA), 1f, 1e-4f));
     }
 
     /** Un id repetido o no válido se rechaza. */

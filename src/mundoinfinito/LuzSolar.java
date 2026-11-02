@@ -46,6 +46,9 @@ final class LuzSolar{
     }
 
     private static boolean avisoTope;
+    /** Estrellas registradas (id a intensidad) y estrella que ilumina cada cuerpo (cuerpo a id de estrella). Plan v9, P8. */
+    private static final Map<String, Float> ESTRELLAS = new HashMap<String, Float>();
+    private static final Map<String, String> ESTRELLA_DE = new HashMap<String, String>();
     private static final Map<String, Cuerpo> CUERPOS = new HashMap<String, Cuerpo>();
     private static final List<Mod> MODS = new ArrayList<Mod>();
     private static final Comparator<Mod> ORDEN = new Comparator<Mod>(){
@@ -87,6 +90,31 @@ final class LuzSolar{
         MODS.add(new Mod(fuente, id, prioridad, fn));
         Collections.sort(MODS, ORDEN);
         return true;
+    }
+
+    static synchronized boolean registrarEstrella(String id, float intensidad){
+        if(!idValido(id) || ESTRELLAS.containsKey(id)) return false;
+        if(Float.isNaN(intensidad) || Float.isInfinite(intensidad) || intensidad < 0f || intensidad > FACTOR_MAX) return false;
+        ESTRELLAS.put(id, intensidad);
+        return true;
+    }
+
+    static synchronized boolean asignarEstrella(String cuerpo, String estrella){
+        if(cuerpo == null || !CUERPOS.containsKey(cuerpo)) return false;
+        if(estrella == null){
+            ESTRELLA_DE.remove(cuerpo);
+            return true;
+        }
+        if(!ESTRELLAS.containsKey(estrella)) return false;
+        ESTRELLA_DE.put(cuerpo, estrella);
+        return true;
+    }
+
+    static synchronized float intensidadEstrellaDe(String cuerpo){
+        final String estrella = cuerpo == null ? null : ESTRELLA_DE.get(cuerpo);
+        if(estrella == null) return 1f;
+        final Float v = ESTRELLAS.get(estrella);
+        return v == null ? 1f : v;
     }
 
     static synchronized boolean quitarModificador(String id){
@@ -139,7 +167,7 @@ final class LuzSolar{
     static float factorPlaneta(String planeta){
         final Cuerpo p = CUERPOS.get(planeta);
         final double fase = p == null ? 0.0 : p.fase.fase();
-        float f = eclipse(planeta);
+        float f = eclipse(planeta) * intensidadEstrellaDe(planeta);
         synchronized(LuzSolar.class){
             for(Mod m : MODS){
                 if(!m.activo) continue;

@@ -9,7 +9,7 @@ import arc.util.Log;
  */
 public final class ApiVersion{
     /** Conjunto de la API pública (sube cuando cambia cualquiera de las partes). */
-    public static final int PUBLICA_MAYOR = 1, PUBLICA_MENOR = 5;   // 1.5: SISTEMAS, FISICA, RADAR, VIAJE 1.0 e INICIO 1.0 (plan v8)
+    public static final int PUBLICA_MAYOR = 1, PUBLICA_MENOR = 6;   // 1.6: ... y LUZ 1.2 (estrellas, plan v9 P8)
     /** La parte visual: {@code ApiVisual}. */
     public static final int VISUAL_MAYOR = 1, VISUAL_MENOR = 1;
     /** La parte de ajustes y propuestas de valor: {@code ApiAjustes}. */
@@ -22,8 +22,8 @@ public final class ApiVersion{
     public static final int AZAR_MAYOR = 1, AZAR_MENOR = 0;
     /** La parte de planetas (rotación y órbita): {@code ApiPlaneta}. */
     public static final int PLANETA_MAYOR = 1, PLANETA_MENOR = 1;
-    /** La parte de luz solar (eclipses y modificadores): {@code ApiLuz}. 1.1: un modificador que falla se desactiva con aviso (P3). */
-    public static final int LUZ_MAYOR = 1, LUZ_MENOR = 1;
+    /** La parte de luz solar (eclipses, modificadores y estrellas): {@code ApiLuz}. 1.1: un modificador que falla se desactiva con aviso (P3). 1.2: estrellas con intensidad por cuerpo (P8). */
+    public static final int LUZ_MAYOR = 1, LUZ_MENOR = 2;
     /** La parte de worldgen (fuentes de bioma, multiplicadores y valores fijos): {@code ApiWorldgen}. Plan v5, P4. */
     public static final int WORLDGEN_MAYOR = 1, WORLDGEN_MENOR = 0;
     /** La parte del árbol tecnológico por planeta: {@code ApiArbol}. */

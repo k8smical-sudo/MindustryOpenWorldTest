@@ -25,6 +25,11 @@ final class PruebasViaje{
             pruebaAceleracionPorPortal();
             pruebaConsecuencias();
             pruebaBoostersYCaos();
+            pruebaEnlacesPersistentes();
+            pruebaBoostersComoItems();
+            pruebaUnidadesYDesvio();
+            pruebaMigracionPortales();
+            pruebaCalibracion();
             System.out.println(fallos == 0 ? "[Viaje] OK: todas las pruebas pasan." : "[Viaje] FALLO: " + fallos + " prueba(s) no pasan.");
             rc = fallos == 0 ? 0 : 1;
         }catch(Throwable e){
@@ -174,5 +179,70 @@ final class PruebasViaje{
         final ApiViaje.Resultado r2 = ApiViaje.viajar(e, enlaces, "cuerpo-a", "cuerpo-b", 1, materiales, 0, SIN_MOVIMIENTO);
         fallos += chequear("una consecuencia que falla se aísla: el viaje sigue y no añade efectos", r1.ok && r2.ok && r2.consecuencias.isEmpty());
         ApiViaje.reiniciarConsecuencias();
+    }
+
+    // ================================================================== plan v9, P7: persistencia, boosters como ítems, unidades, migración
+
+    private static void pruebaEnlacesPersistentes(){
+        final EstadoSistemas e = escenario();
+        final ApiViaje.Enlaces enlaces = new ApiViaje.Enlaces();
+        ApiViaje.establecer(e, enlaces, "e|raro%1", "cuerpo-a", "cuerpo-b", ApiViaje.portal(2), 0, SIN_MOVIMIENTO);
+        final String texto = enlaces.aTexto();
+        final ApiViaje.Enlaces leidos = ApiViaje.Enlaces.desdeTexto(texto);
+        fallos += chequear("los enlaces se guardan y se leen con ida y vuelta idéntica (también con '|' y '%' en el id)",
+            leidos.todos().size() == 1 && leidos.todos().get(0).id.equals("e|raro%1") && leidos.todos().get(0).cuerpoA.equals("cuerpo-a")
+                && leidos.todos().get(0).cuerpoB.equals("cuerpo-b") && leidos.todos().get(0).tier == 2 && leidos.aTexto().equals(texto));
+        fallos += chequear("un mundo antiguo (texto nulo o vacío) se lee sin enlaces",
+            ApiViaje.Enlaces.desdeTexto(null).todos().isEmpty() && ApiViaje.Enlaces.desdeTexto("").todos().isEmpty());
+        final String sucio = "ok|a|b|1\nmal formada\nrep|a|b|1\nuno|c|c|1\nfuera|x|y|9\nbueno|c|d|3\n";
+        final ApiViaje.Enlaces filtrados = ApiViaje.Enlaces.desdeTexto(sucio);
+        fallos += chequear("las líneas mal formadas, repetidas, de un cuerpo consigo mismo o de tier fuera de rango se descartan y el resto se conserva",
+            filtrados.todos().size() == 2 && filtrados.buscar("ok") != null && filtrados.buscar("bueno") != null);
+    }
+
+    private static void pruebaBoostersComoItems(){
+        final Map<String, Integer> inv = Map.of("booster-alcance", 2, "booster-velocidad", 0, "copper", 100);
+        final Set<String> disp = ApiViaje.boostersDisponibles(inv);
+        fallos += chequear("solo están disponibles los boosters con al menos una unidad en el núcleo",
+            disp.size() == 1 && disp.contains(ApiViaje.BOOSTER_ALCANCE));
+        final Map<String, Integer> coste = ApiViaje.costeBoosters(Set.of(ApiViaje.BOOSTER_ALCANCE, ApiViaje.BOOSTER_ESTABILIDAD, "otro"));
+        fallos += chequear("usar boosters cuesta una unidad de cada ítem y los ids que no son de booster se ignoran",
+            coste.size() == 2 && coste.get("booster-alcance") == 1 && coste.get("booster-estabilidad") == 1);
+        fallos += chequear("sin inventario no hay boosters disponibles",
+            ApiViaje.boostersDisponibles(null).isEmpty() && ApiViaje.costeBoosters(null).isEmpty());
+        fallos += chequear("ítem y booster se corresponden en los dos sentidos",
+            ApiViaje.BOOSTER_VELOCIDAD.equals(ApiViaje.boosterDeItem(ApiViaje.itemDeBooster(ApiViaje.BOOSTER_VELOCIDAD))) && ApiViaje.boosterDeItem("copper") == null);
+    }
+
+    private static void pruebaUnidadesYDesvio(){
+        fallos += chequear("el tier de una unidad sale de su vida: 350 es tier 1, 5000 tier 2, 20000 tier 3; vida no válida, tier 1",
+            ApiViaje.tierUnidadPorVida(350) == 1 && ApiViaje.tierUnidadPorVida(5000) == 2 && ApiViaje.tierUnidadPorVida(20000) == 3
+                && ApiViaje.tierUnidadPorVida(Double.NaN) == 1 && ApiViaje.tierUnidadPorVida(-5) == 1);
+        final ApiViaje.Enlaces enlaces = ApiViaje.Enlaces.desdeTexto("e1|a|b|1\ne2|a|c|1\ne3|a|d|1\ne4|x|y|1\n");
+        final String d1 = ApiViaje.elegirDesvio(enlaces, "a", "b", 7, 0, 100), d2 = ApiViaje.elegirDesvio(enlaces, "a", "b", 7, 0, 100);
+        fallos += chequear("el desvío elige otro cuerpo enlazado con el origen, distinto del destino, y es determinista",
+            d1 != null && !d1.equals("b") && (d1.equals("c") || d1.equals("d")) && d1.equals(d2));
+        fallos += chequear("sin otro cuerpo enlazado no hay desvío",
+            ApiViaje.elegirDesvio(ApiViaje.Enlaces.desdeTexto("e1|a|b|1\n"), "a", "b", 7, 0, 100) == null);
+    }
+
+    private static void pruebaMigracionPortales(){
+        fallos += chequear("el silo antiguo se lee como el portal tier 1 y los demás bloques no cambian",
+            MigracionPortales.nombreActual("silo-interdimensional").equals("portal-viaje-1") && MigracionPortales.nombreActual("copper-wall").equals("copper-wall")
+                && MigracionPortales.nombreActual(null) == null && MigracionPortales.esAntiguo("silo-interdimensional") && !MigracionPortales.esAntiguo("portal-viaje-1"));
+        fallos += chequear("migrar dos veces da lo mismo que una (idempotente) y hay un nombre por tier",
+            MigracionPortales.nombreActual(MigracionPortales.nombreActual("silo-interdimensional")).equals("portal-viaje-1")
+                && MigracionPortales.nombreDeTier(1).equals("portal-viaje-1") && MigracionPortales.nombreDeTier(2).equals("portal-viaje-2")
+                && MigracionPortales.nombreDeTier(9).equals("portal-viaje-3"));
+    }
+
+    private static void pruebaCalibracion(){
+        boolean ok = true;
+        for(int t = 1; t <= 3; t++){
+            ok &= ApiViaje.portal(t).alcance == Calibracion.PORTAL_ALCANCE[t - 1] && ApiRadar.nivel(t).alcance == Calibracion.RADAR_ALCANCE[t - 1];
+        }
+        fallos += chequear("los portales y los radares leen sus valores de Calibracion; los alcances crecen con el tier y el tier 1 del portal mide 4",
+            ok && Calibracion.PORTAL_ALCANCE[0] < Calibracion.PORTAL_ALCANCE[1] && Calibracion.PORTAL_ALCANCE[1] < Calibracion.PORTAL_ALCANCE[2]
+                && Calibracion.PORTAL_TAMANO[0] == 4);
     }
 }

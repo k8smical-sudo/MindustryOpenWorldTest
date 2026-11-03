@@ -4,6 +4,10 @@ import arc.Core;
 import arc.files.Fi;
 import arc.scene.ui.layout.Table;
 import arc.util.Time;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import mindustry.Vars;
 import mindustry.content.Fx;
 import mindustry.game.Team;
@@ -19,12 +23,19 @@ import mundoinfinito.MundoInfinitoMod.Regiones;
 import mundoinfinito.MundoInfinitoMod.Streamer;
 
 /**
- * Diálogo del portal interdimensional y viajes dentro de una dimensión.
+ * Diálogo del portal interdimensional (tier 1 a 3) y viajes dentro de una dimensión. Desde el plan v9 (P7) es también el diálogo de los enlaces entre
+ * mundos: lista los cuerpos de los demás mundos con su distancia, deja establecer un enlace dentro del alcance del portal y viajar por los ya
+ * establecidos, eligiendo los boosters que haya en el núcleo. La lógica está en {@link ViajesMundo}.
  * Opciones: base principal (el origen de la dimensión), un checkpoint ya hecho, u otra dimensión (Serpulo <-> Erekir).
  * Cada portal que se toca queda registrado como checkpoint.
  */
 final class Portal{
+    /** Portal sin tier conocido (por ejemplo, un derelicto de un mundo antiguo): se trata como tier 1. */
     static void abrir(Building dev){
+        abrir(dev, 1);
+    }
+
+    static void abrir(Building dev, final int tier){
         Meta m = Mundos.actual;
         if(Vars.headless || m == null || !m.dimensional() || !Streamer.activo){
             if(!Vars.headless && Vars.ui != null) Vars.ui.showInfoToast("El portal solo funciona en mundos nuevos", 3f);
@@ -35,6 +46,7 @@ final class Portal{
 
         final int actualDim = Mundos.dimActual();
         BaseDialog d = new BaseDialog("Portal interdimensional");
+        d.cont.add("Tier " + tier).padBottom(2f).row();
         d.cont.add("[accent]" + m.nombreDim() + "[]   X " + (long)Math.floor(px) + "   Y " + (long)Math.floor(py)).padBottom(10f).row();
 
         d.cont.button("Base principal", Styles.defaultt, () -> { d.hide(); irA(0.0, 0.0); }).size(320f, 56f).padBottom(6f).row();
@@ -51,6 +63,8 @@ final class Portal{
         }
         d.cont.add("Checkpoints").padTop(6f).row();
         d.cont.pane(lista).maxHeight(Core.graphics.getHeight() * 0.38f).row();
+
+        agregarViajes(d, tier);
 
         // Destinos: las dimensiones del mundo base que no son la actual y los mundos registrados por mods visibles desde aquí
         if(actualDim != MundoInfinitoMod.DIM_SERPULO){
@@ -71,13 +85,53 @@ final class Portal{
         }
 
         // la logística orbital solo une Serpulo y Erekir
-        if(dev.team == Vars.player.team() && actualDim <= MundoInfinitoMod.DIM_EREKIR){
+        if(tier == 1 && dev.team == Vars.player.team() && actualDim <= MundoInfinitoMod.DIM_EREKIR){
             final int otra = 1 - actualDim;
-            d.cont.add("[gray]Logística: en camino aquí " + Orbita.pendientes(actualDim)
-                + "   hacia allá " + Orbita.pendientes(otra) + "[]").padTop(8f).row();
+            d.cont.add("[gray]Logística: en camino aquí " + TransitoOrbital.pendientes(actualDim)
+                + "   hacia allá " + TransitoOrbital.pendientes(otra) + "[]").padTop(8f).row();
         }
         d.addCloseButton();
         d.show();
+    }
+
+    /** Sección de enlaces y viajes entre mundos: boosters, materiales que faltan y un renglón por cuerpo. */
+    private static void agregarViajes(final BaseDialog d, final int tier){
+        final Map<String, Integer> inv = ViajesMundo.inventario();
+        final List<ViajesMundo.Destino> destinos = ViajesMundo.destinos();
+        if(destinos.isEmpty()) return;
+        final Set<String> elegidos = new LinkedHashSet<String>();
+        final ApiViaje.Portal portal = ApiViaje.portal(tier);
+        final List<String> faltan = ApiViaje.faltan(tier, inv);
+
+        d.cont.add("Mundos cercanos").padTop(8f).row();
+        for(final String b : ApiViaje.boostersDisponibles(inv)){
+            final int n = inv.get(ApiViaje.itemDeBooster(b));
+            d.cont.check(b.substring(b.indexOf(':') + 1) + " (x" + n + ")", false, v -> {
+                if(v) elegidos.add(b);
+                else elegidos.remove(b);
+            }).left().row();
+        }
+        if(!faltan.isEmpty()) d.cont.add("[scarlet]Faltan en el núcleo: " + faltan + "[]").row();
+
+        final Table lista = new Table();
+        for(final ViajesMundo.Destino x : destinos){
+            final String dist = Math.round(x.distancia) + " u";
+            final Table fila = new Table();
+            if(x.enlace != null){
+                final boolean bloqueado = x.enlace.tier > tier || !faltan.isEmpty();
+                fila.button(x.nombre + "  " + dist + "  [accent]enlazado[]", Styles.defaultt, () -> { d.hide(); ViajesMundo.viajar(tier, x.id, elegidos); })
+                    .size(300f, 44f).disabled(bt -> bloqueado);
+                fila.button("X", Styles.defaultt, () -> { ViajesMundo.romper(x.enlace.id); d.hide(); }).size(50f, 44f).padLeft(4f);
+            }else if(x.distancia <= portal.alcance * (elegidos.contains(ApiViaje.BOOSTER_ALCANCE) ? ApiViaje.FACTOR_ALCANCE : 1.0)){
+                final boolean bloqueado = !faltan.isEmpty() || (Calibracion.PORTAL_REQUIERE_DETECCION && !x.detectado);
+                fila.button(x.nombre + "  " + dist + (x.detectado ? "  enlazar" : "  [lightgray]sin detectar[]"), Styles.defaultt,
+                    () -> { d.hide(); ViajesMundo.establecer(tier, x.id, elegidos); }).size(350f, 44f).disabled(bt -> bloqueado);
+            }else{
+                fila.add("[lightgray]" + x.nombre + "  " + dist + "  fuera de alcance[]").size(350f, 44f);
+            }
+            lista.add(fila).padBottom(3f).row();
+        }
+        d.cont.pane(lista).maxHeight(Core.graphics.getHeight() * 0.3f).row();
     }
 
     /** Viaja a una posición VIRTUAL de la dimensión actual. Cerca: salto directo; lejos: se reabre la ventana allí. */

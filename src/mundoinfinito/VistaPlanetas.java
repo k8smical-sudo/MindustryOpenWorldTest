@@ -362,6 +362,7 @@ final class VistaPlanetas{
                         Lines.stroke(2f);
                         Lines.circle(this.x + p[0], this.y + p[1], rad + 4f);
                     }
+                    ColisionVisual.dibujarPulso(b.id, this.x + p[0], this.y + p[1], rad);   // plan v9, P10: pulso rojo de una colisión en curso
                     // Giro: una marca en el disco que da la vuelta según el periodo de rotación; solo se ve la mitad de delante.
                     final double giro = ApiSistemas.rotacionEn(tiempoVisual(b), b.periodoGiro);
                     if(Math.cos(giro) > 0){

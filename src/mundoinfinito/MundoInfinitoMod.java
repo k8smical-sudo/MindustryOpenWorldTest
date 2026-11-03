@@ -114,6 +114,10 @@ public class MundoInfinitoMod extends Mod{
         GameRulesBase.registrar();   // gamerules del mod base (misma API que las de otros mods)
         Visuales.registrar();   // dibuja el cuerpo de los bloques drawCached (puentes, muros, nodos...) que el modo anillo deja sin caché
         VisualArc.registrar();  // capa visual (fase 9): registro de dibujos, shaders y pasadas con calidad y aislamiento de fallos
+        ColisionVisual.registrar();   // efecto de la API visual para los pulsos de colisión (plan v9, P10)
+        // Fenómenos cósmicos (plan v9, P12): su visual 2D entra en la capa de ApiVisual; solo se dibuja con un mundo abierto
+        ApiVisual.registrarDibujo("mundo-infinito", "mundo-infinito:fenomenos-cosmicos", VisualCapa.INTERFAZ, 0, 1, false, null,
+            () -> Streamer.activo && Vars.state != null && Vars.state.isGame(), ApiFenomenoCosmico::dibujarTodos);
         // Diagnóstico: si el dron del jugador muere, el log dice por qué puede ser (tipo, entorno que soporta, posición). Pocas líneas por sesión.
         Events.on(mindustry.game.EventType.UnitDestroyEvent.class, e -> {
             try{
@@ -133,7 +137,9 @@ public class MundoInfinitoMod extends Mod{
         // Bucle de streaming: se ejecuta cada frame (presupuesto de tiempo propio).
         Events.run(Trigger.update, Streamer::tick);
         // Drones de carga orbital: puro dato, avanza aunque el jugador esté en la otra dimensión.
-        Events.run(Trigger.update, Orbita::tick);
+        Events.run(Trigger.update, TransitoOrbital::tick);
+        // Efectos de los fenómenos cósmicos activos (plan v9, P12): un paso por fotograma, solo jugando y con mundo abierto
+        Events.run(Trigger.update, () -> { if(Streamer.activo && Vars.state != null && Vars.state.isPlaying()) ApiFenomenoCosmico.evaluarTodos(); });
         ApiPlaneta.iniciar();
         ApiWorldgen.iniciar();   // fuentes de worldgen del juego (bioma, multiplicadores, menas)
         OpenWorldAPI.registrarGameRule(GameRule.nueva(ArbolPlanetas.K_ACTIVO, "Árbol tecnológico por planeta",
@@ -143,6 +149,7 @@ public class MundoInfinitoMod extends Mod{
         ApiDificultad.iniciar();     // motor de dificultad (plan v9, P10): el ajuste aparece al crear un mundo; neutro por defecto
         FenomenosCosmicos.registrar(); // fenómenos cósmicos (plan v9, P10): agujero negro, apagado por defecto
         ApiViaje.iniciarAjustes();     // caos de viajes (plan v9, P7): apagado por defecto, se elige al crear el mundo
+        ApiColision.iniciarAjustes();  // colisiones entre cuerpos (plan v9, P10): apagadas por defecto, se eligen al crear el mundo
         OpenWorldAPI.registrarGameRule(GameRule.nueva(ApiObjetivos.REGLA_ACTIVA, "Objetivos de sector",
             "Muestra la barra de objetivos de sector en partida. Los objetivos los define cada addon.",
             false, (reglas, valor, dim) -> { }));   // apagada por defecto (plan v9, P11)
@@ -163,7 +170,8 @@ public class MundoInfinitoMod extends Mod{
 
     @Override
     public void loadContent(){
-        SiloInterdimensional.cargar();
+        ItemsViaje.cargar();        // plan v9, P7: ítems de los boosters de viaje
+        SiloInterdimensional.cargar();   // plan v9, P7: portales por tiers (el tier 1 sustituye al silo antiguo)
         RadarPlanetario.cargar();   // plan v8, P6
     }
 
@@ -203,6 +211,10 @@ public class MundoInfinitoMod extends Mod{
         PlanetasMundo planetas = new PlanetasMundo();
         /** Sistemas solares y solitarios del mundo (plan v7, F2). Vacío en mundos antiguos. */
         EstadoSistemas sistemas = new EstadoSistemas();
+        /** Enlaces de portales entre cuerpos (plan v9, P7). Se guardan con el mundo; los mundos antiguos no tienen enlaces. */
+        ApiViaje.Enlaces enlaces = new ApiViaje.Enlaces();
+        /** Objetivos de sector ya completados (plan v9, P11): completado una vez, aunque se gaste el ítem después. */
+        ApiObjetivos.Estado objetivosHechos = new ApiObjetivos.Estado();
 
         /** Valor de una gamerule en este mundo. */
         boolean gameRule(GameRule g){
@@ -231,6 +243,8 @@ public class MundoInfinitoMod extends Mod{
             j.put("calendario", calendario.aJson());
             j.put("planetas", planetas.aJson());
             j.put("sistemas", sistemas.aHex());   // plan v7, F2: los mundos antiguos no tienen la clave y se leen vacíos
+            j.put("enlaces", enlaces.aTexto());   // plan v9, P7: los mundos antiguos no tienen la clave y se leen sin enlaces
+            j.put("objetivosHechos", objetivosHechos.aTexto());   // plan v9, P11: ídem, sin objetivos completados
             j.put("gamerules", perfil.aJsonReglas());   // espejo para versiones anteriores del mod
             return j;
         }
@@ -278,6 +292,8 @@ public class MundoInfinitoMod extends Mod{
             m.calendario.persistir = () -> Almacen.escribirCalendario(m);
             m.planetas = PlanetasMundo.desde(j.has("planetas") ? j.get("planetas") : null);   // mundos antiguos: sin nombres, fase 0
             m.sistemas = EstadoSistemas.leer(EstadoSistemas.desdeHex(j.getString("sistemas", "")));   // mundos antiguos: estado vacío
+            m.enlaces = ApiViaje.Enlaces.desdeTexto(j.getString("enlaces", ""));   // mundos antiguos: sin enlaces
+            m.objetivosHechos = ApiObjetivos.Estado.desdeTexto(j.getString("objetivosHechos", ""));   // mundos antiguos: ninguno completado
             return m;
         }
 
@@ -2041,7 +2057,7 @@ public class MundoInfinitoMod extends Mod{
             Reg r = new Reg();
             r.x = in.readInt();
             r.y = in.readInt();
-            r.bloque = in.readUTF();
+            r.bloque = MigracionPortales.nombreActual(in.readUTF());   // plan v9, P7: migración por lectura del silo antiguo
             r.equipo = in.readUnsignedByte();
             r.rot = in.readByte();
             r.ver = in.readByte();
@@ -2951,20 +2967,29 @@ public class MundoInfinitoMod extends Mod{
             Sistemas.asignarNuevo(m);              // plan v8, P1: su cuerpo en la órbita de su planeta, guardado desde el principio
             Almacen.guardarMeta(m);
             Regiones.iniciar(m);
-            Orbita.reiniciar();          // mundo nuevo: sin drones en tránsito...
+            TransitoOrbital.reiniciar();          // mundo nuevo: sin drones en tránsito...
             Estructuras.cargar(m);       // ...y sin estructuras ni checkpoints
             abrir(m, null, 0.0, 0.0);
         }
 
         static void continuar(Meta m){
+            continuar(m, null);
+        }
+
+        /**
+         * Abre un mundo guardado. {@code preparar}, si no es null, recibe el estado guardado antes de abrirlo (los viajes por portal añaden ahí las
+         * unidades que acompañan al jugador). Un mundo sin estado guardado se abre como nuevo y no llama a {@code preparar}.
+         */
+        static void continuar(Meta m, arc.func.Cons<Datos> preparar){
             if(!m.compatible()) return;
             if(!avisarModsDistintos(m)) return;
             Sistemas.asegurar(m);                  // plan v8, P1: un mundo antiguo recibe su cuerpo (determinista) y queda guardado
             Fi f = Almacen.archivoEstado(m);
             Datos d = f.exists() ? Datos.leer(f) : null;
             Regiones.iniciar(m);
-            Orbita.cargar(m);
+            TransitoOrbital.cargar(m);
             Estructuras.cargar(m);
+            if(d != null && preparar != null) preparar.get(d);
             if(d != null) abrir(m, d, d.vx, d.vy);
             else abrir(m, null, 0.0, 0.0);
         }
@@ -3058,6 +3083,7 @@ public class MundoInfinitoMod extends Mod{
         static void abrir(Meta m, Datos datos, double vx, double vy){
             actual = m;
             Radares.limpiar();   // plan v8, P6: cada mundo empieza sin detecciones
+            ColisionVisual.limpiar();   // plan v9, P10: ni pulsos de otro mundo
             m.tam = ventana();
             liberarMundo();
             OpenWorldAPI.registrarEnLog();
@@ -3344,7 +3370,7 @@ public class MundoInfinitoMod extends Mod{
         // ---------- restauración de edificios ----------
         static void restaurarEdificio(Reg r){
             try{
-                Block b = Vars.content.block(r.bloque);
+                Block b = Vars.content.block(MigracionPortales.nombreActual(r.bloque));   // plan v9, P7: el silo antiguo se lee como portal tier 1
                 Tile t = Vars.world.tile(r.x - Streamer.ox, r.y - Streamer.oy);
                 if(b == null || t == null) return;
                 // Mundos ANTIGUOS (creados cuando el mod generaba bases enemigas y ruinas): lo enemigo o abandonado que quedó guardado se
@@ -3388,7 +3414,7 @@ public class MundoInfinitoMod extends Mod{
             final Meta m = actual;
             m.ultimo = System.currentTimeMillis();
             final byte[] estado = d.bytes();
-            final byte[] orbita = m.dimensional() ? Orbita.bytes() : null;
+            final byte[] orbita = m.dimensional() ? TransitoOrbital.bytes() : null;
             final byte[] estructuras = m.dimensional() ? Estructuras.bytes() : null;
             final Fi fEstructuras = Almacen.archivoEstructuras(m);
             final java.util.HashMap<Fi, arc.func.Prov<byte[]>> regs = Regiones.serializarSucias();

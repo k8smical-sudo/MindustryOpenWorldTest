@@ -12,7 +12,7 @@ import java.util.function.ToDoubleFunction;
  * Cada cuerpo tarda {@code ticksPorCuerpo} en detectarse, así que el k-ésimo detectado aparece en {@code tiempo + (k+1)·ticksPorCuerpo}.
  * Sin Arc: se prueba en CI sin el juego.
  *
- * Valores por defecto declarados (tiers 1 a 3): alcance 40, 120 y 400 unidades; 600, 240 y 60 ticks por cuerpo. Un dev puede declarar
+ * Valores por defecto (tiers 1 a 3, en {@link Calibracion}): alcance 40, 120 y 400 unidades; 600, 240 y 60 ticks por cuerpo. Un dev puede declarar
  * sus propios niveles con el constructor público y pasarlos a {@link #escanear}. Los portales por tiers llegan en la entrega siguiente.
  */
 public final class ApiRadar{
@@ -54,12 +54,8 @@ public final class ApiRadar{
 
     /** Nivel por defecto de un tier. Un tier fuera de [1, 3] se acota. */
     public static Nivel nivel(int tier){
-        final int t = Math.max(TIER_MINIMO, Math.min(TIER_MAXIMO, tier));
-        switch(t){
-            case 1: return new Nivel(1, 40.0, 600L);
-            case 2: return new Nivel(2, 120.0, 240L);
-            default: return new Nivel(3, 400.0, 60L);
-        }
+        final int i = Calibracion.indice(tier);
+        return new Nivel(i + 1, Calibracion.RADAR_ALCANCE[i], Calibracion.RADAR_TICKS_POR_CUERPO[i]);
     }
 
     /**

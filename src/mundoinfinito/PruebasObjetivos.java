@@ -16,6 +16,7 @@ final class PruebasObjetivos{
             pruebaProgreso();
             pruebaTexto();
             pruebaGameruleApagada();
+            pruebaCompletadoUnaVez();
             System.out.println(fallos == 0 ? "[Objetivos] OK: todas las pruebas pasan." : "[Objetivos] FALLO: " + fallos + " prueba(s) no pasan.");
             rc = fallos == 0 ? 0 : 1;
         }catch(Throwable e){
@@ -55,6 +56,24 @@ final class PruebasObjetivos{
 
     private static void pruebaGameruleApagada(){
         fallos += chequear("sin mundo abierto la barra no está activa", !ApiObjetivos.activa());
+    }
+
+    private static void pruebaCompletadoUnaVez(){
+        final ApiObjetivos.Objetivo o = ApiObjetivos.objetivos().stream().filter(x -> x.id.equals("prueba:berilio")).findFirst().orElse(null);
+        final ApiObjetivos.Estado estado = new ApiObjetivos.Estado();
+        fallos += chequear("antes de llegar a la meta no hay nada completado", o != null && !ApiObjetivos.actualizar(estado, o, 59) && !estado.completado(o.id));
+        final boolean nuevo = o != null && ApiObjetivos.actualizar(estado, o, 60);
+        final boolean repetido = o != null && ApiObjetivos.actualizar(estado, o, 70);
+        fallos += chequear("al llegar a la meta se completa una sola vez (el aviso al jugador sale una vez)", nuevo && !repetido && estado.completado(o.id));
+        fallos += chequear("completado una vez: si se gasta el ítem sigue completo y la barra muestra la meta entera",
+            ApiObjetivos.completo(estado, o, 3) && ApiObjetivos.texto(estado, o, 3).equals("Obtener berilio 60/60 (completo)")
+                && ApiObjetivos.texto(new ApiObjetivos.Estado(), o, 3).equals("Obtener berilio 3/60"));
+        final ApiObjetivos.Estado leido = ApiObjetivos.Estado.desdeTexto(estado.aTexto());
+        fallos += chequear("el estado se guarda y se lee con ida y vuelta idéntica; un mundo antiguo lo lee vacío",
+            leido.completado("prueba:berilio") && leido.aTexto().equals(estado.aTexto()) && ApiObjetivos.Estado.desdeTexto(null).ids().isEmpty()
+                && ApiObjetivos.Estado.desdeTexto("  \n\n con espacio \n").ids().isEmpty());
+        fallos += chequear("sin estado (sin mundo) todo funciona como antes: solo cuenta la cantidad actual",
+            !ApiObjetivos.actualizar(null, o, 60) && ApiObjetivos.completo(null, o, 60) && !ApiObjetivos.completo(null, o, 59));
     }
 
     private static int chequear(String texto, boolean ok){

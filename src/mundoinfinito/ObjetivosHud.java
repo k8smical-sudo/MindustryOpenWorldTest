@@ -8,7 +8,8 @@ import mindustry.ui.Styles;
 
 /**
  * BARRA DE OBJETIVOS DE SECTOR (plan v9, P11). Capa de interfaz: lee el núcleo del jugador y pasa las cantidades a {@link ApiObjetivos}.
- * Se muestra solo con el gamerule activo, en partida, y con al menos un objetivo registrado.
+ * Se muestra solo con el gamerule activo, en partida, y con al menos un objetivo registrado. Un objetivo completado queda guardado en el mundo
+ * ({@code Meta.objetivosHechos}) y se escribe con él al guardar.
  */
 final class ObjetivosHud{
     private ObjetivosHud(){}
@@ -30,9 +31,16 @@ final class ObjetivosHud{
 
     private static CharSequence texto(){
         final StringBuilder sb = new StringBuilder();
+        final MundoInfinitoMod.Meta m = MundoInfinitoMod.Streamer.meta;
+        final ApiObjetivos.Estado hechos = m == null ? null : m.objetivosHechos;
         for(ApiObjetivos.Objetivo o : ApiObjetivos.objetivos()){
             if(sb.length() > 0) sb.append('\n');
-            sb.append(ApiObjetivos.texto(o, cantidadEnNucleo(o.item)));
+            final int cantidad = cantidadEnNucleo(o.item);
+            // completado una vez: al llegar a la meta queda guardado en el mundo y ya no vuelve a incompleto
+            if(ApiObjetivos.actualizar(hechos, o, cantidad) && !Vars.headless && Vars.ui != null){
+                Vars.ui.showInfoToast("Objetivo completado: " + o.titulo, 4f);
+            }
+            sb.append(ApiObjetivos.texto(hechos, o, cantidad));
         }
         return sb;
     }

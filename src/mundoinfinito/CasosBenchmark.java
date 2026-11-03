@@ -37,6 +37,9 @@ final class CasosBenchmark{
         sistemasYFisica(out);
         radar(out);
         viaje(out);
+        viajeV12(out);
+        colision(out);
+        calibracion(out);
         inicio(out);
         return out;
     }
@@ -308,5 +311,49 @@ final class CasosBenchmark{
             return ApiArbol.anadir("bench-arbol", ApiPlaneta.SERPULO, id, null, (ItemStack[])null)
                 && ApiArbol.nodo(ApiPlaneta.SERPULO + "/" + id) != null;
         }, "ApiArbol"));
+    }
+
+    // ================================================================== plan v9: enlaces persistentes, boosters, desvío, colisiones, calibración
+
+    private static void viajeV12(List<Bancos.Caso> out){
+        final ApiViaje.Enlaces enlaces = ApiViaje.Enlaces.desdeTexto("e1|a|b|1\ne2|a|c|2\ne3|d|e|3\n");
+        final String texto = enlaces.aTexto();
+        out.add(new Bancos.Caso("viaje", "enlaces-ida-y-vuelta", 20000,
+            () -> ApiViaje.Enlaces.desdeTexto(texto).aTexto().equals(texto), "ApiViaje"));
+        final java.util.Map<String, Integer> inv = new java.util.HashMap<String, Integer>();
+        inv.put("booster-alcance", 1);
+        out.add(new Bancos.Caso("viaje", "boosters-disponibles-y-coste", 100000,
+            () -> ApiViaje.costeBoosters(ApiViaje.boostersDisponibles(inv)).size() == 1, "ApiViaje"));
+        out.add(new Bancos.Caso("viaje", "desvio-determinista", 100000,
+            () -> {
+                final String a = ApiViaje.elegirDesvio(enlaces, "a", "b", 9, 0, 5);
+                return "c".equals(a) && a.equals(ApiViaje.elegirDesvio(enlaces, "a", "b", 9, 0, 5));
+            }, "ApiViaje"));
+        out.add(new Bancos.Caso("viaje", "tier-de-unidad-por-vida", 200000,
+            () -> ApiViaje.tierUnidadPorVida(350) == 1 && ApiViaje.tierUnidadPorVida(20000) == 3, "ApiViaje"));
+        out.add(new Bancos.Caso("viaje", "migracion-de-portal-antiguo", 200000,
+            () -> MigracionPortales.nombreActual("silo-interdimensional").equals("portal-viaje-1"), "MigracionPortales"));
+        final ApiObjetivos.Objetivo o = new ApiObjetivos.Objetivo("bench:o", "Meta", "copper", 10);
+        out.add(new Bancos.Caso("objetivos", "estado-guardar-y-leer", 20000, () -> {
+            final ApiObjetivos.Estado e = new ApiObjetivos.Estado();
+            ApiObjetivos.actualizar(e, o, 10);
+            return ApiObjetivos.Estado.desdeTexto(e.aTexto()).completado("bench:o") && ApiObjetivos.completo(e, o, 0);
+        }, "ApiObjetivos"));
+    }
+
+    private static void colision(List<Bancos.Caso> out){
+        final ApiColision.Regla regla = ApiColision.Regla.de("bench-colision:regla", "a", "b").fase("impacto", 600).fase("secuela", 1200)
+            .superviviente(ApiColision.Criterio.MAYOR, "masa").conProbabilidad(0.5);
+        out.add(new Bancos.Caso("colision", "resolver-con-azar", 200000, () -> {
+            final ApiColision.Desenlace d = ApiColision.resolver(regla, 42, 0, 7, (c, v) -> c.equals("a") ? 2.0 : 1.0);
+            return !d.ocurre || "a".equals(d.superviviente);
+        }, "ApiColision"));
+        out.add(new Bancos.Caso("colision", "plan-de-fases", 200000, () -> ApiColision.plan(regla, 100f).size() == 2, "ApiColision"));
+        out.add(new Bancos.Caso("colision", "validar-regla", 200000, () -> ApiColision.motivoInvalida(regla) == null, "ApiColision"));
+    }
+
+    private static void calibracion(List<Bancos.Caso> out){
+        out.add(new Bancos.Caso("calibracion", "niveles-de-radar-y-portal", 200000,
+            () -> ApiRadar.nivel(2).alcance == Calibracion.RADAR_ALCANCE[1] && ApiViaje.portal(3).alcance == Calibracion.PORTAL_ALCANCE[2], "Calibracion"));
     }
 }

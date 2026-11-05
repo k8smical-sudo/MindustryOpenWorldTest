@@ -9,7 +9,7 @@ import arc.util.Log;
  */
 public final class ApiVersion{
     /** Conjunto de la API pública (sube cuando cambia cualquiera de las partes). */
-    public static final int PUBLICA_MAYOR = 1, PUBLICA_MENOR = 11;   // 1.11: ... OBJETIVOS 1.1 (completado una vez), VIAJE 1.2 (enlaces persistentes, boosters como ítems), COLISION 1.0
+    public static final int PUBLICA_MAYOR = 1, PUBLICA_MENOR = 12;   // 1.12: ... COLISION 1.0, NIEBLA 1.0 (memoria de niebla manipulable por addons)
     /** La parte visual: {@code ApiVisual}. */
     public static final int VISUAL_MAYOR = 1, VISUAL_MENOR = 1;
     /** La parte de ajustes y propuestas de valor: {@code ApiAjustes}. */
@@ -51,6 +51,8 @@ public final class ApiVersion{
     public static final int OBJETIVOS_MAYOR = 1, OBJETIVOS_MENOR = 1;   // 1.1: "completado una vez" con estado guardado en el mundo
     /** Colisiones entre cuerpos (reglas por par, fases como eventos de tiempo, superviviente por variable): {@code ApiColision}. Plan v9, P10. Apagadas por defecto. */
     public static final int COLISION_MAYOR = 1, COLISION_MENOR = 0;
+    /** Memoria de niebla de guerra entre visitas a un mundo (política de persistencia, hooks de guardado/restauración, manipulación directa por chunk): {@code ApiNiebla}. Plan v9. */
+    public static final int NIEBLA_MAYOR = 1, NIEBLA_MENOR = 0;
     /** Formato del estado de sistemas guardado con el mundo: {@code EstadoSistemas}. Plan v6, F2. No es una API de mods. */
     public static final int ESTADO_MAYOR = 1, ESTADO_MENOR = 0;
 

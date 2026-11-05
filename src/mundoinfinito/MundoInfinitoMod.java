@@ -150,6 +150,7 @@ public class MundoInfinitoMod extends Mod{
         FenomenosCosmicos.registrar(); // fenómenos cósmicos (plan v9, P10): agujero negro, apagado por defecto
         ApiViaje.iniciarAjustes();     // caos de viajes (plan v9, P7): apagado por defecto, se elige al crear el mundo
         ApiColision.iniciarAjustes();  // colisiones entre cuerpos (plan v9, P10): apagadas por defecto, se eligen al crear el mundo
+        ApiNiebla.iniciarAjustes();    // memoria de niebla (plan v9): activada por defecto, se elige al crear el mundo
         OpenWorldAPI.registrarGameRule(GameRule.nueva(ApiObjetivos.REGLA_ACTIVA, "Objetivos de sector",
             "Muestra la barra de objetivos de sector en partida. Los objetivos los define cada addon.",
             false, (reglas, valor, dim) -> { }));   // apagada por defecto (plan v9, P11)
@@ -2922,6 +2923,9 @@ public class MundoInfinitoMod extends Mod{
         static Meta actual;
         static boolean viajando = false;
         static int proxyPos = -1;   // posición del núcleo "proxy" (inventario compartido cuando el núcleo real está lejos)
+        /** true solo entre crear un mundo nuevo y abrirlo: dispara la animación de despliegue (plan v9) una sola vez, nunca al continuar un
+         *  mundo, cambiar de dimensión o viajar por un portal. {@link MundoInfinitoMod.Mundos#finalizarApertura} la consume y la apaga. */
+        static boolean creandoMundoNuevo = false;
 
         /** Unidades "avatar" del jugador: nunca se guardan ni se restauran como seguidores (evita duplicados del dron). */
         static final java.util.HashSet<String> UNIDADES_NUCLEO = new java.util.HashSet<>(
@@ -2969,6 +2973,7 @@ public class MundoInfinitoMod extends Mod{
             Regiones.iniciar(m);
             TransitoOrbital.reiniciar();          // mundo nuevo: sin drones en tránsito...
             Estructuras.cargar(m);       // ...y sin estructuras ni checkpoints
+            creandoMundoNuevo = true;    // plan v9: la próxima apertura es una creación de verdad, no un continuar/cambiar de dimensión/viajar
             abrir(m, null, 0.0, 0.0);
         }
 
@@ -3158,6 +3163,11 @@ public class MundoInfinitoMod extends Mod{
             Anillo.trasladarProxy(Math.floorDiv(px, TAM_CHUNK), Math.floorDiv(py, TAM_CHUNK), false);
 
             Vars.logic.play();                // PlayEvent añade al jugador y reparte el loadout inicial
+
+            if(nueva && creandoMundoNuevo){
+                creandoMundoNuevo = false;   // una sola vez: ni al reabrir este mundo, ni al cambiar de dimensión, ni al viajar por un portal
+                DeployAnimacion.reproducir();   // plan v9: animación de despliegue del núcleo, igual que al entrar en un sector de campaña
+            }
 
             Streamer.jugadorX = px;
             Streamer.jugadorY = py;

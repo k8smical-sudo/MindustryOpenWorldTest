@@ -40,6 +40,7 @@ final class CasosBenchmark{
         viajeV12(out);
         colision(out);
         calibracion(out);
+        niebla(out);
         inicio(out);
         return out;
     }
@@ -355,5 +356,13 @@ final class CasosBenchmark{
     private static void calibracion(List<Bancos.Caso> out){
         out.add(new Bancos.Caso("calibracion", "niveles-de-radar-y-portal", 200000,
             () -> ApiRadar.nivel(2).alcance == Calibracion.RADAR_ALCANCE[1] && ApiViaje.portal(3).alcance == Calibracion.PORTAL_ALCANCE[2], "Calibracion"));
+    }
+
+    private static void niebla(List<Bancos.Caso> out){
+        out.add(new Bancos.Caso("niebla", "persiste-sin-politicas", 500000, () -> ApiNiebla.persiste("bench", 0, true), "ApiNiebla"));
+        final boolean reg = ApiNiebla.registrarPolitica("bench-niebla:pol", 0, (m, d) -> Boolean.FALSE);
+        out.add(new Bancos.Caso("niebla", "politica-registrada", 500000, () -> !ApiNiebla.persiste("bench", 0, true), "ApiNiebla"));
+        ApiNiebla.quitarPolitica("bench-niebla:pol");
+        return;
     }
 }

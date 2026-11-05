@@ -247,10 +247,12 @@ final class Anillo{
         }
         // (las unidades de guardia enemiga de mundos antiguos, clase 0, se descartan: el mod ya no genera enemigos. Las aliadas dormidas,
         // clase 1, las despierta Entidades cuando el jugador se acerca.)
-        if(c.niebla != null && Vars.fogControl != null){
-            final long[] b = new long[16];
-            for(int i = 0; i < 16; i++) b[i] = (c.niebla[2 * i] & 0xFFFFFFFFL) | ((long)c.niebla[2 * i + 1] << 32);
-            Vars.fogControl.putStaticChunk(Team.sharded, cx, cy, b);
+        // plan v9: memoria de niebla manipulable por addons (ApiNiebla). Con la memoria apagada, no se aplica lo guardado: el chunk se ve
+        // sin explorar, como la primera vez. Con ella activa, los hooks registrados pueden tocar los bits antes de aplicarlos.
+        if(c.niebla != null && Vars.fogControl != null && ApiNiebla.memoriaActiva()){
+            final long[] b = NieblaMundo.deFormatoGuardado(c.niebla);
+            ApiNiebla.ejecutarAlRestaurar(Streamer.meta.id, Streamer.meta.dim, cx, cy, b);
+            NieblaMundo.escribir(cx, cy, b);
             nieblaSucia = true;
         }
         return true;
@@ -495,18 +497,16 @@ final class Anillo{
         }
 
         int[] niebla = viejo == null ? null : viejo.niebla;
-        if(reescribir && Vars.fogControl != null && Vars.state.rules.fog){
-            final long[] b = new long[16];
-            Vars.fogControl.takeStaticChunk(Team.sharded, cx, cy, b);
-            boolean alguno = false;
-            final int[] filas = new int[32];
-            for(int i = 0; i < 16; i++){
-                filas[2 * i] = (int)b[i];
-                filas[2 * i + 1] = (int)(b[i] >>> 32);
-                if(b[i] != 0L) alguno = true;
+        // plan v9: con la memoria de niebla apagada (ApiNiebla) no se actualiza lo guardado; lo que hubiera guardado antes de apagarla se
+        // conserva tal cual (no se borra), por si se vuelve a activar más adelante.
+        if(reescribir && Vars.fogControl != null && Vars.state.rules.fog && ApiNiebla.memoriaActiva()){
+            final long[] b = NieblaMundo.tomar(cx, cy);
+            if(b != null){
+                ApiNiebla.ejecutarAlGuardar(Streamer.meta.id, Streamer.meta.dim, cx, cy, b);
+                final int[] filas = NieblaMundo.aFormatoGuardado(b);
+                if(filas != null) niebla = filas;
+                if(!vaciarNiebla) NieblaMundo.escribir(cx, cy, b);   // guardado periódico: la niebla viva se queda (con lo que hayan tocado los hooks)
             }
-            if(alguno) niebla = filas;
-            if(!vaciarNiebla) Vars.fogControl.putStaticChunk(Team.sharded, cx, cy, b);   // guardado periódico: la niebla viva se queda
         }
 
         final boolean algo = edificios.size > 0 || guardias.size > 0 || dorm.size > 0 || edHib.size > 0 || niebla != null

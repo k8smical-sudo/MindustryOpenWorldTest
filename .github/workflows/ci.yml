@@ -91,7 +91,7 @@ jobs:
       # Comprobación previa: si una clase de prueba no está compilada, el fallo debe decir qué falta (el fuente no llegó al repo o no está en src/mundoinfinito).
       - name: Comprobar que las clases de prueba están compiladas
         run: |
-          for c in PruebasLuz PruebasWorldgen PruebasApi PruebasNavegacion PruebasSistemas PruebasRadar PruebasViaje PruebasFenomenos PruebasObjetivos PruebasColision InventarioApi; do
+          for c in PruebasLuz PruebasWorldgen PruebasApi PruebasNavegacion PruebasSistemas PruebasRadar PruebasViaje PruebasFenomenos PruebasObjetivos PruebasColision PruebasNiebla InventarioApi; do
             if [ ! -f "build/classes/java/main/mundoinfinito/$c.class" ]; then
               echo "::error::Falta build/classes/java/main/mundoinfinito/$c.class. Comprueba que src/mundoinfinito/$c.java está en el repo (y no en otra carpeta)."
               exit 1
@@ -146,6 +146,13 @@ jobs:
         run: |
           mkdir -p build/corpus
           java -cp "build/classes/java/main:libs/MindustryX-Desktop.jar" mundoinfinito.PruebasColision 2>&1 | tee build/corpus/colision.txt
+          test "${PIPESTATUS[0]}" -eq 0
+        shell: bash
+      # ---- MEMORIA DE NIEBLA (plan v9). Sin el juego. ----
+      - name: Niebla - pruebas de política, hooks y aislamiento de fallos
+        run: |
+          mkdir -p build/corpus
+          java -cp "build/classes/java/main:libs/MindustryX-Desktop.jar" mundoinfinito.PruebasNiebla 2>&1 | tee build/corpus/niebla.txt
           test "${PIPESTATUS[0]}" -eq 0
         shell: bash
       # ---- OBJETIVOS DE SECTOR (plan v9, P11). Sin el juego. ----

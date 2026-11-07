@@ -361,9 +361,14 @@ final class CasosBenchmark{
 
     private static void niebla(List<Bancos.Caso> out){
         out.add(new Bancos.Caso("niebla", "persiste-sin-politicas", 500000, () -> ApiNiebla.persiste("bench", 0, true), "ApiNiebla"));
-        ApiNiebla.registrarPolitica("bench-niebla:pol", 0, (m, d) -> Boolean.FALSE);
-        out.add(new Bancos.Caso("niebla", "politica-registrada", 500000, () -> !ApiNiebla.persiste("bench", 0, true), "ApiNiebla"));
-        ApiNiebla.quitarPolitica("bench-niebla:pol");
+        // La política se registra la primera vez que el caso se ejecuta, no al construir la lista: el banco ejecuta los casos después de
+        // construirla, y un quitarPolitica aquí dejaba el caso sin política (INCORRECTO). Como ningún otro caso usa la niebla después
+        // de este, la política se queda registrada.
+        final boolean[] registrada = {false};
+        out.add(new Bancos.Caso("niebla", "politica-registrada", 500000, () -> {
+            if(!registrada[0]) registrada[0] = ApiNiebla.registrarPolitica("bench-niebla:pol", 0, (m, d) -> Boolean.FALSE);
+            return !ApiNiebla.persiste("bench", 0, true);
+        }, "ApiNiebla"));
     }
 
     private static void galaxia(List<Bancos.Caso> out){

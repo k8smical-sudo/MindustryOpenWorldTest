@@ -105,7 +105,7 @@ final class PerfilMundo{
     ParametrosGeneracion parametros(){
         final int rmin = Math.max(1, (int)Math.rint(valorLegado(ParametrosGeneracion.ID_RESPIRADEROS_RADIO_MIN, ParametrosGeneracion.LEGADO_RADIO_MIN)));
         final int rmax = Math.max(rmin, (int)Math.rint(valorLegado(ParametrosGeneracion.ID_RESPIRADEROS_RADIO_MAX, ParametrosGeneracion.LEGADO_RADIO_MAX)));
-        return new ParametrosGeneracion(
+        final ParametrosGeneracion p = new ParametrosGeneracion(
             (float)valorDe(ParametrosGeneracion.ID_ALTURA_SERPULO, ParametrosGeneracion.DEFECTO.estirarAlturaSerpulo),
             (float)valorDe(ParametrosGeneracion.ID_TEMPERATURA_SERPULO, ParametrosGeneracion.DEFECTO.estirarTemperaturaSerpulo),
             (float)valorDe(ParametrosGeneracion.ID_HUMEDAD_SERPULO, ParametrosGeneracion.DEFECTO.estirarHumedadSerpulo),
@@ -122,6 +122,9 @@ final class PerfilMundo{
                 (float)valorLegado(ParametrosGeneracion.ID_RESP_BIOMA[3], 1d),
                 (float)valorLegado(ParametrosGeneracion.ID_RESP_BIOMA[4], 1d)},
             (float)valorLegado(ParametrosGeneracion.ID_RESP_UMBRAL, 1d));
+        p.murosUmbral = (float)valorLegado(ParametrosGeneracion.ID_MUROS_UMBRAL, ParametrosGeneracion.LEGADO_MUROS_UMBRAL);
+        p.murosPasillo = (float)valorLegado(ParametrosGeneracion.ID_MUROS_PASILLO, ParametrosGeneracion.LEGADO_MUROS_PASILLO);
+        return p;
     }
 
     /** Valor de un planeta en este mundo: el guardado, o el de entonces (legado) si el mundo es anterior al ajuste. */

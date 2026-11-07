@@ -395,7 +395,7 @@ public final class Corpus{
     private static boolean iguales(ParametrosGeneracion x, ParametrosGeneracion y){
         return x.estirarAlturaSerpulo == y.estirarAlturaSerpulo && x.estirarTemperaturaSerpulo == y.estirarTemperaturaSerpulo
             && x.estirarHumedadSerpulo == y.estirarHumedadSerpulo && x.distanciaMinimaFenomenos == y.distanciaMinimaFenomenos
-            && x.presupuestoTerrenoPct == y.presupuestoTerrenoPct;
+            && x.presupuestoTerrenoPct == y.presupuestoTerrenoPct && x.murosUmbral == y.murosUmbral && x.murosPasillo == y.murosPasillo;
     }
 
     private static Jval archivoDe(PerfilMundo p){

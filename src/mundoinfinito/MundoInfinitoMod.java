@@ -1525,7 +1525,8 @@ public class MundoInfinitoMod extends Mod{
         static boolean hayMuro(int s, int x, int y, double wx, double wy, float dist, boolean ere, Spawn sp){
             // regiones abiertas y regiones rocosas
             float reg = fbm(sem(s, 9500), 650f, 3, x, y);
-            float lim = (ere ? LIM_E : LIM_S) + (0.5f - reg) * 0.40f;
+            final ParametrosGeneracion pg = Nucleo.parametros();   // del mundo abierto: su valor se sella al crearlo
+            float lim = (pg == null ? (ere ? LIM_E : LIM_S) : pg.murosUmbral) + (0.5f - reg) * 0.40f;
             if(dist < 70f) lim += suave(1f - dist / 70f) * sp.paredes;   // carácter del spawn (más o menos paredes)
 
             // segunda deformación del terreno: formas orgánicas, no manchas redondas
@@ -1538,7 +1539,7 @@ public class MundoInfinitoMod extends Mod{
             float w2 = suave((fbm(sem(s, 9602), 500f, 2, x + 1000.0, y) - 0.38f) * 2.6f);
             float f = lerp(lerp(fa, fb, w1), fc, w2 * 0.7f);
 
-            float ancho = ANCHO_PASO + 0.040f * fbm(sem(s, 8), 260f, 2, x, y);
+            float ancho = (pg == null ? ANCHO_PASO : pg.murosPasillo) + 0.040f * fbm(sem(s, 8), 260f, 2, x, y);
             if(dist < 70f && sp.paredes < 0.05f) ancho += 0.02f;
             boolean valle = Math.abs(fbm(sem(s, 7), 100f, 3, wx, wy) - 0.5f) < ancho;
             boolean masivo = f > lim && !valle;

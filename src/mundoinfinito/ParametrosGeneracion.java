@@ -28,6 +28,7 @@ final class ParametrosGeneracion{
         "mundo-infinito:respiraderos-bioma-carbono"};
     /** Multiplicador del umbral de terreno abierto (menor = más respiraderos). */
     static final String ID_RESP_UMBRAL = "mundo-infinito:respiraderos-umbral";
+    static final String ID_MUROS_UMBRAL = "mundo-infinito:muros-umbral", ID_MUROS_PASILLO = "mundo-infinito:muros-pasillo";
 
     static final int LEGADO_SEPARACION_RESPIRADEROS = 48;
     static final float LEGADO_MEZCLA_RESPIRADEROS = 1f;
@@ -35,6 +36,8 @@ final class ParametrosGeneracion{
     static final boolean LEGADO_POZOS_SPAWN = true;
     static final float[] LEGADO_MULT_BIOMA = {1f, 1f, 1f, 1f, 1f};
     static final float LEGADO_UMBRAL_RESPIRADEROS = 1f;
+    /** Umbral de muros y anchura de pasillos del mundo base: las constantes de siempre (los mundos anteriores las conservan). */
+    static final float LEGADO_MUROS_UMBRAL = 0.522f, LEGADO_MUROS_PASILLO = 0.018f;
 
     /** Valores de los mundos NUEVOS. */
     static final float[] DEFECTO_MULT_BIOMA = {1f, 0.35f, 0.35f, 0.35f, 0.35f};
@@ -54,6 +57,10 @@ final class ParametrosGeneracion{
     final float[] multBioma;   // 5 grupos: riolita, arkyic, amarillo, rojo, carbono
     /** Multiplicador del umbral de terreno abierto de un respiradero. */
     final float umbralRespiraderos;
+    /** Nivel de la roca de los macizos (más alto = menos muros). Lo asigna PerfilMundo tras construir el objeto, así que no es final. */
+    float murosUmbral = LEGADO_MUROS_UMBRAL;
+    /** Anchura base de los pasillos que cortan los macizos. No es final por la misma razón. */
+    float murosPasillo = LEGADO_MUROS_PASILLO;
 
     ParametrosGeneracion(float estirarAlturaSerpulo, float estirarTemperaturaSerpulo, float estirarHumedadSerpulo){
         this(estirarAlturaSerpulo, estirarTemperaturaSerpulo, estirarHumedadSerpulo, 0, 100);

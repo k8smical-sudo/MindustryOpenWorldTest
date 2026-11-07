@@ -83,6 +83,12 @@ final class RegistroAjustes{
         registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_RESP_UMBRAL, "Exigencia de terreno abierto de los respiraderos",
             "Multiplicador del umbral de terreno abierto. Más bajo = más respiraderos en terreno menos despejado.",
             AjusteMundo.Ambito.GENERACION, ParametrosGeneracion.DEFECTO_UMBRAL_RESPIRADEROS, 0.3, 1.5).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
+        registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_MUROS_UMBRAL, "Umbral de muros (más alto = más abierto)",
+            "Nivel de la roca de los macizos. Más alto = menos muros y mundo más abierto; más bajo = más roca y mundo más cerrado. Por defecto, el del mundo base.",
+            AjusteMundo.Ambito.GENERACION, ParametrosGeneracion.LEGADO_MUROS_UMBRAL, 0.44, 0.60).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
+        registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_MUROS_PASILLO, "Anchura de los pasillos entre macizos",
+            "Anchura base de los pasillos que cortan la roca. Más ancho = más paso libre entre muros. Por defecto, el del mundo base.",
+            AjusteMundo.Ambito.GENERACION, ParametrosGeneracion.LEGADO_MUROS_PASILLO, 0.0, 0.05).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
     }
 
     private RegistroAjustes(){}

@@ -186,6 +186,17 @@ final class VistaPlanetas{
             });
         }
 
+        /**
+         * Periodo de revolución (ticks) de la órbita de un planeta, con el mismo criterio que el juego (ApiPlaneta.orbitaEn y PlanetasMundo).
+         * Se pide por el TAG del planeta: la clave de la órbita de un grupo ("grupo/planeta") no es un planeta registrado, y su valor por
+         * defecto era 0, lo que daba un periodo de 1 tick y planetas girando sin control. Si el valor no es válido, usa el por defecto del planeta.
+         */
+        private double periodoOrbita(MundoInfinitoMod.Meta m, String tag){
+            final double p = ApiPlaneta.orbitaEn(m.perfil, tag);
+            if(p >= 1.0 && Double.isFinite(p)) return p;
+            return Math.max(1.0, ApiPlaneta.orbita(tag));
+        }
+
         /** Vuelve a leer los mundos guardados (migrando los antiguos) y une sus cuerpos en un solo estado. No calcula ninguna posición nueva. */
         void recargar(){
             orbitas.clear();
@@ -209,7 +220,7 @@ final class VistaPlanetas{
                 if(c.orbita != null){
                     o = orbitas.get(c.orbita);
                     if(o == null){
-                        o = new Orbita(c.orbita, (float)est.radioOrbita(c.orbita), Math.max(1, ApiPlaneta.orbita(c.orbita)));
+                        o = new Orbita(c.orbita, (float)est.radioOrbita(c.orbita), periodoOrbita(m, tag));
                         orbitas.put(c.orbita, o);
                     }
                 }

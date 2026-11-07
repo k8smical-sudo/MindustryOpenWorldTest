@@ -1,8 +1,7 @@
 name: Compat MX-Test
 
 # Prueba el mod contra un candidato de MX-Test antes de que sea release.
-# Sin tag, usa la última release (igual que el CI normal). Reutiliza ci.yml, así que
-# es exactamente la misma batería de pruebas.
+# Sin tag, usa la última release ESTABLE (igual que el CI normal). Reutiliza ci.yml.
 on:
   pull_request:
     branches: [main]
@@ -11,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       engine_tag:
-        description: "Tag de MX-Test a probar (vacío = última release)"
+        description: "Tag de MX-Test a probar (vacío = última release estable)"
         required: false
         type: string
         default: ""
@@ -25,3 +24,24 @@ jobs:
     with:
       engine_tag: ${{ github.event.client_payload.tag || inputs.engine_tag || '' }}
     secrets: inherit
+
+  # Informa el resultado al commit del motor (solo si vino de un candidato).
+  # En la protección de ramas de MX-Test hay que exigir el contexto "mod-compat".
+  informar:
+    needs: compat
+    if: always() && github.event_name == 'repository_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publicar estado en el motor
+        env:
+          GH_TOKEN: ${{ secrets.MX_STATUS_TOKEN }}
+          MX_REPO: ${{ github.event.client_payload.mx_repo }}
+          SHA: ${{ github.event.client_payload.sha }}
+          RESULT: ${{ needs.compat.result }}
+        run: |
+          if [ "$RESULT" = "success" ]; then STATE=success; else STATE=failure; fi
+          gh api "repos/$MX_REPO/statuses/$SHA" \
+            -f state="$STATE" \
+            -f context="mod-compat" \
+            -f description="Compatibilidad con el mod: $RESULT" \
+            -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"

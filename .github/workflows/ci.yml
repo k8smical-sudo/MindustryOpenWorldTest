@@ -66,7 +66,9 @@ jobs:
           set -euo pipefail
           TAG="$ENGINE_TAG"
           if [ -z "$TAG" ]; then
-            TAG=$(gh release list --repo "$MX_REPO" --limit 1 --json tagName -q '.[0].tagName')
+            # Última release ESTABLE: se ignoran los candidatos (prereleases) del motor.
+            TAG=$(gh release list --repo "$MX_REPO" --limit 30 --json tagName,isPrerelease \
+              -q '[.[] | select(.isPrerelease | not)][0].tagName')
           fi
           echo "MX-Test release: $TAG"
           mkdir -p libs

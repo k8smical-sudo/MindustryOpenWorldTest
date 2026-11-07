@@ -111,6 +111,7 @@ public class MundoInfinitoMod extends Mod{
 
     public MundoInfinitoMod(){
         ModoDebug.iniciarSiActivo();   // primero: así también queda registrada la carga del mod
+        Events.on(ClientLoadEvent.class, e -> ModoDebug.reengancharSiHaceFalta());   // al cargar el cliente, por si otro sistema reemplazó el logger
         // Generadores del propio mundo base: usan la misma API que los mods (Parte A del plan). Solo actúan en mundos de generación >= GEN_REVISADA.
         FenomenosBase.registrar();
         GameRulesBase.registrar();   // gamerules del mod base (misma API que las de otros mods)

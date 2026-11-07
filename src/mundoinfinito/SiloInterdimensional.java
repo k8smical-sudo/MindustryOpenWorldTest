@@ -14,18 +14,18 @@ import mindustry.world.blocks.storage.StorageBlock;
 import mindustry.world.meta.BuildVisibility;
 
 /**
- * PORTAL DE VIAJE POR TIERS (plan v9, P7). Esta clase es el tier 1 del sistema de portales (el silo interdimensional de antes, 4x4) y la base de los
+ * PORTAL DE VIAJE POR TIERS (plan v9, P7). Esta clase es el tier 1 del sistema de portales (el silo de antes, 4x4) y la base de los
  * tiers 2 y 3 (5x5 y 6x6). El silo antiguo ("silo-interdimensional") sigue registrado, oculto, para leer los mundos guardados; al restaurarlos se
  * convierte en el tier 1 ({@link MigracionPortales}). Los tiers 2 y 3 no hacen logística orbital: solo son portales de viaje.
  *
- * Silo Interdimensional 4x4 (tier 1). Cumple dos papeles a la vez (en cada dimensión hay uno o más):
+ * Silo Interdimensional 4x4 (tier 1). Cumple dos papeles a la vez (en cada mundo puede haber uno o más):
  *
- *  - ENVÍO: lo que se le mete (cintas, unidades) sale hacia la OTRA dimensión en drones de 30 unidades.
+ *  - ENVÍO: lo que se le mete (cintas, unidades) sale hacia el mundo ENLAZADO que se elija como destino, en drones de 30 unidades.
  *    Necesita energía y combustible líquido (consumidores nativos: el silo solo gasta mientras tiene carga).
- *  - RECEPCIÓN: descarga poco a poco lo que los drones traen a esta dimensión, directamente a los bloques
+ *  - RECEPCIÓN: descarga poco a poco lo que los drones traen a este mundo, directamente a los bloques
  *    de alrededor (cintas, contenedores...). Lo recibido NO pasa por el inventario del silo, así que nunca
  *    se reenvía por error.
- *  - PORTAL: al tocarlo abre un diálogo para ir a la base principal, a un checkpoint, a la otra dimensión (gratis) o, con enlaces, a otros mundos.
+ *  - PORTAL: al tocarlo abre un diálogo para ir a la base principal, a un checkpoint o, con enlaces, a otros mundos.
  *    Hay portales derelictos dentro de las bases enemigas y en las ruinas; este bloque también se puede construir.
  *
  * El coste de construcción usa solo ítems que existen en AMBOS planetas (silicio, grafito, torio): los demás
@@ -42,18 +42,18 @@ public class SiloInterdimensional extends StorageBlock{
     public int tier = 1;
 
     static void cargar(){
-        silo = nuevo(MigracionPortales.TIER_1, 1, "Portal interdimensional I",
-            "Toca para viajar: base principal, checkpoints, otra dimensión u otros mundos enlazados. Envía y recibe recursos entre dimensiones.");
-        portal2 = nuevo(MigracionPortales.TIER_2, 2, "Portal interdimensional II",
+        silo = nuevo(MigracionPortales.TIER_1, 1, "Portal de mundos I",
+            "Toca para viajar: base principal, checkpoints u otros mundos enlazados. Envía y recibe recursos de los mundos enlazados.");
+        portal2 = nuevo(MigracionPortales.TIER_2, 2, "Portal de mundos II",
             "Portal de largo alcance: enlaces a mundos más lejanos y viajes más rápidos. No envía recursos.");
-        portal3 = nuevo(MigracionPortales.TIER_3, 3, "Portal interdimensional III",
+        portal3 = nuevo(MigracionPortales.TIER_3, 3, "Portal de mundos III",
             "Portal de alcance máximo y viajes muy rápidos. No envía recursos.");
         // El bloque de antes, solo para leer los mundos guardados: no se ofrece en el menú de construcción
         antiguo = new SiloInterdimensional(MigracionPortales.ANTIGUO, 1){{
             requirements(Category.effect, pila(Calibracion.PORTAL_CONSTRUCCION[0]));
             alwaysUnlocked = true;
             buildVisibility = BuildVisibility.hidden;
-            localizedName = "Portal interdimensional (antiguo)";
+            localizedName = "Portal de mundos (antiguo)";
             description = "Bloque de mundos anteriores: se convierte en el portal tier 1 al abrir el mundo.";
         }};
     }
@@ -62,6 +62,7 @@ public class SiloInterdimensional extends StorageBlock{
         return new SiloInterdimensional(nombre, nivel){{
             requirements(Category.effect, pila(Calibracion.PORTAL_CONSTRUCCION[Calibracion.indice(nivel)]));
             alwaysUnlocked = true;   // no está en ningún árbol tecnológico
+            buildVisibility = ApiContenido.visibilidad(nombre);   // oculto en campaña salvo que ApiContenido lo permita
             localizedName = titulo;
             description = texto;
         }};
@@ -111,23 +112,29 @@ public class SiloInterdimensional extends StorageBlock{
         float tLote, tDescarga;
         int cursor;
 
-        int dim(){
-            return MundoInfinitoMod.Mundos.dimActual();
+        /** Id del mundo abierto, o null sin mundo. Es la clave de su buzón de recepción. */
+        String miMundo(){
+            return MundoInfinitoMod.Mundos.actual == null ? null : MundoInfinitoMod.Mundos.actual.id;
         }
 
+        /** Mundo al que este mundo envía su logística: el elegido en el portal, si sigue enlazado; si no, null (el silo recibe pero no envía). */
+        String destino(){
+            return ViajesMundo.destinoLogistica();
+        }
+
+        /** El silo funciona con un mundo abierto y con juego en marcha. */
         boolean dimensional(){
-            // la logística orbital une solo Serpulo y Erekir: en los mundos registrados por mods el silo no envía ni recibe
-            return MundoInfinitoMod.Mundos.actual != null && MundoInfinitoMod.Mundos.actual.dimensional() && MundoInfinitoMod.Mundos.dimActual() <= MundoInfinitoMod.DIM_EREKIR;
+            return MundoInfinitoMod.Mundos.actual != null && MundoInfinitoMod.Streamer.activo;
         }
 
-        /** Solo el tier 1 envía y recibe recursos entre dimensiones. */
+        /** Solo el tier 1 envía y recibe recursos entre mundos enlazados. */
         boolean logistica(){
             return tier == 1;
         }
 
         @Override
         public boolean shouldConsume(){
-            return logistica() && dimensional() && items.total() > 0 && TransitoOrbital.puedeLanzar(dim());
+            return logistica() && dimensional() && items.total() > 0 && TransitoOrbital.puedeLanzar(destino());
         }
 
         @Override
@@ -138,10 +145,10 @@ public class SiloInterdimensional extends StorageBlock{
         @Override
         public void updateTile(){
             if(!logistica() || !dimensional()) return;
-            int d = dim();
+            final String aqui = miMundo(), hacia = destino();
 
-            // ---------- ENVÍO ----------
-            if(efficiency > 0.01f && items.total() > 0 && TransitoOrbital.puedeLanzar(d)){
+            // ---------- ENVÍO (solo con un mundo enlazado elegido como destino) ----------
+            if(hacia != null && efficiency > 0.01f && items.total() > 0 && TransitoOrbital.puedeLanzar(hacia)){
                 tLote += Time.delta * efficiency;
                 Item mayor = null;
                 int max = 0;
@@ -152,7 +159,7 @@ public class SiloInterdimensional extends StorageBlock{
                 if(mayor != null && (max >= TransitoOrbital.CAPACIDAD || tLote >= esperaLote)){
                     int n = Math.min(max, TransitoOrbital.CAPACIDAD);
                     items.remove(mayor, n);
-                    TransitoOrbital.lanzar(d, mayor, n);
+                    TransitoOrbital.lanzar(hacia, mayor, n);
                     Fx.launch.at(this);
                     tLote = 0f;
                 }
@@ -163,9 +170,9 @@ public class SiloInterdimensional extends StorageBlock{
             // ---------- RECEPCIÓN (descarga gradual del dron que llegó) ----------
             tDescarga += Time.delta;
             if(tDescarga >= descargaTicks){
-                Item it = TransitoOrbital.mirar(d);
+                Item it = TransitoOrbital.mirar(aqui);
                 if(it != null && entregar(it)){
-                    TransitoOrbital.consumir(d);
+                    TransitoOrbital.consumir(aqui);
                     tDescarga = 0f;
                 }else{
                     tDescarga = descargaTicks;   // listo para el primer hueco que aparezca
@@ -188,7 +195,7 @@ public class SiloInterdimensional extends StorageBlock{
             return false;
         }
 
-        /** Tocar el portal abre el diálogo de viaje (base principal, checkpoints u otra dimensión). Sirve también el derelicto. */
+        /** Tocar el portal abre el diálogo de viaje (base principal, checkpoints u otros mundos enlazados). Sirve también el derelicto. */
         @Override
         public void tapped(){
             Portal.abrir(this, tier);

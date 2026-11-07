@@ -9,7 +9,7 @@ import arc.util.Log;
  */
 public final class ApiVersion{
     /** Conjunto de la API pública (sube cuando cambia cualquiera de las partes). */
-    public static final int PUBLICA_MAYOR = 1, PUBLICA_MENOR = 12;   // 1.12: ... COLISION 1.0, NIEBLA 1.0 (memoria de niebla manipulable por addons)
+    public static final int PUBLICA_MAYOR = 1, PUBLICA_MENOR = 14;   // 1.14: ... CONTENIDO 1.0, GALAXIA 1.0 (grupos de mundos), mundos sin dimensiones (OpenWorldAPI.viajarAMundo/crearMundoDeTipo)
     /** La parte visual: {@code ApiVisual}. */
     public static final int VISUAL_MAYOR = 1, VISUAL_MENOR = 1;
     /** La parte de ajustes y propuestas de valor: {@code ApiAjustes}. */
@@ -53,6 +53,10 @@ public final class ApiVersion{
     public static final int COLISION_MAYOR = 1, COLISION_MENOR = 0;
     /** Memoria de niebla de guerra entre visitas a un mundo (política de persistencia, hooks de guardado/restauración, manipulación directa por chunk): {@code ApiNiebla}. Plan v9. */
     public static final int NIEBLA_MAYOR = 1, NIEBLA_MENOR = 0;
+    /** Visibilidad del contenido del mod en el modo campaña (oculto por defecto, permitido por dev o modder): {@code ApiContenido}. Plan v9. */
+    public static final int CONTENIDO_MAYOR = 1, CONTENIDO_MENOR = 0;
+    /** Galaxia (Vía Láctea): grupos de mundos con nombre editable, máximo, posición y espacio modificables: {@code ApiGalaxia}. Plan v9. */
+    public static final int GALAXIA_MAYOR = 1, GALAXIA_MENOR = 0;
     /** Formato del estado de sistemas guardado con el mundo: {@code EstadoSistemas}. Plan v6, F2. No es una API de mods. */
     public static final int ESTADO_MAYOR = 1, ESTADO_MENOR = 0;
 

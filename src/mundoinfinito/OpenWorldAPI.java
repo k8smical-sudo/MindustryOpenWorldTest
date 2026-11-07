@@ -24,7 +24,7 @@ import mundoinfinito.MundoInfinitoMod.Streamer;
  *
  *   Events.on(OpenWorldAPI.ChunkCargado.class, e -> { ... e.cx, e.cy ... });     // chunk publicado y edificios guardados ya en cola
  *   Events.on(OpenWorldAPI.ChunkDescargado.class, e -> { ... });                 // justo después de guardar y soltar el chunk
- *   Events.on(OpenWorldAPI.MundoAbierto.class, e -> { ... });                    // al crear o continuar un mundo (o cambiar de dimensión)
+ *   Events.on(OpenWorldAPI.MundoAbierto.class, e -> { ... });                    // al crear o continuar un mundo (o llegar a él por un portal)
  *   OpenWorldAPI.registrarReglas(r -> r.waveTimer = false);                       // se aplica a las reglas de cada mundo al abrirlo
  *
  * Desde la v2 hay además puntos de extensión (registrarTerreno, registrarFenomeno, registrarEstructura, registrarPolitica, registrarEquipo,
@@ -47,7 +47,7 @@ public final class OpenWorldAPI{
 
     // ------------------------------------------------------------------ eventos
 
-    /** Se creó o continuó un mundo, o se cambió de dimensión. Aún se están cargando los chunks iniciales. */
+    /** Se creó o continuó un mundo (también al llegar a él por un portal). Aún se están cargando los chunks iniciales. {@code dimension} es el terreno del mundo. */
     public static class MundoAbierto{
         public final String id, nombre;
         public final int semilla, dimension, limiteX, limiteY;
@@ -170,7 +170,7 @@ public final class OpenWorldAPI{
         return Mundos.actual == null ? g.porDefecto : Mundos.actual.gameRule(g);
     }
 
-    /** Registra un mundo (dimensión) nuevo con su generador, reglas y nombre; aparece como destino en los portales. Ver {@link MundoRegistrado}. */
+    /** Registra un TIPO de mundo nuevo (su generador, reglas y nombre): el jugador o un addon pueden crear mundos con su terreno ({@link #crearMundoDeTipo}). Ver {@link MundoRegistrado}. */
     public static boolean registrarMundo(MundoRegistrado mundo){
         return Extensiones.registrarMundo(mundo);
     }
@@ -180,18 +180,25 @@ public final class OpenWorldAPI{
         Extensiones.alTerrenoGenerado(id, escucha);
     }
 
-    /** Teletransporta al jugador (hilo del juego) al mundo registrado con ese id, igual que el portal. false si no existe o no se puede viajar ahora. */
-    public static boolean viajarA(String idMundo){
-        final MundoRegistrado m = Extensiones.mundoPorId(idMundo);
-        if(m == null || !activo() || Mundos.viajando || Mundos.actual == null || !Mundos.actual.dimensional() || m.dimension() == Mundos.dimActual()) return false;
-        Mundos.saltar(m.dimension());
-        return true;
+    /**
+     * Lleva al jugador (hilo del juego) a OTRO mundo guardado, por el id del mundo, sin pasar por un portal ni por sus requisitos: el mismo viaje que hace
+     * un portal, con el inventario y sin animación. false si no existe, es este mismo mundo o no se puede viajar ahora. Para respetar enlaces, distancias y
+     * boosters, un addon usa {@link ApiViaje}.
+     */
+    public static boolean viajarAMundo(String idMundo){
+        if(idMundo == null || !activo() || Mundos.viajando || Mundos.actual == null || idMundo.equals(Mundos.actual.id)) return false;
+        return ViajesMundo.irA(idMundo);
     }
 
-    /** Vuelve a una dimensión del mundo base (0 Serpulo, 1 Erekir). */
-    public static boolean viajarADimensionBase(int dimension){
-        if((dimension != 0 && dimension != 1) || !activo() || Mundos.viajando || Mundos.actual == null || !Mundos.actual.dimensional() || dimension == Mundos.dimActual()) return false;
-        Mundos.saltar(dimension);
+    /**
+     * Crea un mundo nuevo cuyo terreno es el de un mundo registrado con {@link #registrarMundo} (por su id), en vez de Serpulo o Erekir. Los demás
+     * parámetros son los de un mundo nuevo normal (núcleo, semilla, límites). false si el tipo no existe o ya se está creando otro mundo.
+     */
+    public static boolean crearMundoDeTipo(String nombre, String idTipo, int limX, int limY){
+        final MundoRegistrado tipo = Extensiones.mundoPorId(idTipo);
+        if(tipo == null || Mundos.viajando || Mundos.creandoMundoNuevo) return false;
+        Mundos.terrenoForzado = tipo.dimension();
+        Mundos.crearNuevo(nombre, 0, "", limX, limY);
         return true;
     }
 
@@ -207,9 +214,9 @@ public final class OpenWorldAPI{
         return Streamer.activo && Streamer.meta != null;
     }
 
-    /** Dimensión actual: 0 = Serpulo, 1 = Erekir. */
-    public static int dimension(){
-        return Mundos.dimActual();
+    /** Terreno del mundo abierto: 0 = Serpulo, 1 = Erekir, 16 o más = mundo registrado por un mod. Nunca cambia en un mismo mundo. */
+    public static int terreno(){
+        return Mundos.terrenoActual();
     }
 
     public static int semilla(){

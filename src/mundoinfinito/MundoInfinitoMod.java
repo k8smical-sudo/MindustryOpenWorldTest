@@ -101,7 +101,8 @@ public class MundoInfinitoMod extends Mod{
     public static final int REGION_CHUNKS = 16;             // 16x16 chunks por archivo de región (512x512 tiles)
     public static final String URL_SEMILLAS = "https://raw.githubusercontent.com/TU_USUARIO/mundo-infinito-semillas/main/semillas/actual.json"; // TODO: URL real
     public static final int TIMEOUT_HTTP_MS = 4000;
-    public static final int GEN_ACTUAL = 5;                 // 5 = generación con menas cercanas en los respiraderos (plan v5, P5). Mismo terreno base que la 4.
+    public static final int GEN_ACTUAL = 6;                 // 6 = respiraderos de Erekir según la ficha física del planeta del lugar (plan v9, P9). La 5 y anteriores conservan su terreno exacto.
+    public static final int GEN_FICHA = 6;                  // primera generación en la que la ficha física (tamaño del planeta) modula los respiraderos
     public static final int GEN_MENAS = 5;                  // primera generación con el efecto de las menas cercanas en los respiraderos (FuentesWorldgen)
     public static final int GEN_ANTERIOR = 3;               // 3 = dos dimensiones (Serpulo/Erekir) con la generación anterior: conserva su terreno exacto.
     public static final int GEN_REVISADA = 4;               // primera generación que activa los generadores del mundo base (FenomenosBase)
@@ -151,6 +152,7 @@ public class MundoInfinitoMod extends Mod{
         ApiViaje.iniciarAjustes();     // caos de viajes (plan v9, P7): apagado por defecto, se elige al crear el mundo
         ApiColision.iniciarAjustes();  // colisiones entre cuerpos (plan v9, P10): apagadas por defecto, se eligen al crear el mundo
         ApiNiebla.iniciarAjustes();    // memoria de niebla (plan v9): activada por defecto, se elige al crear el mundo
+        GalaxiaDisco.iniciar();        // galaxia (plan v9): grupos de mundos con nombre; se lee del disco y se guarda sola al cambiar
         OpenWorldAPI.registrarGameRule(GameRule.nueva(ApiObjetivos.REGLA_ACTIVA, "Objetivos de sector",
             "Muestra la barra de objetivos de sector en partida. Los objetivos los define cada addon.",
             false, (reglas, valor, dim) -> { }));   // apagada por defecto (plan v9, P11)
@@ -193,7 +195,15 @@ public class MundoInfinitoMod extends Mod{
     static class Meta{
         String id, nombre, semillaTxt = "";
         int semilla, tam, nucleo, gen;   // nucleo: 0 = según la semilla, 1 = Shard (Serpulo), 2 = Bastion (Erekir)
-        int dim;                         // dimensión actual (solo gen >= 3): 0 = Serpulo, 1 = Erekir
+        /** Terreno del mundo (solo gen >= 3): 0 = Serpulo, 1 = Erekir, 16 o más = mundo registrado por un mod. Se elige al crear el mundo y NO cambia nunca:
+         *  desde el plan v9 no hay dimensiones, cada mundo tiene un solo terreno y se viaja entre mundos. */
+        int dim;
+        /** Disposición en disco: 1 = antigua (subcarpetas "dN" por dimensión), 2 = mundo único (todo en la raíz del mundo). Ver {@link MigracionMundos}. */
+        int layout = MigracionMundos.LAYOUT_MUNDO_UNICO;
+        /** Mundo enlazado al que este mundo envía su logística orbital (vacío = ninguno). Debe ser un mundo con enlace; si no, se ignora. */
+        String destinoLogistica = "";
+        /** Grupo de la galaxia (el "sistema solar" con nombre) al que pertenece el mundo. Se elige al crearlo; los mundos anteriores están en el inicial. */
+        String grupo = ApiGalaxia.GRUPO_INICIAL;
         long creado, ultimo;
         double reloj;                    // ticks de juego transcurridos en TODO el mundo (las dos dimensiones): mide las ausencias
         /** Límite del terreno en tiles (ancho total X, alto total Y), centrado en el punto de aparición (0,0). 0 = infinito. */
@@ -231,6 +241,9 @@ public class MundoInfinitoMod extends Mod{
             j.put("nucleo", nucleo);
             j.put("gen", gen);
             j.put("dim", dim);
+            j.put("layout", layout);
+            j.put("destinoLogistica", destinoLogistica == null ? "" : destinoLogistica);
+            j.put("grupo", grupo == null || grupo.isEmpty() ? ApiGalaxia.GRUPO_INICIAL : grupo);
             j.put("creado", creado);
             j.put("ultimo", ultimo);
             j.put("reloj", reloj);
@@ -270,6 +283,9 @@ public class MundoInfinitoMod extends Mod{
             m.nucleo = j.getInt("nucleo", 0);
             m.gen = j.getInt("gen", 0);
             m.dim = j.getInt("dim", 0);
+            m.layout = j.getInt("layout", 1);   // sin la clave = mundo anterior al plan v9: con subcarpetas por dimensión, se migra al listarlo
+            m.destinoLogistica = j.getString("destinoLogistica", "");
+            m.grupo = j.getString("grupo", ApiGalaxia.GRUPO_INICIAL);   // mundos anteriores: el grupo inicial
             m.creado = j.getLong("creado", 0);
             m.ultimo = j.getLong("ultimo", 0);
             m.reloj = j.getDouble("reloj", 0.0);
@@ -299,8 +315,8 @@ public class MundoInfinitoMod extends Mod{
         }
 
         boolean compatible(){
-            // La 4 (GEN_REVISADA) sigue siendo compatible: sus mundos guardados no cambian de terreno al pasar a la 5.
-            return gen == GEN_ACTUAL || gen == GEN_REVISADA || gen == GEN_ANTERIOR || gen == GEN_MEZCLADO;
+            // La 4 (GEN_REVISADA) y la 5 (GEN_MENAS) siguen siendo compatibles: sus mundos guardados no cambian de terreno al pasar a la 6.
+            return gen == GEN_ACTUAL || gen == GEN_MENAS || gen == GEN_REVISADA || gen == GEN_ANTERIOR || gen == GEN_MEZCLADO;
         }
 
         /** true = mundo con dos dimensiones separadas; false = mundo antiguo de terreno mezclado. */
@@ -332,7 +348,7 @@ public class MundoInfinitoMod extends Mod{
             return t == 1 ? Blocks.coreShard : Blocks.coreBastion;
         }
 
-        String nombreDim(){
+        String nombreTerreno(){
             if(dimensional() && dim >= MundoRegistrado.DIM_MINIMA){
                 final MundoRegistrado w = Extensiones.mundoPorDim(dim);
                 return w == null ? "Mundo desconocido" : w.nombre;
@@ -370,7 +386,10 @@ public class MundoInfinitoMod extends Mod{
                 Fi m = d.child("meta.json");
                 if(!m.exists()) continue;
                 try{
-                    r.add(Meta.desde(d.name(), Jval.read(m.readString())));
+                    final Meta leida = Meta.desde(d.name(), Jval.read(m.readString()));
+                    r.add(leida);
+                    // plan v9: un mundo anterior con dimensiones se convierte en mundos independientes, una sola vez
+                    if(leida.layout < MigracionMundos.LAYOUT_MUNDO_UNICO && leida.compatible()) r.addAll(MigracionMundos.migrar(leida));
                 }catch(Throwable t){
                     Log.warn("[MundoInfinito] meta ilegible en @", d.name());
                 }
@@ -386,6 +405,7 @@ public class MundoInfinitoMod extends Mod{
         }
 
         static void borrar(String id){
+            TransitoOrbital.olvidarDestino(id);   // lo que iba hacia este mundo no llegaría nunca
             borrarRec(carpeta(id));
         }
 
@@ -398,7 +418,8 @@ public class MundoInfinitoMod extends Mod{
 
         /** Mundos dimensionales: una subcarpeta por dimensión (regiones + estado). Mundos antiguos: la raíz, como siempre. */
         static Fi carpetaDatos(Meta m){
-            return m.dimensional() ? carpeta(m.id).child("d" + m.dim) : carpeta(m.id);
+            // mundo único (layout 2): todo en la raíz. Solo un mundo anterior sin migrar todavía conserva la subcarpeta por dimensión.
+            return m.layout >= MigracionMundos.LAYOUT_MUNDO_UNICO || !m.dimensional() ? carpeta(m.id) : carpeta(m.id).child("d" + m.dim);
         }
 
         static Fi archivoEstado(Meta m){
@@ -417,8 +438,9 @@ public class MundoInfinitoMod extends Mod{
             Disco.escribir(archivoCalendario(m).file(), b, true);   // síncrono: el disparo debe estar en disco antes de ejecutar la acción
         }
 
-        static Fi archivoOrbita(Meta m){
-            return carpeta(m.id).child("orbita.dat");
+        /** Tránsito orbital de TODOS los mundos (drones en vuelo y en buzón): un solo archivo en la raíz de los datos del mod. */
+        static Fi archivoOrbita(){
+            return raiz().child("orbita-global.dat");
         }
 
         /** Estructuras ya colocadas y checkpoints: POR dimensión (cada una tiene su propio espacio). */
@@ -452,7 +474,8 @@ public class MundoInfinitoMod extends Mod{
                 if(!m.compatible()) continue;
                 final String tag = ApiPlaneta.planetaDeMundo(m);
                 if(tag == null) continue;
-                out.add(new AsignacionSistemas.Entrada(m.id, tag, m.semilla, m.creado, m.sistemas));
+                final ApiGalaxia.Grupo g = ApiGalaxia.buscar(m.grupo);
+                out.add(new AsignacionSistemas.Entrada(m.id, tag, m.semilla, m.creado, m.sistemas, m.grupo, g == null ? 0.0 : g.x, g == null ? 0.0 : g.y));
                 porId.put(m.id, m);
             }
             return out;
@@ -496,7 +519,9 @@ public class MundoInfinitoMod extends Mod{
                 final EstadoSistemas global = AsignacionSistemas.unir(entradas(todos, porId));
                 final String tag = ApiPlaneta.planetaDeMundo(m);
                 if(tag == null) return;
-                final EstadoSistemas e = AsignacionSistemas.asignar(global, m.id, tag, m.semilla, radioDe(tag), ApiFisica.DIAMETRO_PLANETA);
+                final ApiGalaxia.Grupo g = ApiGalaxia.buscar(m.grupo);
+                final EstadoSistemas e = AsignacionSistemas.asignar(global, m.id, tag, m.semilla, radioDe(tag), ApiFisica.DIAMETRO_PLANETA,
+                    m.grupo, g == null ? 0.0 : g.x, g == null ? 0.0 : g.y);
                 if(e != null) m.sistemas = e;
             }catch(Throwable t){
                 Log.err("[MundoInfinito] No se pudo asignar el sistema del mundo nuevo; se crea sin él.", t);
@@ -2911,7 +2936,7 @@ public class MundoInfinitoMod extends Mod{
         static String texto(){
             if(Streamer.meta == null) return "";
             double[] p = Mundos.posicionVirtual();
-            String dim = Mundos.actual != null && Mundos.actual.dimensional() ? Mundos.actual.nombreDim() + "   " : "";
+            String dim = Mundos.actual != null && Mundos.actual.dimensional() ? Mundos.actual.nombreTerreno() + "   " : "";
             return dim + "X " + (long)Math.floor(p[0]) + "   Y " + (long)Math.floor(p[1]);
         }
     }
@@ -2926,6 +2951,10 @@ public class MundoInfinitoMod extends Mod{
         /** true solo entre crear un mundo nuevo y abrirlo: dispara la animación de despliegue (plan v9) una sola vez, nunca al continuar un
          *  mundo, cambiar de dimensión o viajar por un portal. {@link MundoInfinitoMod.Mundos#finalizarApertura} la consume y la apaga. */
         static boolean creandoMundoNuevo = false;
+        /** Terreno que debe tener el próximo mundo creado (>= 0), o -1 para el de siempre. Lo fija {@link OpenWorldAPI#crearMundoDeTipo}. */
+        static int terrenoForzado = -1;
+        /** Grupo de la galaxia del próximo mundo creado (id), o null/vacío para el inicial. Lo fija el diálogo "Nuevo mundo" o un addon. */
+        static String grupoElegido = null;
 
         /** Unidades "avatar" del jugador: nunca se guardan ni se restauran como seguidores (evita duplicados del dron). */
         static final java.util.HashSet<String> UNIDADES_NUCLEO = new java.util.HashSet<>(
@@ -2957,7 +2986,11 @@ public class MundoInfinitoMod extends Mod{
             m.tam = ventana();
             m.nucleo = nucleo;
             m.gen = GEN_ACTUAL;
-            m.dim = m.dimInicial();
+            m.layout = MigracionMundos.LAYOUT_MUNDO_UNICO;
+            m.grupo = grupoElegido == null || grupoElegido.isEmpty() || ApiGalaxia.buscar(grupoElegido) == null ? ApiGalaxia.GRUPO_INICIAL : grupoElegido;
+            grupoElegido = null;
+            m.dim = terrenoForzado >= 0 ? terrenoForzado : m.dimInicial();   // terreno elegido por un addon (OpenWorldAPI.crearMundoDeTipo) o el de siempre
+            terrenoForzado = -1;
             m.limX = Math.max(0, limX);
             m.limY = Math.max(0, limY);
             m.limpio = true;                       // mundo base: sin generador de enemigos ni de estructuras
@@ -2971,7 +3004,7 @@ public class MundoInfinitoMod extends Mod{
             Sistemas.asignarNuevo(m);              // plan v8, P1: su cuerpo en la órbita de su planeta, guardado desde el principio
             Almacen.guardarMeta(m);
             Regiones.iniciar(m);
-            TransitoOrbital.reiniciar();          // mundo nuevo: sin drones en tránsito...
+            TransitoOrbital.cargar(m);            // el tránsito es de todos los mundos: se lee una vez por sesión, no se vacía al crear otro
             Estructuras.cargar(m);       // ...y sin estructuras ni checkpoints
             creandoMundoNuevo = true;    // plan v9: la próxima apertura es una creación de verdad, no un continuar/cambiar de dimensión/viajar
             abrir(m, null, 0.0, 0.0);
@@ -3027,57 +3060,14 @@ public class MundoInfinitoMod extends Mod{
             }
         }
 
-        // ---------- SALTO ENTRE DIMENSIONES ----------
-        /** true = las dos dimensiones comparten el inventario (se viaja con lo que se tiene). */
-        static final boolean RECURSOS_GLOBALES = true;
+        // ---------- VIAJE ENTRE MUNDOS ----------
+        // Inventario que viaja con el jugador al abrir otro mundo (lo rellena ViajesMundo antes de abrirlo). null = el del mundo que se abre.
         static Seq<String> resN;
         static Seq<Integer> resC;
-        static boolean llegadaNueva = false;   // true = primera vez en esa dimensión: se coloca un silo de recepción junto al núcleo
 
-        /** Dimensión actual (0 Serpulo / 1 Erekir). En mundos antiguos (mezclados) siempre 0. */
-        static int dimActual(){
+        /** Terreno del mundo abierto (0 Serpulo / 1 Erekir / 16 o más = mundo de un mod). En mundos antiguos (mezclados) siempre 0. */
+        static int terrenoActual(){
             return actual != null && actual.dimensional() ? actual.dim : DIM_SERPULO;
-        }
-
-        /**
-         * Viaja a la otra dimensión: efecto de despegue, guarda la actual (regiones + estado + órbita + estructuras),
-         * cambia de carpeta de datos, reglas y paleta, y aparece en el (0,0) de la nueva (o donde se quedó).
-         * Una dimensión se reconstruye entera (logic.reset), así que aquí SÍ hay capa de carga; no ocurre al explorar.
-         */
-        static void saltar(int destino){
-            if(viajando || actual == null || !actual.dimensional() || destino == actual.dim) return;
-            if(!Streamer.activo || Streamer.restaurando || Vars.player == null || Vars.player.dead()) return;
-            viajando = true;
-            final Meta m = actual;
-            Fx.launch.at(Vars.player.x, Vars.player.y);
-            Carga.mostrar("Despegando hacia " + (destino == DIM_SERPULO ? "Serpulo" : destino == DIM_EREKIR ? "Erekir" : (Extensiones.mundoPorDim(destino) == null ? "otro mundo" : Extensiones.mundoPorDim(destino).nombre)) + "...");
-            Time.runTask(50f, () -> {
-                try{
-                    guardar(true);                       // síncrono: escribe en la carpeta de la dimensión de origen
-                    if(RECURSOS_GLOBALES){
-                        // el inventario es UNO solo para las dos dimensiones: se lleva consigo
-                        Datos origen = Datos.leer(Almacen.archivoEstado(m));
-                        if(origen != null){ resN = new Seq<>(origen.itemsN); resC = new Seq<>(origen.itemsC); }
-                    }
-                    m.dim = destino;                     // a partir de aquí todas las rutas apuntan a la nueva
-                    Almacen.guardarMeta(m);
-                    Regiones.iniciar(m);
-                    Estructuras.cargar(m);
-                    Fi f = Almacen.archivoEstado(m);
-                    Datos d = f.exists() ? Datos.leer(f) : null;
-                    llegadaNueva = d == null;
-                    if(d != null) abrir(m, d, d.vx, d.vy);
-                    else{
-                        // primera visita: el núcleo aparece en el punto de llegada del mundo registrado, o en (0,0) en Serpulo y Erekir
-                        final MundoRegistrado w = Extensiones.mundoPorDim(destino);
-                        abrir(m, null, w == null ? 0.0 : w.llegadaX, w == null ? 0.0 : w.llegadaY);
-                    }
-                }catch(Throwable t){
-                    Log.err("[MundoInfinito] Error al saltar de dimensión", t);
-                    Carga.ocultar();
-                    viajando = false;
-                }
-            });
         }
 
         // ---------- apertura de la ventana ----------
@@ -3156,8 +3146,6 @@ public class MundoInfinitoMod extends Mod{
                 d.liberar();
             }
             if(nueva) colocarNucleo(m, px, py);
-            if(nueva && llegadaNueva) colocarSilo(px, py);
-            llegadaNueva = false;
 
             // núcleo proxy: mantiene el inventario compartido cuando el núcleo real se descarga (el jugador se aleja de su base)
             Anillo.trasladarProxy(Math.floorDiv(px, TAM_CHUNK), Math.floorDiv(py, TAM_CHUNK), false);
@@ -3366,12 +3354,6 @@ public class MundoInfinitoMod extends Mod{
         }
 
         /** Silo de recepción junto al núcleo de una dimensión recién visitada (para que los drones tengan dónde aterrizar). */
-        static void colocarSilo(int px, int py){
-            if(SiloInterdimensional.silo == null) return;
-            Tile t = Vars.world.tile(px + 8, py);
-            if(t != null) t.setBlock(SiloInterdimensional.silo, Team.sharded);
-        }
-
         /** Reloj del mundo en ticks (solo avanza mientras se juega). */
         static double reloj(){
             return actual == null ? 0.0 : actual.reloj;
@@ -3424,7 +3406,7 @@ public class MundoInfinitoMod extends Mod{
             final Meta m = actual;
             m.ultimo = System.currentTimeMillis();
             final byte[] estado = d.bytes();
-            final byte[] orbita = m.dimensional() ? TransitoOrbital.bytes() : null;
+            final byte[] orbita = TransitoOrbital.bytes();   // global: lo guarda cualquier mundo al guardarse
             final byte[] estructuras = m.dimensional() ? Estructuras.bytes() : null;
             final Fi fEstructuras = Almacen.archivoEstructuras(m);
             final java.util.HashMap<Fi, arc.func.Prov<byte[]>> regs = Regiones.serializarSucias();
@@ -3434,7 +3416,7 @@ public class MundoInfinitoMod extends Mod{
             }
             if(estado != null) Disco.escribir(Almacen.archivoEstado(m).file(), estado, false);
             if(m.calendario != null) Disco.escribir(Almacen.archivoCalendario(m).file(), m.calendario.aJson().toString().getBytes(java.nio.charset.StandardCharsets.UTF_8), false);
-            if(orbita != null) Disco.escribir(Almacen.archivoOrbita(m).file(), orbita, false);
+            if(orbita != null) Disco.escribir(Almacen.archivoOrbita().file(), orbita, false);
             if(estructuras != null) Disco.escribir(fEstructuras.file(), estructuras, false);
             Mapa.guardar();
             Disco.despues(() -> Almacen.guardarMeta(m));
@@ -3564,7 +3546,7 @@ public class MundoInfinitoMod extends Mod{
                     Table fila = new Table();
                     boolean ok = m.compatible();
                     String detalle = ok
-                        ? m.nombreDim() + " · núcleo " + (m.nucleoBlock() == Blocks.coreShard ? "Shard" : "Bastion") + " · semilla " + m.semillaTexto()
+                        ? m.nombreTerreno() + " · núcleo " + (m.nucleoBlock() == Blocks.coreShard ? "Shard" : "Bastion") + " · semilla " + m.semillaTexto()
                             + (m.limitado() ? " · límite " + (m.limX > 0 ? m.limX : "∞") + "×" + (m.limY > 0 ? m.limY : "∞") : "") + " · " + hace(m.ultimo)
                         : "[scarlet]Generador antiguo: ya no es compatible, solo se puede borrar[]";
                     fila.add("[accent]" + m.nombre + "[]\n" + detalle)
@@ -3689,6 +3671,21 @@ public class MundoInfinitoMod extends Mod{
             });
             c.row();
 
+            // Grupo de la galaxia (el "sistema solar" con nombre): uno existente o uno nuevo con el nombre que se escriba aquí
+            final java.util.List<ApiGalaxia.Grupo> grupos = ApiGalaxia.grupos();
+            final int[] gsel = {0};   // índice en grupos; grupos.size() = "grupo nuevo"
+            final String[] nombreGrupoNuevo = {"Sistema " + (grupos.size() + 1)};
+            c.add("Grupo (sistema solar)").padBottom(4f).row();
+            final TextButton gb = c.button("Grupo: " + grupos.get(0).nombre(), () -> {}).size(320f, 56f).padBottom(6f).get();
+            gb.clicked(() -> {
+                gsel[0] = (gsel[0] + 1) % (grupos.size() + 1);
+                gb.setText(gsel[0] < grupos.size() ? "Grupo: " + grupos.get(gsel[0]).nombre()
+                    : (grupos.size() >= ApiGalaxia.maximoGrupos() ? "Grupo: (no caben más grupos)" : "Grupo: crear uno nuevo"));
+            });
+            c.row();
+            c.add("[lightgray]Nombre del grupo nuevo (solo si eliges 'crear uno nuevo')[]").padBottom(2f).row();
+            c.field(nombreGrupoNuevo[0], t -> nombreGrupoNuevo[0] = t).width(320f).padBottom(14f).row();
+
             // Gamerules: el botón abre una lista con las reglas del mod base y las que añadan otros mods (OpenWorldAPI.registrarGameRule)
             final java.util.TreeMap<String, Boolean> gamerules = new java.util.TreeMap<>();
             c.button("Gamerules", () -> abrirGameRules(gamerules)).size(320f, 56f).padBottom(16f).row();
@@ -3705,7 +3702,20 @@ public class MundoInfinitoMod extends Mod{
                 c.add("[accent]Mods que alteran el mundo:[] " + mods).width(420f).wrap().padBottom(10f).row();
             }
 
-            c.button("Crear mundo", () -> { d.hide(); Mundos.crearNuevo(nombre[0], nuc[0], semilla[0], limX[0], limY[0], gamerules); }).size(320f, 64f).pad(6f).row();
+            c.button("Crear mundo", () -> {
+                if(gsel[0] < grupos.size()){
+                    Mundos.grupoElegido = grupos.get(gsel[0]).id;
+                }else{
+                    final ApiGalaxia.Resultado rg = ApiGalaxia.crearGrupo(nombreGrupoNuevo[0]);
+                    if(!rg.ok){
+                        if(Vars.ui != null) Vars.ui.showInfoToast(rg.mensaje, 3.5f);
+                        return;   // no se crea el mundo: el jugador corrige el grupo y vuelve a intentarlo
+                    }
+                    Mundos.grupoElegido = rg.grupo.id;
+                }
+                d.hide();
+                Mundos.crearNuevo(nombre[0], nuc[0], semilla[0], limX[0], limY[0], gamerules);
+            }).size(320f, 64f).pad(6f).row();
             d.cont.pane(c).grow();
             d.addCloseButton();
             d.show();

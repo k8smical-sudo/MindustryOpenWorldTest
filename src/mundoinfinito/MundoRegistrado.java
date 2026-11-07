@@ -6,11 +6,12 @@ import mindustry.game.Rules;
 import mindustry.type.ItemStack;
 
 /**
- * Un mundo (dimensión) añadido por un mod. Se crea con {@link #nuevo}, se configura y se registra con {@link OpenWorldAPI#registrarMundo}
- * ANTES de abrir el primer mundo. Aparece como destino en los portales interdimensionales (salvo que {@link #visible} diga lo contrario).
+ * Un TIPO de mundo añadido por un mod (su terreno, núcleo y reglas). Se crea con {@link #nuevo}, se configura y se registra con
+ * {@link OpenWorldAPI#registrarMundo} ANTES de abrir el primer mundo. Desde el plan v9 no hay dimensiones: con este tipo se CREAN mundos
+ * ({@link OpenWorldAPI#crearMundoDeTipo}) y se viaja entre ellos como entre cualquier mundo.
  *
- * Cada mundo registrado tiene sus propios chunks, edificios, checkpoints y niebla (carpeta propia dentro del mundo guardado), como Serpulo y
- * Erekir. El número de dimensión se deriva del id y es estable entre sesiones y entre órdenes de carga de los mods.
+ * Cada mundo creado con este tipo tiene sus propios chunks, edificios, checkpoints y niebla, como cualquier mundo. El número de terreno
+ * ({@link #dimension()}) se deriva del id y es estable entre sesiones y entre órdenes de carga de los mods.
  */
 public final class MundoRegistrado{
     /** Primera dimensión posible de un mundo registrado (0 y 1 son Serpulo y Erekir; el resto queda reservado). */
@@ -31,7 +32,7 @@ public final class MundoRegistrado{
     public GeneradorMundo generador;
     /** Ajuste de reglas propio de este mundo, aplicado antes que los de {@link OpenWorldAPI#registrarReglas}. */
     public Cons<Rules> reglas;
-    /** ¿Se ofrece este mundo como destino desde la dimensión indicada? Por defecto, desde cualquiera. */
+    /** Sin uso desde el plan v9 (ya no hay destinos por dimensión): se conserva para no romper a los addons que lo asignan. */
     public Visibilidad visible = dim -> true;
 
     /** Dimensión asignada al registrar (>= {@link #DIM_MINIMA}). */

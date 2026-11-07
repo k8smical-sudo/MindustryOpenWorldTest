@@ -61,7 +61,8 @@ final class VistaPlanetas{
 
         final Table botones = new Table();
         botones.button("Centrar", Styles.cleart, lienzo::centrar).size(160f, 52f).padRight(8f);
-        botones.button("Árbol tecnológico", Styles.cleart, () -> ArbolUI.abrir(lienzo.tagSeleccionado())).size(260f, 52f);
+        botones.button("Árbol tecnológico", Styles.cleart, () -> ArbolUI.abrir(lienzo.tagSeleccionado())).size(260f, 52f).padRight(8f);
+        botones.button("Nombres", Styles.cleart, () -> RenombrarUI.abrir(lienzo.tagSeleccionado())).size(160f, 52f);
 
         final Table t = new Table();
         t.add(botones).padBottom(6f).row();

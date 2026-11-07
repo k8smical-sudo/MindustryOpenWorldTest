@@ -166,6 +166,6 @@ public final class ApiDificultad{
     static ContextoDificultad contextoActual(){
         final MundoInfinitoMod.Meta m = MundoInfinitoMod.Streamer.meta;
         final int semilla = m == null ? 0 : m.semilla;
-        return new ContextoDificultad(semilla, MundoInfinitoMod.Mundos.dimActual(), ApiTiempo.tiempoMundo());
+        return new ContextoDificultad(semilla, MundoInfinitoMod.Mundos.terrenoActual(), ApiTiempo.tiempoMundo());
     }
 }

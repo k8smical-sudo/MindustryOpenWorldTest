@@ -320,6 +320,11 @@ final class Extensiones{
         return generacion >= MundoInfinitoMod.GEN_MENAS;
     }
 
+    /** ¿El mundo abierto es de la generación en la que la ficha física del planeta modula los respiraderos (GEN_FICHA)? */
+    static boolean generacionConFicha(){
+        return generacion >= MundoInfinitoMod.GEN_FICHA;
+    }
+
     static boolean generacionNueva(){
         return generacion >= MundoInfinitoMod.GEN_REVISADA;
     }

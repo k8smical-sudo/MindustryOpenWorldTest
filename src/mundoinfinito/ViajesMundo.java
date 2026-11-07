@@ -172,6 +172,15 @@ final class ViajesMundo{
                     final ApiViaje.Resultado r = ApiViaje.establecer(Sistemas.global(), m.enlaces, id, m.id, destino, portal, m.calendario.tiempo(), periodo());
                     if(r.ok){
                         if(usaAlcance) quitar(ApiViaje.costeBoosters(Collections.singleton(ApiViaje.BOOSTER_ALCANCE)));
+                        // el enlace vale en los dos sentidos: se escribe también en el mundo del otro extremo
+                        final String textoEnlaces = m.enlaces.aTexto();
+                        enOtroMundo(destino, otro -> {
+                            final ApiViaje.Enlace nuevo = m.enlaces.buscar(id);
+                            if(nuevo != null && otro.enlaces.buscar(id) == null && otro.enlaces.entre(otro.id, m.id) == null){
+                                otro.enlaces = ApiViaje.Enlaces.desdeTexto(otro.enlaces.aTexto() + id + "|" + m.id + "|" + destino + "|" + nuevo.tier + "\n");
+                            }
+                        });
+                        if(m.destinoLogistica == null || m.destinoLogistica.isEmpty()) m.destinoLogistica = destino;
                         Almacen.guardarMeta(m);
                         aviso("Enlace establecido.");
                     }else{
@@ -189,14 +198,47 @@ final class ViajesMundo{
         }
     }
 
-    /** Quita un enlace de este mundo y lo guarda. */
+    /** Quita un enlace de este mundo y del otro extremo, y lo guarda en los dos. */
     static void romper(String idEnlace){
         final Meta m = Mundos.actual;
         if(m == null || enCurso) return;
+        final ApiViaje.Enlace e = m.enlaces.buscar(idEnlace);
         if(m.enlaces.quitar(idEnlace)){
+            if(e != null) enOtroMundo(e.cuerpoA.equals(m.id) ? e.cuerpoB : e.cuerpoA, otro -> otro.enlaces.quitar(idEnlace));
+            if(e != null && (e.cuerpoA.equals(m.destinoLogistica) || e.cuerpoB.equals(m.destinoLogistica))) m.destinoLogistica = "";
             Almacen.guardarMeta(m);
             aviso("Enlace eliminado.");
         }
+    }
+
+    /** Aplica un cambio a la meta de OTRO mundo guardado (el enlace existe en los dos extremos) y la guarda. Un fallo se registra y no impide el resto. */
+    static void enOtroMundo(String idMundo, arc.func.Cons<Meta> cambio){
+        try{
+            for(Meta o : Almacen.listar()){
+                if(!o.id.equals(idMundo)) continue;
+                cambio.get(o);
+                Almacen.guardarMeta(o);
+                return;
+            }
+        }catch(Throwable t){
+            Log.err("[MundoInfinito] No se pudo actualizar el otro extremo del enlace.", t);
+        }
+    }
+
+    /** Mundo al que este mundo envía su logística orbital: el elegido si sigue enlazado y existe; si no, null. */
+    static String destinoLogistica(){
+        final Meta m = Mundos.actual;
+        if(m == null || m.destinoLogistica == null || m.destinoLogistica.isEmpty()) return null;
+        return m.enlaces.entre(m.id, m.destinoLogistica) == null ? null : m.destinoLogistica;
+    }
+
+    /** Elige (o quita, con null) el mundo enlazado al que se envía la logística. Solo vale un mundo con enlace. */
+    static void elegirDestinoLogistica(String idMundo){
+        final Meta m = Mundos.actual;
+        if(m == null) return;
+        if(idMundo != null && m.enlaces.entre(m.id, idMundo) == null) return;
+        m.destinoLogistica = idMundo == null ? "" : idMundo;
+        Almacen.guardarMeta(m);
     }
 
     // ================================================================== viajes
@@ -223,14 +265,14 @@ final class ViajesMundo{
 
             final double t = m.calendario.tiempo();
             final ApiViaje.Viaje v = ApiViaje.viajarConCaos(Sistemas.global(), m.enlaces, m.id, destino, tierUnidad, inv, t, periodo(),
-                usados, m.semilla, Mundos.dimActual());
+                usados, m.semilla, Mundos.terrenoActual());
             if(!v.resultado.ok){
                 aviso(v.resultado.mensaje);
                 return;
             }
             String destinoFinal = destino;
             if("desvio".equals(v.caos)){
-                final String otro = ApiViaje.elegirDesvio(m.enlaces, m.id, destino, m.semilla, Mundos.dimActual(), (int)Math.floor(t));
+                final String otro = ApiViaje.elegirDesvio(m.enlaces, m.id, destino, m.semilla, Mundos.terrenoActual(), (int)Math.floor(t));
                 if(otro != null){
                     destinoFinal = otro;
                     aviso("Incidente en el viaje: el portal te desvía.");
@@ -282,6 +324,37 @@ final class ViajesMundo{
         Fx.launch.at(pu.x, pu.y);
         final long paso = Math.min(30L, restantes);
         Time.runTask((float)paso, () -> animar(restantes - paso, fin));
+    }
+
+    /**
+     * Lleva al jugador a otro mundo guardado por su id, sin enlace, sin requisitos y sin unidades: guarda este mundo, pasa el inventario y abre el
+     * otro. Lo usa {@link OpenWorldAPI#viajarAMundo}. false si el mundo no existe o no se puede abrir.
+     */
+    static boolean irA(String idMundo){
+        if(!puedeActuar()) return false;
+        final Meta origen = Mundos.actual;
+        Meta destino = null;
+        for(Meta o : Almacen.listar()) if(o.id.equals(idMundo)) destino = o;
+        if(destino == null || !destino.compatible()) return false;
+        final Meta d = destino;
+        Mundos.viajando = true;
+        if(!Vars.headless && Vars.ui != null) Vars.ui.loadfrag.show("Viajando a " + d.nombre + "...");
+        Time.runTask(10f, () -> {
+            try{
+                Mundos.guardar(true);
+                final Datos o = Datos.leer(Almacen.archivoEstado(origen));
+                if(o != null){
+                    Mundos.resN = new Seq<String>(o.itemsN);
+                    Mundos.resC = new Seq<Integer>(o.itemsC);
+                }
+                Mundos.continuar(d);
+            }catch(Throwable t){
+                Log.err("[MundoInfinito] Error al viajar a otro mundo", t);
+                if(!Vars.headless && Vars.ui != null) Vars.ui.loadfrag.hide();
+                Mundos.viajando = false;
+            }
+        });
+        return true;
     }
 
     /** Fin del viaje: lleva al jugador y a sus unidades a otro mundo. */

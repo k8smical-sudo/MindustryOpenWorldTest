@@ -158,7 +158,16 @@ public final class ApiSistemas{
      */
     public static Resultado anadirMundoEnOrbita(EstadoSistemas estado, String idSistema, String idMundo, String tipoPlaneta,
                                                 double radio, double diametro){
-        if(estado == null || !identificadorValido(idSistema) || !identificadorValido(idMundo) || !identificadorValido(tipoPlaneta)){
+        return anadirMundoEnOrbita(estado, idSistema, idMundo, tipoPlaneta, tipoPlaneta, radio, diametro, 0.0, 0.0);
+    }
+
+    /**
+     * Igual que la anterior, pero con la CLAVE de la órbita propia (cada grupo de la galaxia tiene sus órbitas: la clave suele ser "grupo/planeta") y
+     * con el ORIGEN del sistema si hay que crearlo ({@code origenX}, {@code origenY}: la posición de su grupo en la galaxia).
+     */
+    public static Resultado anadirMundoEnOrbita(EstadoSistemas estado, String idSistema, String idMundo, String tipoPlaneta, String claveOrbita,
+                                                double radio, double diametro, double origenX, double origenY){
+        if(estado == null || !Double.isFinite(origenX) || !Double.isFinite(origenY) || !identificadorValido(claveOrbita) || !identificadorValido(idSistema) || !identificadorValido(idMundo) || !identificadorValido(tipoPlaneta)){
             return fallo(Motivo.DATOS_INVALIDOS, "identificadores no válidos");
         }
         if(!valorValido(diametro)) return fallo(Motivo.DATOS_INVALIDOS, "diámetro no válido");
@@ -169,11 +178,11 @@ public final class ApiSistemas{
             return fallo(Motivo.DATOS_INVALIDOS, "el sistema " + idSistema + " es un planeta solitario y no admite mundos en órbita");
         }
 
-        final double radioFijado = estado.radioOrbita(tipoPlaneta);
+        final double radioFijado = estado.radioOrbita(claveOrbita);
         final double r = Double.isNaN(radioFijado) ? radio : radioFijado;
         if(!valorValido(r)) return fallo(Motivo.DATOS_INVALIDOS, "radio de órbita no válido");
 
-        final double[] ocupados = estado.angulosOrbita(tipoPlaneta);
+        final double[] ocupados = estado.angulosOrbita(claveOrbita);
         if(ocupados.length >= capacidad(r, diametro, MARGEN_ORBITA)) return fallo(Motivo.CAPACIDAD_AGOTADA, MENSAJE_CAPACIDAD);
 
         final double angulo = anguloSlot(ocupados, r, diametro, MARGEN_ORBITA);
@@ -184,9 +193,9 @@ public final class ApiSistemas{
 
         final FichaFisica ficha = ApiFisica.estimadaPlaneta(tipoPlaneta, (float)diametro);
         final EstadoSistemas.Cuerpo cuerpo = new EstadoSistemas.Cuerpo(idMundo, ApiFisica.TIPO_PLANETA, tipoPlaneta, idMundo,
-            tipoPlaneta, ocupados.length, r, angulo, ficha);
+            claveOrbita, ocupados.length, r, angulo, ficha);
         if(sistema == null){
-            sistema = new EstadoSistemas.SistemaSolar(idSistema, null, 0.0, 0.0, 0.0, 0.0, 0.0);
+            sistema = new EstadoSistemas.SistemaSolar(idSistema, null, origenX, origenY, 0.0, 0.0, 0.0);
             estado.anadir(sistema);
         }
         sistema.anadirCuerpo(cuerpo);

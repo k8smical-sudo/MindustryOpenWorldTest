@@ -31,6 +31,16 @@ final class AsignacionSistemas{
         final int semilla;
         final long creado;
         EstadoSistemas estado;
+        /** Grupo de la galaxia al que pertenece el mundo y su posición (plan v9). Por defecto, el grupo inicial en el origen. */
+        String grupo = ApiGalaxia.GRUPO_INICIAL;
+        double gx, gy;
+
+        Entrada(String idMundo, String planeta, int semilla, long creado, EstadoSistemas estado, String grupo, double gx, double gy){
+            this(idMundo, planeta, semilla, creado, estado);
+            this.grupo = grupo == null || grupo.isEmpty() ? ApiGalaxia.GRUPO_INICIAL : grupo;
+            this.gx = gx;
+            this.gy = gy;
+        }
 
         Entrada(String idMundo, String planeta, int semilla, long creado, EstadoSistemas estado){
             this.idMundo = idMundo;
@@ -44,6 +54,16 @@ final class AsignacionSistemas{
     /** Id del sistema compartido de un planeta base. */
     static String idSistema(String planeta){
         return PREFIJO_SISTEMA + planeta;
+    }
+
+    /** Id del sistema de un planeta base en un grupo: el del grupo inicial conserva el de siempre, para no mover los mundos ya guardados. */
+    static String idSistema(String grupo, String planeta){
+        return grupo == null || grupo.isEmpty() || ApiGalaxia.GRUPO_INICIAL.equals(grupo) ? idSistema(planeta) : PREFIJO_SISTEMA + grupo + "-" + planeta;
+    }
+
+    /** Clave de la órbita compartida de un planeta base en un grupo: cada grupo tiene sus propias órbitas. La del grupo inicial es el tag, como siempre. */
+    static String claveOrbita(String grupo, String planeta){
+        return grupo == null || grupo.isEmpty() || ApiGalaxia.GRUPO_INICIAL.equals(grupo) ? planeta : grupo + "/" + planeta;
     }
 
     /** Sistema que contiene el cuerpo propio del mundo, o null. */
@@ -94,15 +114,22 @@ final class AsignacionSistemas{
      * (datos no válidos): entonces el mundo se queda sin cuerpo y el visor no lo muestra, pero el mundo funciona igual.
      */
     static EstadoSistemas asignar(EstadoSistemas global, String idMundo, String planeta, int semilla, double radio, double diametro){
-        final ApiSistemas.Resultado r = ApiSistemas.anadirMundoEnOrbita(global, idSistema(planeta), idMundo, planeta, radio, diametro);
+        return asignar(global, idMundo, planeta, semilla, radio, diametro, ApiGalaxia.GRUPO_INICIAL, 0.0, 0.0);
+    }
+
+    /** Igual, dentro de un grupo de la galaxia: su sistema y su órbita son del grupo y su origen es la posición del grupo. */
+    static EstadoSistemas asignar(EstadoSistemas global, String idMundo, String planeta, int semilla, double radio, double diametro,
+                                  String grupo, double gx, double gy){
+        final String clave = claveOrbita(grupo, planeta);
+        final ApiSistemas.Resultado r = ApiSistemas.anadirMundoEnOrbita(global, idSistema(grupo, planeta), idMundo, planeta, clave, radio, diametro, gx, gy);
         if(r.ok) return soloPropio(r.sistema, global.buscarCuerpo(idMundo));
 
-        // Sin hueco (o sin capacidad): planeta solitario, con posición determinista por semilla.
-        final double radioOrbita = Double.isNaN(global.radioOrbita(planeta)) ? radio : global.radioOrbita(planeta);
+        // Sin hueco (o sin capacidad): planeta solitario, con posición determinista por semilla, alrededor del grupo.
+        final double radioOrbita = Double.isNaN(global.radioOrbita(clave)) ? radio : global.radioOrbita(clave);
         final double angulo = 2.0 * Math.PI * ApiAzar.unidad(semilla, 0, "sistemas-solitario-angulo", 0, 0);
         final double dist = radioOrbita * (SOLITARIO_MIN + SOLITARIO_RANGO * ApiAzar.unidad(semilla, 0, "sistemas-solitario-distancia", 0, 0));
         final ApiSistemas.Resultado s = ApiSistemas.crearSolitario(global, PREFIJO_SOLITARIO + idMundo, idMundo, planeta,
-            Math.cos(angulo) * dist, Math.sin(angulo) * dist, 0.0, 0.0, 0.0, diametro);
+            gx + Math.cos(angulo) * dist, gy + Math.sin(angulo) * dist, 0.0, 0.0, 0.0, diametro);
         return s.ok ? soloPropio(s.sistema, global.buscarCuerpo(idMundo)) : null;
     }
 
@@ -117,7 +144,8 @@ final class AsignacionSistemas{
         pendientes.sort(Comparator.<Entrada>comparingLong(a -> a.creado).thenComparing(a -> a.idMundo));
         final ArrayList<Entrada> cambiadas = new ArrayList<Entrada>();
         for(Entrada en : pendientes){
-            final EstadoSistemas nuevo = asignar(global, en.idMundo, en.planeta, en.semilla, radioDe.applyAsDouble(en.planeta), ApiFisica.DIAMETRO_PLANETA);
+            final EstadoSistemas nuevo = asignar(global, en.idMundo, en.planeta, en.semilla, radioDe.applyAsDouble(en.planeta), ApiFisica.DIAMETRO_PLANETA,
+                en.grupo, en.gx, en.gy);
             if(nuevo == null) continue;
             en.estado = nuevo;
             cambiadas.add(en);

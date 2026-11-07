@@ -262,11 +262,32 @@ public final class Corpus{
     static int verificar(String archivo) throws Exception{
         final Map<String, String> esperado = leer(archivo);
         final String genArchivo = esperado.remove("#gen");
+        final int genPrevia = Extensiones.generacion;
         if(genArchivo != null && !genArchivo.equals(String.valueOf(MundoInfinitoMod.GEN_ACTUAL))){
-            System.out.println("[Corpus] FALLO: el archivo es de la generación " + genArchivo + " y el código es la " + MundoInfinitoMod.GEN_ACTUAL
-                + ". Vuelve a congelar el corpus con la generación nueva.");
-            return 1;
+            // Una generación anterior compatible se verifica con ELLA: los mundos guardados con la 5, la 4 o la 3 deben conservar su terreno exacto
+            // aunque el código ya genere mundos nuevos con la 6.
+            int g = -1;
+            try{
+                g = Integer.parseInt(genArchivo);
+            }catch(NumberFormatException e){
+                g = -1;
+            }
+            if(g != MundoInfinitoMod.GEN_MENAS && g != MundoInfinitoMod.GEN_REVISADA && g != MundoInfinitoMod.GEN_ANTERIOR){
+                System.out.println("[Corpus] FALLO: el archivo es de la generación " + genArchivo + " y el código es la " + MundoInfinitoMod.GEN_ACTUAL
+                    + ". Vuelve a congelar el corpus con la generación nueva.");
+                return 1;
+            }
+            Extensiones.generacion = g;
+            System.out.println("[Corpus] verificando contra la generación anterior " + g + " (código en la " + MundoInfinitoMod.GEN_ACTUAL + ").");
         }
+        try{
+            return verificarContra(esperado, genArchivo);
+        }finally{
+            Extensiones.generacion = genPrevia;
+        }
+    }
+
+    private static int verificarContra(Map<String, String> esperado, String genArchivo) throws Exception{
         final List<int[]> es = entradas();
         olvidarCaches();
         final long[] hs = calcularNucleo(es);   // el terreno servido por el núcleo debe dar lo congelado
@@ -285,7 +306,7 @@ public final class Corpus{
         }
         final int sobran = esperado.size();
         if(distintos == 0 && faltan == 0 && sobran == 0){
-            System.out.println("[Corpus] OK: " + hs.length + " chunks idénticos a lo congelado (gen=" + MundoInfinitoMod.GEN_ACTUAL + ").");
+            System.out.println("[Corpus] OK: " + hs.length + " chunks idénticos a lo congelado (gen=" + (genArchivo == null ? MundoInfinitoMod.GEN_ACTUAL : genArchivo) + ").");
             return 0;
         }
         System.out.println("[Corpus] FALLO: distintos=" + distintos + ", sin esperado=" + faltan + ", sobrantes en el archivo=" + sobran

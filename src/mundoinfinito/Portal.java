@@ -23,10 +23,10 @@ import mundoinfinito.MundoInfinitoMod.Regiones;
 import mundoinfinito.MundoInfinitoMod.Streamer;
 
 /**
- * Diálogo del portal interdimensional (tier 1 a 3) y viajes dentro de una dimensión. Desde el plan v9 (P7) es también el diálogo de los enlaces entre
+ * Diálogo del portal de mundos (tier 1 a 3) y viajes dentro de un mundo. Desde el plan v9 (P7) es también el diálogo de los enlaces entre
  * mundos: lista los cuerpos de los demás mundos con su distancia, deja establecer un enlace dentro del alcance del portal y viajar por los ya
  * establecidos, eligiendo los boosters que haya en el núcleo. La lógica está en {@link ViajesMundo}.
- * Opciones: base principal (el origen de la dimensión), un checkpoint ya hecho, u otra dimensión (Serpulo <-> Erekir).
+ * Opciones: base principal (el origen del mundo), un checkpoint ya hecho, u otros mundos enlazados.
  * Cada portal que se toca queda registrado como checkpoint.
  */
 final class Portal{
@@ -44,10 +44,9 @@ final class Portal{
         final double px = Coord.virtualX(dev.x), py = Coord.virtualY(dev.y);
         if(Estructuras.registrarPunto(px, py)) Vars.ui.showInfoToast("Checkpoint guardado", 2.5f);
 
-        final int actualDim = Mundos.dimActual();
-        BaseDialog d = new BaseDialog("Portal interdimensional");
+        BaseDialog d = new BaseDialog("Portal de mundos");
         d.cont.add("Tier " + tier).padBottom(2f).row();
-        d.cont.add("[accent]" + m.nombreDim() + "[]   X " + (long)Math.floor(px) + "   Y " + (long)Math.floor(py)).padBottom(10f).row();
+        d.cont.add("[accent]" + m.nombreTerreno() + "[]   X " + (long)Math.floor(px) + "   Y " + (long)Math.floor(py)).padBottom(10f).row();
 
         d.cont.button("Base principal", Styles.defaultt, () -> { d.hide(); irA(0.0, 0.0); }).size(320f, 56f).padBottom(6f).row();
 
@@ -66,32 +65,29 @@ final class Portal{
 
         agregarViajes(d, tier);
 
-        // Destinos: las dimensiones del mundo base que no son la actual y los mundos registrados por mods visibles desde aquí
-        if(actualDim != MundoInfinitoMod.DIM_SERPULO){
-            d.cont.button("Ir a Serpulo", Styles.defaultt, () -> { d.hide(); Mundos.saltar(MundoInfinitoMod.DIM_SERPULO); }).size(320f, 56f).padTop(8f).row();
-        }
-        if(actualDim != MundoInfinitoMod.DIM_EREKIR){
-            d.cont.button("Ir a Erekir", Styles.defaultt, () -> { d.hide(); Mundos.saltar(MundoInfinitoMod.DIM_EREKIR); }).size(320f, 56f).padTop(8f).row();
-        }
-        for(final MundoRegistrado w : Extensiones.mundos()){
-            boolean visible;
-            try{
-                visible = w.dimension() != actualDim && w.visible.desde(actualDim);
-            }catch(Throwable t){
-                visible = false;
-            }
-            if(!visible) continue;
-            d.cont.button("Ir a " + w.nombre, Styles.defaultt, () -> { d.hide(); Mundos.saltar(w.dimension()); }).size(320f, 56f).padTop(8f).row();
-        }
-
-        // la logística orbital solo une Serpulo y Erekir
-        if(tier == 1 && dev.team == Vars.player.team() && actualDim <= MundoInfinitoMod.DIM_EREKIR){
-            final int otra = 1 - actualDim;
-            d.cont.add("[gray]Logística: en camino aquí " + TransitoOrbital.pendientes(actualDim)
-                + "   hacia allá " + TransitoOrbital.pendientes(otra) + "[]").padTop(8f).row();
-        }
+        // Logística orbital (solo el tier 1): a qué mundo enlazado se envía lo que entra en los silos
+        if(tier == 1 && dev.team == Vars.player.team()) agregarLogistica(d);
         d.addCloseButton();
         d.show();
+    }
+
+    /** Elección del mundo enlazado al que se envía la logística, con lo que hay en camino hacia aquí y hacia allá. */
+    private static void agregarLogistica(final BaseDialog d){
+        final Meta m = Mundos.actual;
+        if(m == null || m.enlaces.todos().isEmpty()) return;
+        final String actual = ViajesMundo.destinoLogistica();
+        d.cont.add("Logística: en camino hacia aquí " + TransitoOrbital.pendientes(m.id)
+            + (actual == null ? "" : "   hacia allá " + TransitoOrbital.pendientes(actual))).padTop(8f).row();
+        final Table lista = new Table();
+        for(final ApiViaje.Enlace e : m.enlaces.todos()){
+            final String otro = e.cuerpoA.equals(m.id) ? e.cuerpoB : e.cuerpoA;
+            String nombre = otro;
+            for(Meta x : Almacen.listar()) if(x.id.equals(otro)) nombre = x.nombre;
+            final boolean elegido = otro.equals(actual);
+            lista.button((elegido ? "[accent]Enviar a: " : "Enviar a: ") + nombre + (elegido ? "[]" : ""), Styles.defaultt,
+                () -> { ViajesMundo.elegirDestinoLogistica(elegido ? null : otro); d.hide(); }).size(350f, 40f).padBottom(3f).row();
+        }
+        d.cont.add(lista).row();
     }
 
     /** Sección de enlaces y viajes entre mundos: boosters, materiales que faltan y un renglón por cuerpo. */
@@ -134,7 +130,7 @@ final class Portal{
         d.cont.pane(lista).maxHeight(Core.graphics.getHeight() * 0.3f).row();
     }
 
-    /** Viaja a una posición VIRTUAL de la dimensión actual. Cerca: salto directo; lejos: se reabre la ventana allí. */
+    /** Viaja a una posición VIRTUAL de este mundo. Cerca: salto directo; lejos: se reabre la ventana allí. */
     static void irA(double vx, double vy){
         if(!Streamer.activo || Mundos.viajando || Streamer.restaurando || Vars.player == null || Vars.player.dead() || Mundos.actual == null) return;
         final double lx = vx, ly = vy;   // sin ventana: la posición del mundo es la virtual

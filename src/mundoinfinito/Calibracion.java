@@ -63,6 +63,18 @@ final class Calibracion{
     static final double AGUJERO_HORIZONTE = 0.4, AGUJERO_ATRACCION = 1.0, AGUJERO_INTENSIDAD = 1.0,
         AGUJERO_PERIODO_CAOS = 3600.0, AGUJERO_PROBABILIDAD_INCIDENTE = 0.02;
 
+    // ================================================================== respiraderos según la ficha física del lugar (generación 6)
+    /** Factor sobre la probabilidad de un respiradero según la categoría de tamaño del planeta: pequeño, medio, grande. Propuesto. */
+    static final double RESPIRADERO_FICHA_PEQUENO = 0.8, RESPIRADERO_FICHA_MEDIO = 1.0, RESPIRADERO_FICHA_GRANDE = 1.25;
+
+    // ================================================================== galaxia (Vía Láctea de grupos de mundos)
+    /** Máximo de grupos (sistemas solares con nombre) en la galaxia. Modificable con {@code ApiGalaxia.fijarMaximoGrupos}. */
+    static final int GALAXIA_MAX_GRUPOS = 12;
+    /** Distancia por defecto entre los centros de grupos vecinos, en unidades del sistema solar. Con el alcance de los portales (60 / 300 / 1000), el tier 2 llega al vecino más cercano. */
+    static final double GALAXIA_DISTANCIA_GRUPOS = 250.0;
+    /** Espacio que ocupa un grupo (radio, en unidades). Dos grupos no pueden solaparse: sus centros distan al menos la suma de radios más el margen. */
+    static final double GALAXIA_RADIO_GRUPO = 60.0, GALAXIA_MARGEN = 20.0;
+
     // ================================================================== colisiones de cuerpos (apagadas por defecto)
     /** Duración del pulso rojo del visor 2D, en ticks. */
     static final float COLISION_PULSO_TICKS = 180f;

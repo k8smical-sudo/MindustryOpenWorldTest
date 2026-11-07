@@ -250,7 +250,11 @@ final class FenomenosBase{
             }
             // Probabilidad (plan v5, D12-D13): bioma, menas cercanas y fuentes de addons. Las comprobaciones de arriba son puras, así que
             // evaluarla aquí no cambia el resultado; se hace antes del juicio de balance, que es el más caro.
-            final float p = ApiWorldgen.probabilidad(id(), 1f, ApiWorldgen.lugar(c, x, y));
+            final ApiWorldgen.Lugar sitio = ApiWorldgen.lugar(c, x, y);
+            float p = ApiWorldgen.probabilidad(id(), 1f, sitio);
+            // Plan v9, P9 (generación 6): el tamaño del planeta del lugar (su ficha física) sube o baja la probabilidad. Las generaciones anteriores no lo
+            // aplican: su terreno guardado no cambia.
+            if(Extensiones.generacionConFicha()) p *= RespiraderosFicha.factor(sitio.tamano());
             if(c.azar(x, y, 0x7104) >= p) return false;
             return abierto(c, x, y) >= umbralAbierto(c) * Nucleo.parametros().umbralRespiraderos;   // juicio de balance
         }

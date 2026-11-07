@@ -49,6 +49,7 @@ class RadarPlanetario extends Block{
     RadarPlanetario(String name, int tier, int tamano, float energia){
         super(name);
         this.tier = tier;
+        buildVisibility = ApiContenido.visibilidad(name);   // oculto en campaña salvo que ApiContenido lo permita
         size = tamano;
         health = 200 * tamano * tamano;
         update = true;

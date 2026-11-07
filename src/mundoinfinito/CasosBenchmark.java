@@ -41,6 +41,7 @@ final class CasosBenchmark{
         colision(out);
         calibracion(out);
         niebla(out);
+        galaxia(out);
         inicio(out);
         return out;
     }
@@ -360,9 +361,17 @@ final class CasosBenchmark{
 
     private static void niebla(List<Bancos.Caso> out){
         out.add(new Bancos.Caso("niebla", "persiste-sin-politicas", 500000, () -> ApiNiebla.persiste("bench", 0, true), "ApiNiebla"));
-        final boolean reg = ApiNiebla.registrarPolitica("bench-niebla:pol", 0, (m, d) -> Boolean.FALSE);
+        ApiNiebla.registrarPolitica("bench-niebla:pol", 0, (m, d) -> Boolean.FALSE);
         out.add(new Bancos.Caso("niebla", "politica-registrada", 500000, () -> !ApiNiebla.persiste("bench", 0, true), "ApiNiebla"));
         ApiNiebla.quitarPolitica("bench-niebla:pol");
-        return;
+    }
+
+    private static void galaxia(List<Bancos.Caso> out){
+        final List<ApiGalaxia.Grupo> base = ApiGalaxia.grupos();
+        out.add(new Bancos.Caso("galaxia", "posicion-por-defecto", 100000, () -> ApiGalaxia.posicionPorDefecto(base, 60.0, 250.0) != null, "ApiGalaxia"));
+        final String texto = ApiGalaxia.aTexto();
+        out.add(new Bancos.Caso("galaxia", "texto-ida-y-vuelta", 20000, () -> ApiGalaxia.limpiarNombre("  Sistema   Solar ").equals("Sistema Solar") && !texto.isEmpty(), "ApiGalaxia"));
+        out.add(new Bancos.Caso("contenido", "visible-en-campana", 500000, () -> !ApiContenido.visibleEnCampana("portal-viaje-1"), "ApiContenido"));
+        out.add(new Bancos.Caso("respiraderos", "factor-de-ficha", 500000, () -> RespiraderosFicha.factor("grande") > RespiraderosFicha.factor("pequeno"), "RespiraderosFicha"));
     }
 }

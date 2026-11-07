@@ -25,7 +25,7 @@ final class ItemsViaje{
     }
 
     private static Item nuevo(String nombre, String color, String titulo, String texto){
-        final Item it = new Item(nombre, Color.valueOf(color));
+        final Item it = new ItemMod(nombre, Color.valueOf(color));   // se oculta en campaña salvo que ApiContenido lo permita
         it.localizedName = titulo;
         it.description = texto;
         it.alwaysUnlocked = true;

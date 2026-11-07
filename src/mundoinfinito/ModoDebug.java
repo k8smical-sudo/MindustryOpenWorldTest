@@ -25,7 +25,7 @@ import java.util.List;
  * Es un encadenado: conserva el logger que había (el last_log.txt de Mindustry sigue igual) y los errores no capturados.
  * Se activa al arrancar: cambiar el ajuste requiere reiniciar el juego. Nunca lanza excepciones hacia el juego.
  */
-public final class ModoDebug{
+final class ModoDebug{   // NO pública: el corpus exige que toda clase pública sea Api* o de legado
     private static final Object CERROJO = new Object();
     private static final SimpleDateFormat HORA = new SimpleDateFormat("HH:mm:ss.SSS");
     private static final SimpleDateFormat NOMBRE = new SimpleDateFormat("yyyyMMdd-HHmmss");

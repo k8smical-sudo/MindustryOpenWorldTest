@@ -104,12 +104,13 @@ final class VistaPlanetas{
         /** Órbita compartida del cuerpo, o null si es un planeta solitario (no ocupa órbita). */
         final Orbita orbita;
         final boolean actual;
-        /** Tiempo del mundo al leerlo (ticks), y periodo de giro del planeta base (ticks). */
+        /** Tiempo del mundo al leerlo (ticks), periodo de giro del planeta base (ticks) y periodo de revolución PROPIO de este mundo (ticks). */
         final float tiempoMundo;
         final double periodoGiro;
+        final double periodoOrbita;
 
         Mundo(String id, String nombre, String tag, EstadoSistemas.SistemaSolar sistema, EstadoSistemas.Cuerpo cuerpo, Orbita orbita,
-              boolean actual, float tiempoMundo, double periodoGiro){
+              boolean actual, float tiempoMundo, double periodoGiro, double periodoOrbita){
             this.id = id;
             this.nombre = nombre;
             this.tag = tag;
@@ -119,19 +120,18 @@ final class VistaPlanetas{
             this.actual = actual;
             this.tiempoMundo = tiempoMundo;
             this.periodoGiro = periodoGiro;
+            this.periodoOrbita = periodoOrbita;
         }
     }
 
-    /** Órbita de un planeta base: radio (unidades de Mindustry) y periodo de revolución en ticks. */
+    /** Órbita compartida de un planeta base en un grupo: solo el radio (unidades de Mindustry). El periodo es de CADA mundo (ver Mundo). */
     private static final class Orbita{
         final String tag;
         final float radio;
-        final double periodo;
 
-        Orbita(String tag, float radio, double periodo){
+        Orbita(String tag, float radio){
             this.tag = tag;
             this.radio = radio;
-            this.periodo = periodo;
         }
     }
 
@@ -220,12 +220,13 @@ final class VistaPlanetas{
                 if(c.orbita != null){
                     o = orbitas.get(c.orbita);
                     if(o == null){
-                        o = new Orbita(c.orbita, (float)est.radioOrbita(c.orbita), periodoOrbita(m, tag));
+                        o = new Orbita(c.orbita, (float)est.radioOrbita(c.orbita));
                         orbitas.put(c.orbita, o);
                     }
                 }
                 mundos.add(new Mundo(m.id, m.nombre, tag, sistema, c, o, actual != null && actual.id.equals(m.id),
-                    m.calendario.tiempo(), Math.max(1, ApiPlaneta.rotacion(tag))));
+                    m.calendario.tiempo(), Math.max(1, ApiPlaneta.rotacion(tag)),
+                    o == null ? 0.0 : periodoOrbita(m, tag)));
             }
             if(seleccionado != null && buscarSeleccionado() == null) seleccionado = null;
         }
@@ -287,7 +288,7 @@ final class VistaPlanetas{
         /** Ángulo del mundo en la órbita simulada. Un solitario no orbita: su ángulo es el de su posición. */
         private double anguloDe(Mundo b){
             if(b.orbita == null) return Math.atan2(b.sistema.p0y, b.sistema.p0x);
-            return ApiSistemas.anguloEn(b.cuerpo, tiempoVisual(b), b.orbita.periodo);
+            return ApiSistemas.anguloEn(b.cuerpo, tiempoVisual(b), b.periodoOrbita);
         }
 
         /** Posición del mundo en coordenadas de contenido (sin zoom ni paneo). */

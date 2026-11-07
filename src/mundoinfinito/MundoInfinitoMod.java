@@ -110,6 +110,7 @@ public class MundoInfinitoMod extends Mod{
     public static final int DIM_SERPULO = 0, DIM_EREKIR = 1;
 
     public MundoInfinitoMod(){
+        ModoDebug.iniciarSiActivo();   // primero: así también queda registrada la carga del mod
         // Generadores del propio mundo base: usan la misma API que los mods (Parte A del plan). Solo actúan en mundos de generación >= GEN_REVISADA.
         FenomenosBase.registrar();
         GameRulesBase.registrar();   // gamerules del mod base (misma API que las de otros mods)

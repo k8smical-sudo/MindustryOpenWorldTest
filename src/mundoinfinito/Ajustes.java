@@ -24,6 +24,7 @@ final class Ajustes{
     static final String K_CALIDAD = "ow-calidad", K_CALIDAD_AUTO = "ow-calidad-auto", K_PRUEBA = "ow-visual-prueba", K_PRUEBA_FALLA = "ow-visual-prueba-falla", K_PRUEBA_EFECTO = "ow-visual-prueba-efecto",
         K_PRUEBA_AGUA = "ow-visual-prueba-agua", K_PRUEBA_ZOOM = "ow-visual-prueba-zoom";
     static final String K_MAPA_ESCALA = "ow-mapa-escala", K_MAPA_DX = "ow-mapa-dx", K_MAPA_DY = "ow-mapa-dy", K_MAPA_VISIBLE = "ow-mapa-visible";
+    static final String K_DEBUG = "ow-debug-logs";
     /** Con visión automática el dron nunca revela más de esto (la niebla se actualiza por cada casilla que se mueve el dron). */
     static final int VISION_AUTO_MAX = 12;
     /** Menor distancia de chunks permitida (antes 3): con 1 solo se carga el chunk del jugador y sus vecinos inmediatos. */
@@ -72,6 +73,11 @@ final class Ajustes{
 
     static boolean pruebaAgua(){
         return Core.settings.getBool(K_PRUEBA_AGUA, false);
+    }
+
+    /** Modo debug: guardar todos los logs en un .txt de Descargas (lo lee ModoDebug al arrancar). */
+    static boolean debugLogs(){
+        return Core.settings.getBool(K_DEBUG, false);
     }
 
     static boolean pruebaZoom(){
@@ -199,6 +205,7 @@ final class Ajustes{
             p.put("setting." + K_PRUEBA_AGUA + ".name", "Prueba visual: sustituir el shader del agua (solo para comprobar)");
             p.put("setting." + K_PRUEBA_ZOOM + ".name", "Prueba visual: sin shaders de superficie al alejar el zoom (solo para comprobar)");
             p.put("setting." + K_MAPA_VISIBLE + ".name", "Mostrar el minimapa");
+            p.put("setting." + K_DEBUG + ".name", "Modo debug: guardar todos los logs en Descargas (se aplica al reiniciar)");
             p.put("setting." + K_MAPA_ESCALA + ".name", "Tamaño del minimapa");
             p.put("setting." + K_MAPA_DX + ".name", "Posición del minimapa (horizontal)");
             p.put("setting." + K_MAPA_DY + ".name", "Posición del minimapa (vertical)");
@@ -215,6 +222,7 @@ final class Ajustes{
                 t.checkPref(K_PRUEBA_AGUA, false);
                 t.checkPref(K_PRUEBA_ZOOM, false);
                 t.checkPref(K_MAPA_VISIBLE, true);
+                t.checkPref(K_DEBUG, false);
                 t.sliderPref(K_MAPA_ESCALA, 100, 50, 200, v -> v + " %");
                 t.sliderPref(K_MAPA_DX, 0, 0, 2000, v -> v + " u (aleja del borde derecho)");
                 t.sliderPref(K_MAPA_DY, 0, 0, 2000, v -> v + " u (aleja del borde superior)");

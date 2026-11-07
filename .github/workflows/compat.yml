@@ -1,0 +1,27 @@
+name: Compat MX-Test
+
+# Prueba el mod contra un candidato de MX-Test antes de que sea release.
+# Sin tag, usa la última release (igual que el CI normal). Reutiliza ci.yml, así que
+# es exactamente la misma batería de pruebas.
+on:
+  pull_request:
+    branches: [main]
+  repository_dispatch:
+    types: [mx-candidate]
+  workflow_dispatch:
+    inputs:
+      engine_tag:
+        description: "Tag de MX-Test a probar (vacío = última release)"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  compat:
+    uses: ./.github/workflows/ci.yml
+    with:
+      engine_tag: ${{ github.event.client_payload.tag || inputs.engine_tag || '' }}
+    secrets: inherit

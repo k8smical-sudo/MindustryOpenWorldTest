@@ -6,6 +6,14 @@ on:
   release:
     types:
       - created
+  # Llamado desde compat.yml: prueba el mod contra un motor concreto (candidato o release).
+  workflow_call:
+    inputs:
+      engine_tag:
+        description: "Tag de MX-Test a probar. Vacío = última release."
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: write
@@ -53,9 +61,13 @@ jobs:
       - name: Download MX-Test engine jar
         env:
           GH_TOKEN: ${{ github.token }}
+          ENGINE_TAG: ${{ inputs.engine_tag }}
         run: |
           set -euo pipefail
-          TAG=$(gh release list --repo "$MX_REPO" --limit 1 --json tagName -q '.[0].tagName')
+          TAG="$ENGINE_TAG"
+          if [ -z "$TAG" ]; then
+            TAG=$(gh release list --repo "$MX_REPO" --limit 1 --json tagName -q '.[0].tagName')
+          fi
           echo "MX-Test release: $TAG"
           mkdir -p libs
           gh release download "$TAG" --repo "$MX_REPO" --pattern '*-Desktop.jar' --dir libs --clobber

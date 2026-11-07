@@ -191,6 +191,33 @@ public final class OpenWorldAPI{
     }
 
     /**
+     * @deprecated Desde la API 1.14 no hay dimensiones: un mundo es un terreno. Devuelve {@link #terreno()}. Se mantiene para que los mods que la
+     * llaman sigan funcionando sin subir la versión mayor (ver {@link ApiVersion}); se retirará en la siguiente versión mayor.
+     */
+    @Deprecated
+    public static int dimension(){
+        return terreno();
+    }
+
+    /**
+     * @deprecated Usa {@link #viajarAMundo(String)} con el id del mundo. Se mantiene para compatibilidad.
+     */
+    @Deprecated
+    public static boolean viajarA(String idMundo){
+        return viajarAMundo(idMundo);
+    }
+
+    /**
+     * @deprecated Ya no existen dimensiones ni una dimensión base. No hace nada, devuelve false y lo deja escrito en el registro.
+     * Usa {@link #viajarAMundo(String)}.
+     */
+    @Deprecated
+    public static boolean viajarADimensionBase(int dimension){
+        Log.warn("[MundoInfinito][API] viajarADimensionBase(@) ya no existe: un mundo es un terreno. Usa viajarAMundo(id).", dimension);
+        return false;
+    }
+
+    /**
      * Crea un mundo nuevo cuyo terreno es el de un mundo registrado con {@link #registrarMundo} (por su id), en vez de Serpulo o Erekir. Los demás
      * parámetros son los de un mundo nuevo normal (núcleo, semilla, límites). false si el tipo no existe o ya se está creando otro mundo.
      */

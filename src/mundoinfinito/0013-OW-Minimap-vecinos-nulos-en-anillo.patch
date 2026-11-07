@@ -1,0 +1,45 @@
+diff --git a/core/src/mindustry/graphics/MinimapRenderer.java b/core/src/mindustry/graphics/MinimapRenderer.java
+index c87184c..54dc559 100644
+--- a/core/src/mindustry/graphics/MinimapRenderer.java
++++ b/core/src/mindustry/graphics/MinimapRenderer.java
+@@ -59,7 +59,7 @@ public class MinimapRenderer{
+             //update floor below a *recently removed* block.
+             if(e.tile.block().solid && e.tile.y > 0){
+                 Tile tile = world.tile(e.tile.x, e.tile.y - 1);
+-                if(tile.block() == Blocks.air){
++                if(tile != null && tile.block() == Blocks.air){
+                     Time.run(0f, () -> update(tile));
+                 }
+             }
+@@ -352,7 +352,7 @@ public class MinimapRenderer{
+ 
+                 if(tile.block().solid && other.y > 0){
+                     Tile low = world.tile(other.x, other.y - 1);
+-                    if(!low.solid()){
++                    if(low != null && !low.solid()){
+                         updatePixel(low);
+                     }
+                 }
+@@ -378,6 +378,8 @@ public class MinimapRenderer{
+     }
+ 
+     private Block realBlock(Tile tile){
++        //OW anillo: una casilla de un chunk sin cargar es null (hueco del anillo); se trata como aire
++        if(tile == null) return Blocks.air;
+         //TODO doesn't work properly until player goes and looks at block
+         return tile.build == null ? tile.block() : state.rules.fog && !tile.build.wasVisible ? Blocks.air : tile.block();
+     }
+@@ -391,9 +393,11 @@ public class MinimapRenderer{
+         Color color = Tmp.c1.set(bc == 0 ? MapIO.colorFor(real, tile.floor(), tile.overlay(), tile.team()) : bc);
+         color.mul(1f - Mathf.clamp(world.getDarkness(tile.x, tile.y) / 4f));
+ 
+-        if(real == Blocks.air && tile.y < world.height() - 1 && realBlock(world.tile(tile.x, tile.y + 1)).solid){
++        //OW anillo: el vecino de arriba puede estar en un chunk sin cargar (null): no sombrea ni cuenta como líquido
++        Tile arriba = tile.y < world.height() - 1 ? world.tile(tile.x, tile.y + 1) : null;
++        if(real == Blocks.air && arriba != null && realBlock(arriba).solid){
+             color.mul(0.7f);
+-        }else if(tile.floor().isLiquid && (tile.y >= world.height() - 1 || !world.tile(tile.x, tile.y + 1).floor().isLiquid)){
++        }else if(tile.floor().isLiquid && (arriba == null || !arriba.floor().isLiquid)){
+             color.mul(0.84f, 0.84f, 0.9f, 1f);
+         }
+ 

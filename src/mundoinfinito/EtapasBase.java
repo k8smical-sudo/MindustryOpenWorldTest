@@ -15,8 +15,8 @@ import static mundoinfinito.MundoInfinitoMod.Muestreo.*;
  *   -800 claro-inicial       el claro del spawn           -700 pozos-spawn        pozos garantizados cerca del spawn
  *   -600 crateres            cráteres y respiraderos
  *
- * El código de cada etapa es el de Muestreo.muestrear, repartido: las condiciones y las fórmulas no cambian. Muestreo se conserva como
- * referencia del corpus de regresión (la comparación etapas-completas contra Muestreo debe dar idéntico).
+ * Muestreo.muestrear fue retirado: este pipeline es la única fuente de verdad del terreno base, y el corpus congelado es la
+ * referencia de regresión.
  */
 final class EtapasBase{
     private EtapasBase(){}

@@ -19,7 +19,6 @@ public final class ContextoFenomeno{
     final Paleta pal;
     private Muestreo.Spawn sp;
 
-    private static final ThreadLocal<float[]> AUX = ThreadLocal.withInitial(() -> new float[14]);
     private static final ThreadLocal<int[]> OUT = ThreadLocal.withInitial(() -> new int[4]);
 
     ContextoFenomeno(Paleta pal, int semilla, int dimension, String idGenerador){
@@ -57,13 +56,32 @@ public final class ContextoFenomeno{
         return s;
     }
 
-    /** Muestrea el terreno base. Devuelve un búfer del hilo: copiar los valores antes de volver a llamar. [0]=piso [1]=mena [2]=muro [3]=prop */
+    /** Último chunk muestreado por este hilo. Los fenómenos recorren casillas de un mismo chunk, así que casi siempre acierta. */
+    private static final class ChunkCache{
+        int cx, cy, semilla, dimension;
+        ParametrosGeneracion par;
+        boolean valido;
+        final AporteTerreno ap = new AporteTerreno();
+    }
+    private static final ThreadLocal<ChunkCache> CACHE = ThreadLocal.withInitial(ChunkCache::new);
+
+    /** Muestrea el terreno base (pipeline de etapas base, sin contribuciones de add-ons). Devuelve un búfer del hilo: copiar los valores antes de volver a llamar. [0]=piso [1]=mena [2]=muro [3]=prop */
     int[] muestra(int vx, int vy){
         comprobarBase();
-        final float[] aux = AUX.get();
+        final int T = AporteTerreno.T;
+        final int cx = Math.floorDiv(vx, T), cy = Math.floorDiv(vy, T);
+        final ParametrosGeneracion par = Nucleo.parametros();
+        final ChunkCache c = CACHE.get();
+        if(!c.valido || c.cx != cx || c.cy != cy || c.semilla != semilla || c.dimension != dimension || c.par != par){
+            PipelineBase.ejecutar(new ContextoAporte(semilla, dimension, cx * T, cy * T, cx, cy, par), c.ap, PipelineBase.etapasBase());
+            c.cx = cx; c.cy = cy; c.semilla = semilla; c.dimension = dimension; c.par = par; c.valido = true;
+        }
+        final int i = (vy - cy * T) * T + (vx - cx * T);
         final int[] out = OUT.get();
-        aux[11] = 0f;
-        Muestreo.muestrear(semDim, vx, vy, spawn(), aux, out);
+        out[0] = c.ap.piso[i];
+        out[1] = c.ap.mena[i];
+        out[2] = c.ap.muro[i];
+        out[3] = c.ap.prop[i];
         return out;
     }
 

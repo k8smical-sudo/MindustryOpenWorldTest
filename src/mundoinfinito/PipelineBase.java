@@ -64,6 +64,19 @@ final class PipelineBase{
     }
 
     /** @return casillas evaluadas (las que están dentro del borde del mundo). */
+    private static volatile EtapaBase[] etapasBaseOrdenadas;
+
+    /** Etapas del terreno base en orden canónico. Se calculan una vez: el terreno base es función pura de (semilla, dimensión, parámetros). */
+    static EtapaBase[] etapasBase(){
+        EtapaBase[] e = etapasBaseOrdenadas;
+        if(e == null){
+            e = EtapasBase.todas();
+            java.util.Arrays.sort(e, Orden.CANONICO);
+            etapasBaseOrdenadas = e;
+        }
+        return e;
+    }
+
     static int ejecutar(ContextoAporte c, AporteTerreno o, EtapaBase[] etapas){
         final int sd = Muestreo.semDim(c.semilla, c.dimension);
         final CeldaBase ce = o.celda;

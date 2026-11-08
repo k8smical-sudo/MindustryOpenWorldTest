@@ -71,22 +71,9 @@ public final class Corpus{
     /** Hash de un chunk: mismo recorrido y mismas llamadas que ChunkData.generar con ox = oy = 0. */
     static long hashChunk(int semilla, int dim, int cx, int cy){
         final int T = MundoInfinitoMod.TAM_CHUNK;
-        final int sd = MundoInfinitoMod.Muestreo.semDim(semilla, dim);
-        final MundoInfinitoMod.Muestreo.Spawn sp = MundoInfinitoMod.Muestreo.spawn(sd, dim);
-        final float[] aux = new float[14];
-        final int[] out = new int[4];
-        aux[11] = 0f;   // caché de estructura de la celda: vacía al empezar el chunk (igual que generar)
-        long h = 0xcbf29ce484222325L;
-        for(int ly = 0; ly < T; ly++){
-            for(int lx = 0; lx < T; lx++){
-                MundoInfinitoMod.Muestreo.muestrear(sd, cx * T + lx, cy * T + ly, sp, aux, out);
-                for(int k = 0; k < 4; k++){
-                    h = (h ^ out[k]) * 0x100000001b3L;
-                    h ^= h >>> 31;
-                }
-            }
-        }
-        return h;
+        final AporteTerreno ap = new AporteTerreno();
+        PipelineBase.ejecutar(new ContextoAporte(semilla, dim, cx * T, cy * T, cx, cy, Nucleo.parametros()), ap, PipelineBase.etapasBase());
+        return hashAporte(ap);
     }
 
     /** Hash de un aporte de terreno: las cuatro capas, casilla a casilla, con la misma mezcla que hashChunk. */

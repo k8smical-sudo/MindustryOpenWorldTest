@@ -239,7 +239,7 @@ final class PruebasSistemas{
             ApiFisica.DIAMETRO_PLANETA == 2f && ApiFisica.DIAMETRO_ESTRELLA == 8f);
         fallos += chequear("órbitas estimadas (campaign de Mindustry): Erekir 17 y Serpulo 57,24; otro planeta sin dato (0)",
             cerca(ApiFisica.estimadaPlaneta("erekir", 2f).distancia(FichaFisica.DIST_ESTRELLA), 17)
-                && cerca(ApiFisica.estimadaPlaneta("serpulo", 2f).distancia(FichaFisica.DIST_ESTRELLA), 57.24)
+                && cerca(ApiFisica.estimadaPlaneta("serpulo", 2f).distancia(FichaFisica.DIST_ESTRELLA), 57.24f)
                 && cerca(ApiFisica.estimadaPlaneta("otro", 2f).distancia(FichaFisica.DIST_ESTRELLA), 0));
 
         final FichaFisica f1 = ApiFisica.estimada(ApiFisica.TIPO_PLANETA, 12f), f2 = ApiFisica.estimada(ApiFisica.TIPO_PLANETA, 12f);

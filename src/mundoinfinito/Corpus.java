@@ -2574,6 +2574,7 @@ public final class Corpus{
             else if(modo.equals("verificar") && args.length > 1) rc = verificar(args[1]);
             else if(modo.equals("assets")) rc = ApiAsset.informe(args);
             else if(modo.equals("planetas")) rc = ApiAsset.informePlanetas(args);
+            else if(modo.equals("barrido")) rc = ApiBarridoPared.barrido(args);
             else if(modo.equals("embudo")) rc = ApiDiagnosticoPared.embudo(args);
             else if(modo.equals("comprobar")) rc = comprobar();
             else if(modo.equals("base") && args.length > 1) rc = base(args[1]);

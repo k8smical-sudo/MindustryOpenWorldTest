@@ -73,10 +73,10 @@ final class ParametrosGeneracion{
     float menasParedProb = DEFECTO_MENAS_PARED_PROB;
     /** Torio de Serpulo: distancia mínima al origen (casillas) y peso en la tabla de menas. */
     static final String ID_TORIO_DIST_S = "mundo-infinito:torio-dist-serpulo", ID_TORIO_PESO_S = "mundo-infinito:torio-peso-serpulo";
-    static final float DEFECTO_TORIO_DIST_S = 150f, DEFECTO_TORIO_PESO_S = 32f;   // peso 32: ~10 % de las menas de suelo de Serpulo (medido 4,1 % con 13)
+    static final float DEFECTO_TORIO_DIST_S = 150f, DEFECTO_TORIO_PESO_S = 39f;   // peso 39: ~10 % de las menas de suelo de Serpulo (medido 8,1 % con 32)
     /** Torio-cristal de Erekir: distancia mínima y peso. */
     static final String ID_TORIO_DIST_E = "mundo-infinito:torio-dist-erekir", ID_TORIO_PESO_E = "mundo-infinito:torio-peso-erekir";
-    static final float DEFECTO_TORIO_DIST_E = 200f, DEFECTO_TORIO_PESO_E = 19f;   // peso 19: ~10 % de las menas de suelo de Erekir (medido 2,7 % con 5)
+    static final float DEFECTO_TORIO_DIST_E = 200f, DEFECTO_TORIO_PESO_E = 23f;   // peso 23: ~10 % de las menas de suelo de Erekir (medido 8,3 % con 19)
     float torioDistS = DEFECTO_TORIO_DIST_S, torioPesoS = DEFECTO_TORIO_PESO_S;
     float torioDistE = DEFECTO_TORIO_DIST_E, torioPesoE = DEFECTO_TORIO_PESO_E;
 

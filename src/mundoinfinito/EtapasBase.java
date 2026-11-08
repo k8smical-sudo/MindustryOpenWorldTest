@@ -371,7 +371,7 @@ final class EtapasBase{
             // menas de pared: solo si un taladro puede llegar a ellas Y el muro da a un espacio abierto de tamaño suficiente
             if(mena == O_BERILIO_MURO || mena == O_TUNGSTENO_MURO || mena == O_TORIO_MURO || muro == 2){
                 final ParametrosGeneracion pg = Nucleo.parametros();
-                final boolean ac = ApiAccesoMena.aceptar(s, x, y, ce.sp, pg);
+                final boolean ac = ApiAccesoMena.aceptar(s, x, y, ce.sp, pg, mena);
                 if(mena == O_BERILIO_MURO || mena == O_TUNGSTENO_MURO || mena == O_TORIO_MURO){
                     if(ac) ApiDiagnosticoPared.contar(ApiDiagnosticoPared.ACCESIBLE);
                     if(ac) ApiDiagnosticoPared.contar(ApiDiagnosticoPared.COLOCADA);

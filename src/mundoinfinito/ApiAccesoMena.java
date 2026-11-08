@@ -38,21 +38,56 @@ public final class ApiAccesoMena {
         }
     }
 
-    private static volatile Criterio criterio = ApiAccesoMena::porDefecto;
-
-    /** Sustituye el criterio. Null restablece el criterio por defecto. */
-    public static void establecer(Criterio c){
-        criterio = c == null ? ApiAccesoMena::porDefecto : c;
+    /** Un criterio registrado para un asset, con su dueño (el add-on o el mod que lo puso). */
+    private static final class Entrada {
+        final String dueno;
+        final Criterio criterio;
+        Entrada(String dueno, Criterio criterio){ this.dueno = dueno; this.criterio = criterio; }
     }
 
-    /** Criterio actual. */
-    public static Criterio criterio(){
-        return criterio;
+    private static final java.util.Map<String, Entrada> POR_ASSET = new java.util.LinkedHashMap<String, Entrada>();
+
+    /**
+     * Pone el criterio de UN asset (por id, p. ej. "mindustry:berilio-pared"). Un asset solo puede tener un criterio:
+     * si ya tiene uno de otro dueño, se rechaza en vez de pisarlo, para que dos add-ons no se rompan entre sí.
+     * El criterio solo afecta a ese asset, en todos los mundos. Es un criterio puro, sin estado global.
+     */
+    public static synchronized void establecer(String assetId, String dueno, Criterio criterio){
+        if(assetId == null || dueno == null || criterio == null) throw new IllegalArgumentException("asset, dueño y criterio son obligatorios");
+        if(!existeAsset(assetId)) throw new IllegalArgumentException("asset no registrado: " + assetId);
+        final Entrada previa = POR_ASSET.get(assetId);
+        if(previa != null) throw new IllegalStateException("el asset " + assetId + " ya tiene criterio de '" + previa.dueno + "'; no se pisa");
+        POR_ASSET.put(assetId, new Entrada(dueno, criterio));
     }
 
-    /** Lo llama la etapa de menas. */
-    static boolean aceptar(int s, int x, int y, MundoInfinitoMod.Muestreo.Spawn sp, ParametrosGeneracion pg){
-        return criterio.aceptar(new Contexto(s, x, y, sp, pg.menasAccesoRadio, pg.menasAccesoMinimo, pg.menasEspacioLocal, pg.menasTaladroTamano));
+    /** Quita el criterio de un asset. Solo lo puede quitar su dueño. */
+    public static synchronized boolean quitar(String assetId, String dueno){
+        final Entrada e = POR_ASSET.get(assetId);
+        if(e == null || !e.dueno.equals(dueno)) return false;
+        POR_ASSET.remove(assetId);
+        return true;
+    }
+
+    /** Criterio que se aplica a las menas con ese código: el del asset que lo produce, o el por defecto. */
+    public static synchronized Criterio criterioPara(int codigoMena){
+        if(codigoMena == 0) return ApiAccesoMena::porDefecto;
+        for(ApiAsset a : ApiAsset.todos()){
+            if(a.codigo == codigoMena){
+                final Entrada e = POR_ASSET.get(a.id);
+                return e == null ? ApiAccesoMena::porDefecto : e.criterio;
+            }
+        }
+        return ApiAccesoMena::porDefecto;
+    }
+
+    private static boolean existeAsset(String assetId){
+        for(ApiAsset a : ApiAsset.todos()) if(a.id.equals(assetId)) return true;
+        return false;
+    }
+
+    /** Lo llama la etapa de menas, con el código de la mena candidata. */
+    static boolean aceptar(int s, int x, int y, MundoInfinitoMod.Muestreo.Spawn sp, ParametrosGeneracion pg, int codigoMena){
+        return criterioPara(codigoMena).aceptar(new Contexto(s, x, y, sp, pg.menasAccesoRadio, pg.menasAccesoMinimo, pg.menasEspacioLocal, pg.menasTaladroTamano));
     }
 
     private static final int[] DX = {1, 0, -1, 0}, DY = {0, 1, 0, -1};

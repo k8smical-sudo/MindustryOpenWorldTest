@@ -89,9 +89,15 @@ final class RegistroAjustes{
         registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_MENAS_PARED_PROB, "Probabilidad de depósitos de pared (Erekir)",
             "Probabilidad de que una veta de Erekir que puede tener pared sea depósito de pared. Más alto = más mineral en muros. Por defecto, el reparto calibrado (objetivo 35 % de pared).",
             AjusteMundo.Ambito.GENERACION, ParametrosGeneracion.DEFECTO_MENAS_PARED_PROB, 0.0, 1.0).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
+        registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_MENAS_TALADRO, "Tamaño del hueco del taladro (menas de pared)",
+            "Lado del bloque libre donde cabe el taladro, dentro de la zona conectada al muro. 1 = un tile (pasillos estrechos), 2 = 2x2, 3 = 3x3.",
+            AjusteMundo.Ambito.GENERACION, ParametrosGeneracion.DEFECTO_MENAS_TALADRO, 1, 3).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
+        registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_MENAS_ESPACIO_LOCAL, "Espacio libre junto al muro (menas de pared)",
+            "Casillas abiertas mínimas alrededor del muro (radio 2) antes de buscar la zona conectada.",
+            AjusteMundo.Ambito.GENERACION, ParametrosGeneracion.DEFECTO_MENAS_ESPACIO_LOCAL, 0, 24).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
         registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_MENAS_ACCESO_RADIO, "Radio de acceso a las menas de pared",
             "Radio del cuadro en el que se busca espacio abierto junto a un muro. Más alto = el acceso se busca más lejos.",
-            AjusteMundo.Ambito.GENERACION, ParametrosGeneracion.DEFECTO_MENAS_ACCESO_RADIO, 2, 8).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
+            AjusteMundo.Ambito.GENERACION, ParametrosGeneracion.DEFECTO_MENAS_ACCESO_RADIO, 2, 12).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
         registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_MENAS_ACCESO_MINIMO, "Espacio abierto mínimo para una mena de pared",
             "Casillas abiertas que deben alcanzarse desde un muro para que una mena de pared se coloque allí. Más alto = menos menas de pared, en zonas más abiertas.",
             AjusteMundo.Ambito.GENERACION, ParametrosGeneracion.DEFECTO_MENAS_ACCESO_MINIMO, 4, 60).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));

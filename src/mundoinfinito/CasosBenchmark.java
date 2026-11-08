@@ -367,6 +367,7 @@ final class CasosBenchmark{
     /** Embudo de pared: fuera de su modo de medición no cuenta nada (sin coste en la generación normal). */
     private static void embudoPared(List<Bancos.Caso> out){
         out.add(new Bancos.Caso("embudo", "inactivo-sin-coste", 2000, () -> !ApiDiagnosticoPared.activo, "ApiDiagnosticoPared"));
+        out.add(new Bancos.Caso("acceso-mena", "criterio-por-defecto", 2000, () -> ApiAccesoMena.criterio() != null, "ApiAccesoMena"));
     }
 
     /** Assets: el catálogo de assets de Mindustry está completo y los ids son únicos (la lectura no cambia nada). */

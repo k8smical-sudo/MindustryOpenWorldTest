@@ -32,7 +32,9 @@ final class ParametrosGeneracion{
     static final String ID_MENAS_PARED_PROB = "mundo-infinito:menas-pared-prob";
     static final float DEFECTO_MENAS_PARED_PROB = 0.75f;
     static final String ID_MENAS_ACCESO_RADIO = "mundo-infinito:menas-acceso-radio", ID_MENAS_ACCESO_MINIMO = "mundo-infinito:menas-acceso-minimo";
-    static final int DEFECTO_MENAS_ACCESO_RADIO = 4, DEFECTO_MENAS_ACCESO_MINIMO = 16;
+    static final int DEFECTO_MENAS_ACCESO_RADIO = 6, DEFECTO_MENAS_ACCESO_MINIMO = 16;
+    static final String ID_MENAS_TALADRO = "mundo-infinito:menas-taladro-tamano", ID_MENAS_ESPACIO_LOCAL = "mundo-infinito:menas-espacio-local";
+    static final int DEFECTO_MENAS_TALADRO = 2, DEFECTO_MENAS_ESPACIO_LOCAL = 8;
 
     static final int LEGADO_SEPARACION_RESPIRADEROS = 48;
     static final float LEGADO_MEZCLA_RESPIRADEROS = 1f;
@@ -71,6 +73,10 @@ final class ParametrosGeneracion{
     float menasParedProb = DEFECTO_MENAS_PARED_PROB;
     /** Casillas abiertas mínimas alcanzables para que un muro sea accesible. */
     int menasAccesoMinimo = DEFECTO_MENAS_ACCESO_MINIMO;
+    /** Lado (1 a 3) del bloque libre donde cabe el taladro, dentro de la zona conectada. */
+    int menasTaladroTamano = DEFECTO_MENAS_TALADRO;
+    /** Casillas abiertas mínimas en el entorno inmediato del muro (radio 2). */
+    int menasEspacioLocal = DEFECTO_MENAS_ESPACIO_LOCAL;
 
     ParametrosGeneracion(float estirarAlturaSerpulo, float estirarTemperaturaSerpulo, float estirarHumedadSerpulo){
         this(estirarAlturaSerpulo, estirarTemperaturaSerpulo, estirarHumedadSerpulo, 0, 100);

@@ -218,10 +218,11 @@ jobs:
           java -cp "$CP" mundoinfinito.InventarioApi comparar corpus/api-base.txt build/api/inventario.txt 2>&1 | tee build/api/comparar.txt
           test "${PIPESTATUS[0]}" -eq 0
         shell: bash
-      - name: Assets - medicion por asset (terreno base)
+      - name: Planetas - medicion por planeta (10 semillas, tamano de cada planeta)
+        continue-on-error: true
         run: |
           mkdir -p build/corpus
-          java -cp "build/classes/java/main:libs/MindustryX-Desktop.jar" mundoinfinito.Corpus assets 12345 4 2>&1 | tee build/corpus/assets.txt
+          java -cp "build/classes/java/main:libs/MindustryX-Desktop.jar" mundoinfinito.Corpus planetas 2>&1 | tee build/corpus/planetas.txt
       - name: Embudo de menas de pared (diagnostico, solo lee)
         continue-on-error: true
         run: |

@@ -1,4 +1,4 @@
-# corpus mundo-infinito v1 gen=6
+# corpus mundo-infinito v1 gen=7
 # semilla dim cx cy hash
 1 0 -1 -1 4675f912bc38ce6c
 1 0 0 -1 b6bc7b3ef642691a

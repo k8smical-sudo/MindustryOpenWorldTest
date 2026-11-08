@@ -23,7 +23,10 @@ public final class ApiFisica{
     /** Umbrales de categoría: menor que UMBRAL_MEDIO es pequeño; menor que UMBRAL_GRANDE es medio; el resto, grande. */
     public static final float UMBRAL_MEDIO = 1.5f, UMBRAL_GRANDE = 4f;
     /** Órbita a la estrella estimada de los dos planetas base (Planet.java con espaciado 12). */
-    public static final float ORBITA_SERPULO = 31f, ORBITA_EREKIR = 17f;
+    // Órbitas clonadas del campaign de Mindustry (content/Planets.java + type/Planet.java): orbitRadius = parent.totalRadius
+    // + parent.orbitSpacing + radius, con el orden de carga del juego (sol 4, orbitSpacing 12 por defecto).
+    // Erekir: 4 + 12 + 1 = 17. Serpulo: el Sol crece a 44,24 al añadir Tantros (43,24 = 30,24 + 12 + 1) => 44,24 + 12 + 1 = 57,24.
+    public static final float ORBITA_SERPULO = 57.24f, ORBITA_EREKIR = 17f;
 
     private ApiFisica(){}
 

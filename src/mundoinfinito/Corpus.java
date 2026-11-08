@@ -382,7 +382,7 @@ public final class Corpus{
     private static boolean iguales(ParametrosGeneracion x, ParametrosGeneracion y){
         return x.estirarAlturaSerpulo == y.estirarAlturaSerpulo && x.estirarTemperaturaSerpulo == y.estirarTemperaturaSerpulo
             && x.estirarHumedadSerpulo == y.estirarHumedadSerpulo && x.distanciaMinimaFenomenos == y.distanciaMinimaFenomenos
-            && x.presupuestoTerrenoPct == y.presupuestoTerrenoPct && x.murosUmbral == y.murosUmbral && x.murosPasillo == y.murosPasillo && x.menasAccesoRadio == y.menasAccesoRadio && x.menasAccesoMinimo == y.menasAccesoMinimo && x.menasParedProb == y.menasParedProb && x.menasTaladroTamano == y.menasTaladroTamano && x.menasEspacioLocal == y.menasEspacioLocal;
+            && x.presupuestoTerrenoPct == y.presupuestoTerrenoPct && x.murosUmbral == y.murosUmbral && x.murosPasillo == y.murosPasillo && x.menasAccesoRadio == y.menasAccesoRadio && x.menasAccesoMinimo == y.menasAccesoMinimo && x.menasParedProb == y.menasParedProb;
     }
 
     private static Jval archivoDe(PerfilMundo p){
@@ -2573,6 +2573,7 @@ public final class Corpus{
             if(modo.equals("congelar") && args.length > 1) rc = congelar(args[1]);
             else if(modo.equals("verificar") && args.length > 1) rc = verificar(args[1]);
             else if(modo.equals("assets")) rc = ApiAsset.informe(args);
+            else if(modo.equals("planetas")) rc = ApiAsset.informePlanetas(args);
             else if(modo.equals("embudo")) rc = ApiDiagnosticoPared.embudo(args);
             else if(modo.equals("comprobar")) rc = comprobar();
             else if(modo.equals("base") && args.length > 1) rc = base(args[1]);

@@ -143,4 +143,74 @@ public final class ApiAsset{
         }
         if(sinRegistro > 0) System.out.println("[Assets]   sin asset registrado (codigo no declarado): " + sinRegistro);
     }
+
+    /** Planeta medido: lado = 160 × sectorSize de Mindustry (content/Planets.java). */
+    static final class PlanetaMedida {
+        final String nombre; final int dimension; final int sectorSize;
+        PlanetaMedida(String nombre, int dimension, int sectorSize){ this.nombre = nombre; this.dimension = dimension; this.sectorSize = sectorSize; }
+        int lado(){ return 160 * sectorSize; }
+    }
+    static final PlanetaMedida[] PLANETAS_MEDIDOS = {
+        new PlanetaMedida("serpulo", 0, 3),
+        new PlanetaMedida("erekir", 1, 2)
+    };
+    static final int SEMILLAS_PLANETA = 10;
+
+    /**
+     * Medición por planeta: 10 semillas por planeta, con la región de su tamaño (lado × lado casillas, centrada en el origen).
+     * Agrega por asset y muestra la proporción de pared por semilla, para ver la estabilidad. Solo lee.
+     */
+    public static int informePlanetas(String[] args){
+        final int T = AporteTerreno.T;
+        final EtapaBase[] etapas = PipelineBase.etapasBase();
+        final ParametrosGeneracion par = Nucleo.parametros();
+        final AporteTerreno ap = new AporteTerreno();
+        final java.util.Map<Integer, ApiAsset> porCodigo = new java.util.HashMap<Integer, ApiAsset>();
+        for(ApiAsset a : todos()) if(a.codigo != 0) porCodigo.put(a.codigo, a);
+
+        for(PlanetaMedida p : PLANETAS_MEDIDOS){
+            final int n = p.lado() / T;
+            final int desde = -(n / 2), hasta = n - n / 2 - 1;
+            final java.util.Map<String, Long> total = new java.util.HashMap<String, Long>();
+            final double[] paredPct = new double[SEMILLAS_PLANETA];
+            long menasTotal = 0, sinRegistro = 0, casillasTotal = 0;
+            for(int i = 0; i < SEMILLAS_PLANETA; i++){
+                final int sem = 12345 + 1000 * i;
+                long menas = 0, pared = 0;
+                for(int cy = desde; cy <= hasta; cy++){
+                    for(int cx = desde; cx <= hasta; cx++){
+                        PipelineBase.ejecutar(new ContextoAporte(sem, p.dimension, cx * T, cy * T, cx, cy, par), ap, etapas);
+                        casillasTotal += AporteTerreno.N;
+                        for(int j = 0; j < AporteTerreno.N; j++){
+                            final int code = ap.mena[j];
+                            if(code == 0) continue;
+                            menas++;
+                            final ApiAsset a = porCodigo.get(code);
+                            if(a == null){ sinRegistro++; continue; }
+                            final Long previo = total.get(a.id);
+                            total.put(a.id, previo == null ? 1L : previo + 1L);
+                            if(a.categoria == CAT_MENA_PARED) pared++;
+                        }
+                    }
+                }
+                menasTotal += menas;
+                paredPct[i] = menas == 0 ? 0 : 100.0 * pared / menas;
+            }
+            final int chunks = n * n;
+            System.out.println("[Planetas] " + p.nombre + " dimension=" + p.dimension + " lado=" + p.lado() + " chunks=" + chunks
+                + " semillas=" + SEMILLAS_PLANETA + " casillas=" + casillasTotal + " menas=" + menasTotal);
+            for(ApiAsset a : todos()){
+                final Long v = total.get(a.id);
+                final long cuenta = v == null ? 0L : v;
+                final double pct = menasTotal == 0 ? 0 : 100.0 * cuenta / menasTotal;
+                System.out.println(String.format("[Planetas]   %-24s cat=%d casillas=%8d  %%total=%6.2f", a.id, a.categoria, cuenta, pct));
+            }
+            double mn = 100, mx = 0, media = 0;
+            for(double x : paredPct){ mn = Math.min(mn, x); mx = Math.max(mx, x); media += x; }
+            media /= SEMILLAS_PLANETA;
+            System.out.println(String.format("[Planetas]   pared por semilla: min=%.1f%% max=%.1f%% media=%.1f%%", mn, mx, media));
+            if(sinRegistro > 0) System.out.println("[Planetas]   sin asset registrado: " + sinRegistro);
+        }
+        return 0;
+    }
 }

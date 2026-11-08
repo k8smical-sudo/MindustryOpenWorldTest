@@ -29,6 +29,8 @@ final class ParametrosGeneracion{
     /** Multiplicador del umbral de terreno abierto (menor = más respiraderos). */
     static final String ID_RESP_UMBRAL = "mundo-infinito:respiraderos-umbral";
     static final String ID_MUROS_UMBRAL = "mundo-infinito:muros-umbral", ID_MUROS_PASILLO = "mundo-infinito:muros-pasillo";
+    static final String ID_MENAS_PARED_PROB = "mundo-infinito:menas-pared-prob";
+    static final float DEFECTO_MENAS_PARED_PROB = 0.75f;
     static final String ID_MENAS_ACCESO_RADIO = "mundo-infinito:menas-acceso-radio", ID_MENAS_ACCESO_MINIMO = "mundo-infinito:menas-acceso-minimo";
     static final int DEFECTO_MENAS_ACCESO_RADIO = 4, DEFECTO_MENAS_ACCESO_MINIMO = 16;
 
@@ -65,6 +67,8 @@ final class ParametrosGeneracion{
     float murosPasillo = LEGADO_MUROS_PASILLO;
     /** Radio del cuadro en el que se busca espacio abierto para una mena de pared. */
     int menasAccesoRadio = DEFECTO_MENAS_ACCESO_RADIO;
+    /** Probabilidad de que una veta de Erekir que puede tener pared se haga depósito de pared. */
+    float menasParedProb = DEFECTO_MENAS_PARED_PROB;
     /** Casillas abiertas mínimas alcanzables para que un muro sea accesible. */
     int menasAccesoMinimo = DEFECTO_MENAS_ACCESO_MINIMO;
 

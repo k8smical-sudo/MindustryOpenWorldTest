@@ -86,6 +86,9 @@ final class RegistroAjustes{
         registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_MUROS_UMBRAL, "Umbral de muros (más alto = más abierto)",
             "Nivel de la roca de los macizos. Más alto = menos muros y mundo más abierto; más bajo = más roca y mundo más cerrado. Por defecto, el del mundo base.",
             AjusteMundo.Ambito.GENERACION, ParametrosGeneracion.LEGADO_MUROS_UMBRAL, 0.44, 0.60).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
+        registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_MENAS_PARED_PROB, "Probabilidad de depósitos de pared (Erekir)",
+            "Probabilidad de que una veta de Erekir que puede tener pared sea depósito de pared. Más alto = más mineral en muros. Por defecto, el reparto calibrado (objetivo 35 % de pared).",
+            AjusteMundo.Ambito.GENERACION, ParametrosGeneracion.DEFECTO_MENAS_PARED_PROB, 0.0, 1.0).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
         registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_MENAS_ACCESO_RADIO, "Radio de acceso a las menas de pared",
             "Radio del cuadro en el que se busca espacio abierto junto a un muro. Más alto = el acceso se busca más lejos.",
             AjusteMundo.Ambito.GENERACION, ParametrosGeneracion.DEFECTO_MENAS_ACCESO_RADIO, 2, 8).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));

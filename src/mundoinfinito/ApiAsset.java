@@ -171,6 +171,7 @@ public final class ApiAsset{
         for(ApiAsset a : todos()) if(a.codigo != 0) porCodigo.put(a.codigo, a);
 
         for(PlanetaMedida p : PLANETAS_MEDIDOS){
+            double paredSuma = 0, paredObjetivo = 0;
             final int n = (p.lado + T - 1) / T;   // chunks que cubren el planeta (redondeo hacia arriba)
             final int desde = -(n / 2), hasta = n - n / 2 - 1;
             final java.util.Map<String, Long> total = new java.util.HashMap<String, Long>();
@@ -212,7 +213,17 @@ public final class ApiAsset{
                 final Long v = total.get(a.id);
                 final long cuenta = v == null ? 0L : v;
                 final double pct = menasTotal == 0 ? 0 : 100.0 * cuenta / menasTotal;
-                System.out.println(String.format("[Planetas]   %-24s cat=%d casillas=%8d  %%total=%6.2f", a.id, a.categoria, cuenta, pct));
+                final Float obj = objetivoPlaneta(p.nombre, a.id);
+                final String estado = obj == null ? "sin objetivo"
+                    : (Math.abs(pct - obj) <= a.tolerancia ? "OK" : String.format("DESBALANCEADO (%+.1f pp)", pct - obj));
+                System.out.println(String.format("[Planetas]   %-24s cat=%d casillas=%8d  %%total=%6.2f  objetivo=%s  %s",
+                    a.id, a.categoria, cuenta, pct, obj == null ? "-" : String.format("%.1f", obj), estado));
+                if(a.categoria == CAT_MENA_PARED){ paredSuma += pct; if(obj != null) paredObjetivo += obj; }
+            }
+            if(paredObjetivo > 0){
+                final boolean ok = Math.abs(paredSuma - paredObjetivo) <= PARED_TOLERANCIA;
+                System.out.println(String.format("[Planetas]   categoria pared: %.1f%% objetivo %.1f%% +-%.0f  %s",
+                    paredSuma, paredObjetivo, PARED_TOLERANCIA, ok ? "OK" : String.format("DESBALANCEADO (%+.1f pp)", paredSuma - paredObjetivo)));
             }
             final double casillasPct = casillasTotal == 0 ? 0 : 100.0 / casillasTotal;
             System.out.println(String.format("[Planetas]   %-24s cat=%d casillas=%8d  %%casillas=%6.2f  (piso de arena, fuera de muro)", "mindustry:arena", 3, arenaTotal, arenaTotal * casillasPct));
@@ -224,5 +235,61 @@ public final class ApiAsset{
             if(sinRegistro > 0) System.out.println("[Planetas]   sin asset registrado: " + sinRegistro);
         }
         return 0;
+    }
+
+    /** Tolerancia de la categoría pared (puntos porcentuales sobre el total de menas). */
+    static final float PARED_TOLERANCIA = 5f;
+
+    /** Objetivos por planeta: % del total de menas que debe ocupar cada asset. Se fijan con datos de la medición. */
+    private static final java.util.Map<String, java.util.Map<String, Float>> OBJETIVOS =
+        new java.util.HashMap<String, java.util.Map<String, Float>>();
+
+    /**
+     * Fija el objetivo (% del total de menas) de un asset en un planeta. Un objetivo ya fijado no se pisa: dos add-ons
+     * no pueden cambiar el mismo objetivo sin que se note.
+     */
+    public static synchronized void registrarObjetivo(String planeta, String assetId, float pct){
+        boolean existe = false;
+        for(ApiAsset a : todos()) if(a.id.equals(assetId)) existe = true;
+        if(!existe) throw new IllegalArgumentException("asset no registrado: " + assetId);
+        java.util.Map<String, Float> m = OBJETIVOS.get(planeta);
+        if(m == null){ m = new java.util.HashMap<String, Float>(); OBJETIVOS.put(planeta, m); }
+        if(m.containsKey(assetId)) throw new IllegalStateException("objetivo ya fijado para " + planeta + "/" + assetId + "; no se pisa");
+        m.put(assetId, pct);
+    }
+
+    /** Objetivo de un asset en un planeta, o null si no tiene. */
+    public static synchronized Float objetivoPlaneta(String planeta, String assetId){
+        final java.util.Map<String, Float> m = OBJETIVOS.get(planeta);
+        return m == null ? null : m.get(assetId);
+    }
+
+    static {
+        // Serpulo (sin pared): reparto con torio al 10 % de las menas.
+        registrarObjetivo("serpulo", "mindustry:cobre", 27f);
+        registrarObjetivo("serpulo", "mindustry:plomo", 22.5f);
+        registrarObjetivo("serpulo", "mindustry:carbon", 18f);
+        registrarObjetivo("serpulo", "mindustry:chatarra", 13.5f);
+        registrarObjetivo("serpulo", "mindustry:titanio", 9f);
+        registrarObjetivo("serpulo", "mindustry:torio", 10f);
+        registrarObjetivo("serpulo", "mindustry:berilio", 0f);
+        registrarObjetivo("serpulo", "mindustry:tungsteno", 0f);
+        registrarObjetivo("serpulo", "mindustry:torio-cristal", 0f);
+        registrarObjetivo("serpulo", "mindustry:berilio-pared", 0f);
+        registrarObjetivo("serpulo", "mindustry:tungsteno-pared", 0f);
+        registrarObjetivo("serpulo", "mindustry:torio-pared", 0f);
+        // Erekir: pared al 35 % (suelo 65 %), con sus porcentajes internos.
+        registrarObjetivo("erekir", "mindustry:berilio", 39f);
+        registrarObjetivo("erekir", "mindustry:tungsteno", 19.5f);
+        registrarObjetivo("erekir", "mindustry:torio-cristal", 6.5f);
+        registrarObjetivo("erekir", "mindustry:berilio-pared", 19.25f);
+        registrarObjetivo("erekir", "mindustry:tungsteno-pared", 12.25f);
+        registrarObjetivo("erekir", "mindustry:torio-pared", 3.5f);
+        registrarObjetivo("erekir", "mindustry:cobre", 0f);
+        registrarObjetivo("erekir", "mindustry:plomo", 0f);
+        registrarObjetivo("erekir", "mindustry:chatarra", 0f);
+        registrarObjetivo("erekir", "mindustry:carbon", 0f);
+        registrarObjetivo("erekir", "mindustry:titanio", 0f);
+        registrarObjetivo("erekir", "mindustry:torio", 0f);
     }
 }

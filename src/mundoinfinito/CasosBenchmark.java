@@ -42,6 +42,7 @@ final class CasosBenchmark{
         calibracion(out);
         niebla(out);
         assets(out);
+        embudoPared(out);
         galaxia(out);
         inicio(out);
         return out;
@@ -361,6 +362,11 @@ final class CasosBenchmark{
     private static void calibracion(List<Bancos.Caso> out){
         out.add(new Bancos.Caso("calibracion", "niveles-de-radar-y-portal", 200000,
             () -> ApiRadar.nivel(2).alcance == Calibracion.RADAR_ALCANCE[1] && ApiViaje.portal(3).alcance == Calibracion.PORTAL_ALCANCE[2], "Calibracion"));
+    }
+
+    /** Embudo de pared: fuera de su modo de medición no cuenta nada (sin coste en la generación normal). */
+    private static void embudoPared(List<Bancos.Caso> out){
+        out.add(new Bancos.Caso("embudo", "inactivo-sin-coste", 2000, () -> !ApiDiagnosticoPared.activo, "ApiDiagnosticoPared"));
     }
 
     /** Assets: el catálogo de assets de Mindustry está completo y los ids son únicos (la lectura no cambia nada). */

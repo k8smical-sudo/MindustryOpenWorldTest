@@ -308,11 +308,14 @@ final class CasosBenchmark{
     private static void arbol(List<Bancos.Caso> out){
         // Añade un nodo nuevo y lo localiza. El árbol de Mindustry está vacío en la JVM del banco; el modelo de addons sí se ejercita.
         final int[] n = new int[1];
+        // Estado acotado: solo 200 nodos de prueba. anadir recorre todos los nodos del árbol (grupo), así que sin límite
+        // el coste crecía con cada iteración y el banco medía su propio crecimiento, no la API.
         out.add(new Bancos.Caso("arbol", "anadir-y-localizar", 2000, () -> {
-            final int k = n[0]++;
+            final int k = n[0]++ % 200;
             final String id = "bench-arbol:n" + k;
-            return ApiArbol.anadir("bench-arbol", ApiPlaneta.SERPULO, id, null, (ItemStack[])null)
-                && ApiArbol.nodo(ApiPlaneta.SERPULO + "/" + id) != null;
+            final String clave = ApiPlaneta.SERPULO + "/" + id;
+            if(ApiArbol.nodo(clave) == null) ApiArbol.anadir("bench-arbol", ApiPlaneta.SERPULO, id, null, (ItemStack[])null);
+            return ApiArbol.nodo(clave) != null;
         }, "ApiArbol"));
     }
 

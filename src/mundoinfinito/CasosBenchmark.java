@@ -368,6 +368,8 @@ final class CasosBenchmark{
     private static void embudoPared(List<Bancos.Caso> out){
         out.add(new Bancos.Caso("embudo", "inactivo-sin-coste", 2000, () -> !ApiDiagnosticoPared.activo, "ApiDiagnosticoPared"));
         out.add(new Bancos.Caso("acceso-mena", "criterio-por-defecto", 2000, () -> ApiAccesoMena.criterioPara(0) != null, "ApiAccesoMena"));
+        out.add(new Bancos.Caso("barrido-pared", "clasifica-codigos-de-pared", 2000,
+            () -> !ApiBarridoPared.esPared(0) && ApiBarridoPared.esPared(MundoInfinitoMod.Muestreo.O_BERILIO_MURO), "ApiBarridoPared"));
     }
 
     /** Assets: el catálogo de assets de Mindustry está completo y los ids son únicos (la lectura no cambia nada). */

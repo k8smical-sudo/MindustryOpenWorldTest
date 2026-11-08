@@ -361,9 +361,9 @@ final class EtapasBase{
                     case D_CARBON: if(!enMuro) mena = O_CARBON; break;
                     case D_TITANIO: if(!enMuro) mena = O_TITANIO; break;
                     case D_TORIO: if(!enMuro) mena = O_TORIO; break;
-                    case D_BERILIO: mena = depPared ? (enMuro && radN < 100 ? O_BERILIO_MURO : 0) : (enMuro ? O_BERILIO_MURO : O_BERILIO); break;
-                    case D_TUNGSTENO: mena = depPared ? (enMuro && radN < 100 ? O_TUNGSTENO_MURO : 0) : (enMuro ? O_TUNGSTENO_MURO : O_TUNGSTENO); break;
-                    case D_TORIO_E: mena = depPared ? (enMuro && radN < 100 ? O_TORIO_MURO : 0) : (enMuro ? O_TORIO_MURO : O_TORIO_CRISTAL); break;
+                    case D_BERILIO: mena = depPared ? (enMuro ? (radN < 100 ? O_BERILIO_MURO : 0) : O_BERILIO) : (enMuro ? O_BERILIO_MURO : O_BERILIO); break;
+                    case D_TUNGSTENO: mena = depPared ? (enMuro ? (radN < 100 ? O_TUNGSTENO_MURO : 0) : O_TUNGSTENO) : (enMuro ? O_TUNGSTENO_MURO : O_TUNGSTENO); break;
+                    case D_TORIO_E: mena = depPared ? (enMuro ? (radN < 100 ? O_TORIO_MURO : 0) : O_TORIO_CRISTAL) : (enMuro ? O_TORIO_MURO : O_TORIO_CRISTAL); break;
                     default: break;
                 }
             }

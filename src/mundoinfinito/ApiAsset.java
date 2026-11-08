@@ -175,15 +175,19 @@ public final class ApiAsset{
             final int desde = -(n / 2), hasta = n - n / 2 - 1;
             final java.util.Map<String, Long> total = new java.util.HashMap<String, Long>();
             final double[] paredPct = new double[SEMILLAS_PLANETA];
-            long menasTotal = 0, sinRegistro = 0, casillasTotal = 0;
+            long menasTotal = 0, sinRegistro = 0, casillasTotal = 0, arenaTotal = 0, grafitoTotal = 0;
             for(int i = 0; i < SEMILLAS_PLANETA; i++){
                 final int sem = 12345 + 1000 * i;
                 long menas = 0, pared = 0;
+                long arena = 0, grafito = 0;
                 for(int cy = desde; cy <= hasta; cy++){
                     for(int cx = desde; cx <= hasta; cx++){
                         PipelineBase.ejecutar(new ContextoAporte(sem, p.dimension, cx * T, cy * T, cx, cy, par), ap, etapas);
                         casillasTotal += AporteTerreno.N;
                         for(int j = 0; j < AporteTerreno.N; j++){
+                            // arena y grafito no tienen código de mena: se miden por casillas de piso
+                            if(ap.muro[j] == 2) grafito++;
+                            else if(ap.muro[j] == 0 && (ap.piso[j] == MundoInfinitoMod.Muestreo.P_SAND || ap.piso[j] == MundoInfinitoMod.Muestreo.P_DARKSAND)) arena++;
                             final int code = ap.mena[j];
                             if(code == 0) continue;
                             menas++;
@@ -196,17 +200,23 @@ public final class ApiAsset{
                     }
                 }
                 menasTotal += menas;
+                arenaTotal += arena;
+                grafitoTotal += grafito;
                 paredPct[i] = menas == 0 ? 0 : 100.0 * pared / menas;
             }
             final int chunks = n * n;
             System.out.println("[Planetas] " + p.nombre + " dimension=" + p.dimension + " lado=" + p.lado + " chunks=" + chunks
                 + " semillas=" + SEMILLAS_PLANETA + " casillas=" + casillasTotal + " menas=" + menasTotal);
             for(ApiAsset a : todos()){
+                if(a.id.equals("mindustry:arena") || a.id.equals("mindustry:grafito")) continue;
                 final Long v = total.get(a.id);
                 final long cuenta = v == null ? 0L : v;
                 final double pct = menasTotal == 0 ? 0 : 100.0 * cuenta / menasTotal;
                 System.out.println(String.format("[Planetas]   %-24s cat=%d casillas=%8d  %%total=%6.2f", a.id, a.categoria, cuenta, pct));
             }
+            final double casillasPct = casillasTotal == 0 ? 0 : 100.0 / casillasTotal;
+            System.out.println(String.format("[Planetas]   %-24s cat=%d casillas=%8d  %%casillas=%6.2f  (piso de arena, fuera de muro)", "mindustry:arena", 3, arenaTotal, arenaTotal * casillasPct));
+            System.out.println(String.format("[Planetas]   %-24s cat=%d casillas=%8d  %%casillas=%6.2f  (muro de grafito)", "mindustry:grafito", 2, grafitoTotal, grafitoTotal * casillasPct));
             double mn = 100, mx = 0, media = 0;
             for(double x : paredPct){ mn = Math.min(mn, x); mx = Math.max(mx, x); media += x; }
             media /= SEMILLAS_PLANETA;

@@ -144,15 +144,17 @@ public final class ApiAsset{
         if(sinRegistro > 0) System.out.println("[Assets]   sin asset registrado (codigo no declarado): " + sinRegistro);
     }
 
-    /** Planeta medido: lado = 160 × sectorSize de Mindustry (content/Planets.java). */
+    /**
+     * Planeta medido con el tamaño de la campaña: la mediana de los mapas de sector de Mindustry (core/assets/maps).
+     * Serpulo: 78 mapas, mediana 414 x 414 (rango 110-600). Erekir: 17 mapas, mediana 512 x 512 (rango 310-600).
+     */
     static final class PlanetaMedida {
-        final String nombre; final int dimension; final int sectorSize;
-        PlanetaMedida(String nombre, int dimension, int sectorSize){ this.nombre = nombre; this.dimension = dimension; this.sectorSize = sectorSize; }
-        int lado(){ return 160 * sectorSize; }
+        final String nombre; final int dimension; final int lado;
+        PlanetaMedida(String nombre, int dimension, int lado){ this.nombre = nombre; this.dimension = dimension; this.lado = lado; }
     }
     static final PlanetaMedida[] PLANETAS_MEDIDOS = {
-        new PlanetaMedida("serpulo", 0, 3),
-        new PlanetaMedida("erekir", 1, 2)
+        new PlanetaMedida("serpulo", 0, 414),
+        new PlanetaMedida("erekir", 1, 512)
     };
     static final int SEMILLAS_PLANETA = 10;
 
@@ -169,7 +171,7 @@ public final class ApiAsset{
         for(ApiAsset a : todos()) if(a.codigo != 0) porCodigo.put(a.codigo, a);
 
         for(PlanetaMedida p : PLANETAS_MEDIDOS){
-            final int n = p.lado() / T;
+            final int n = (p.lado + T - 1) / T;   // chunks que cubren el planeta (redondeo hacia arriba)
             final int desde = -(n / 2), hasta = n - n / 2 - 1;
             final java.util.Map<String, Long> total = new java.util.HashMap<String, Long>();
             final double[] paredPct = new double[SEMILLAS_PLANETA];
@@ -197,7 +199,7 @@ public final class ApiAsset{
                 paredPct[i] = menas == 0 ? 0 : 100.0 * pared / menas;
             }
             final int chunks = n * n;
-            System.out.println("[Planetas] " + p.nombre + " dimension=" + p.dimension + " lado=" + p.lado() + " chunks=" + chunks
+            System.out.println("[Planetas] " + p.nombre + " dimension=" + p.dimension + " lado=" + p.lado + " chunks=" + chunks
                 + " semillas=" + SEMILLAS_PLANETA + " casillas=" + casillasTotal + " menas=" + menasTotal);
             for(ApiAsset a : todos()){
                 final Long v = total.get(a.id);

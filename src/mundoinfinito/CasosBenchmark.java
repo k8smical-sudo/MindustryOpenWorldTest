@@ -41,6 +41,7 @@ final class CasosBenchmark{
         colision(out);
         calibracion(out);
         niebla(out);
+        assets(out);
         galaxia(out);
         inicio(out);
         return out;
@@ -357,6 +358,11 @@ final class CasosBenchmark{
     private static void calibracion(List<Bancos.Caso> out){
         out.add(new Bancos.Caso("calibracion", "niveles-de-radar-y-portal", 200000,
             () -> ApiRadar.nivel(2).alcance == Calibracion.RADAR_ALCANCE[1] && ApiViaje.portal(3).alcance == Calibracion.PORTAL_ALCANCE[2], "Calibracion"));
+    }
+
+    /** Assets: el catálogo de assets de Mindustry está completo y los ids son únicos (la lectura no cambia nada). */
+    private static void assets(List<Bancos.Caso> out){
+        out.add(new Bancos.Caso("assets", "catalogo-completo", 2000, () -> ApiAsset.todos().size() >= 14, "ApiAsset"));
     }
 
     private static void niebla(List<Bancos.Caso> out){

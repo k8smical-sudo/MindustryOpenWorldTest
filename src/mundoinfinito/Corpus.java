@@ -2573,6 +2573,7 @@ public final class Corpus{
             if(modo.equals("congelar") && args.length > 1) rc = congelar(args[1]);
             else if(modo.equals("verificar") && args.length > 1) rc = verificar(args[1]);
             else if(modo.equals("assets")) rc = ApiAsset.informe(args);
+            else if(modo.equals("embudo")) rc = ApiDiagnosticoPared.embudo(args);
             else if(modo.equals("comprobar")) rc = comprobar();
             else if(modo.equals("base") && args.length > 1) rc = base(args[1]);
             else if(modo.equals("escala") && args.length > 1) rc = escala(args[1]);

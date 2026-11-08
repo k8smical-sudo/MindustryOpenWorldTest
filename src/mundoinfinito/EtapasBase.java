@@ -348,6 +348,12 @@ final class EtapasBase{
             // menas
             if(tipoDep >= 0 && tipoDep != D_GRAFITO && tipoDep != D_ARENA && !liq){
                 boolean enMuro = muro != 0;
+                if(depPared && (tipoDep == D_BERILIO || tipoDep == D_TUNGSTENO || tipoDep == D_TORIO_E)){
+                    ApiDiagnosticoPared.contar(ApiDiagnosticoPared.TOTAL);
+                    if(enMuro) ApiDiagnosticoPared.contar(ApiDiagnosticoPared.EN_MURO);
+                    if(enMuro && radN < 100) ApiDiagnosticoPared.contar(ApiDiagnosticoPared.EN_ZONA);
+                    if(!enMuro) ApiDiagnosticoPared.contar(ApiDiagnosticoPared.SUELO_PERDIDO);
+                }
                 switch(tipoDep){
                     case D_COBRE: if(!enMuro) mena = O_COBRE; break;
                     case D_PLOMO: if(!enMuro) mena = O_PLOMO; break;
@@ -365,11 +371,21 @@ final class EtapasBase{
             // menas de pared: solo si un taladro puede llegar a ellas Y el muro da a un espacio abierto de tamaño suficiente
             if(mena == O_BERILIO_MURO || mena == O_TUNGSTENO_MURO || mena == O_TORIO_MURO || muro == 2){
                 final ParametrosGeneracion pg = Nucleo.parametros();
-                if(!expuesto(s, x, y, ce.sp) || !accesible(s, x, y, ce.sp, pg.menasAccesoRadio, pg.menasAccesoMinimo)){
+                final boolean ex = expuesto(s, x, y, ce.sp);
+                final boolean ac = ex && accesible(s, x, y, ce.sp, pg.menasAccesoRadio, pg.menasAccesoMinimo);
+                if(mena == O_BERILIO_MURO || mena == O_TUNGSTENO_MURO || mena == O_TORIO_MURO){
+                    if(ex) ApiDiagnosticoPared.contar(ApiDiagnosticoPared.EXPUESTO);
+                    if(ac) ApiDiagnosticoPared.contar(ApiDiagnosticoPared.ACCESIBLE);
+                    if(ac) ApiDiagnosticoPared.contar(ApiDiagnosticoPared.COLOCADA);
+                }
+                if(!ac){
                     if(muro == 2) muro = 1;        // grafito enterrado: roca normal
                     if(mena >= O_TORIO_MURO) mena = 0;
                 }
             }
+            if(mena == O_COBRE || mena == O_PLOMO || mena == O_CHATARRA || mena == O_CARBON || mena == O_TITANIO
+                || mena == O_TORIO || mena == O_BERILIO || mena == O_TUNGSTENO || mena == O_TORIO_CRISTAL)
+                ApiDiagnosticoPared.contar(ApiDiagnosticoPared.SUELO_MENA);
             ce.p = p;
             ce.mena = mena;
             ce.muro = muro;

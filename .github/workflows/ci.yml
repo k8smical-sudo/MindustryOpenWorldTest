@@ -223,6 +223,11 @@ jobs:
         run: |
           mkdir -p build/corpus
           java -cp "build/classes/java/main:libs/MindustryX-Desktop.jar" mundoinfinito.Corpus planetas 2>&1 | tee build/corpus/planetas.txt
+      - name: Barrido de pared (probabilidad y regla de acceso, Erekir)
+        continue-on-error: true
+        run: |
+          mkdir -p build/corpus
+          java -cp "build/classes/java/main:libs/MindustryX-Desktop.jar" mundoinfinito.Corpus barrido 2>&1 | tee build/corpus/barrido.txt
       - name: Embudo de menas de pared (diagnostico, solo lee)
         continue-on-error: true
         run: |

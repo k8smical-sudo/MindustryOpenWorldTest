@@ -71,6 +71,37 @@ final class ParametrosGeneracion{
     int menasAccesoRadio = DEFECTO_MENAS_ACCESO_RADIO;
     /** Probabilidad de que una veta de Erekir que puede tener pared se haga depósito de pared. */
     float menasParedProb = DEFECTO_MENAS_PARED_PROB;
+    /** Torio de Serpulo: distancia mínima al origen (casillas) y peso en la tabla de menas. */
+    static final String ID_TORIO_DIST_S = "mundo-infinito:torio-dist-serpulo", ID_TORIO_PESO_S = "mundo-infinito:torio-peso-serpulo";
+    static final float DEFECTO_TORIO_DIST_S = 150f, DEFECTO_TORIO_PESO_S = 13f;
+    /** Torio-cristal de Erekir: distancia mínima y peso. */
+    static final String ID_TORIO_DIST_E = "mundo-infinito:torio-dist-erekir", ID_TORIO_PESO_E = "mundo-infinito:torio-peso-erekir";
+    static final float DEFECTO_TORIO_DIST_E = 200f, DEFECTO_TORIO_PESO_E = 5f;
+    float torioDistS = DEFECTO_TORIO_DIST_S, torioPesoS = DEFECTO_TORIO_PESO_S;
+    float torioDistE = DEFECTO_TORIO_DIST_E, torioPesoE = DEFECTO_TORIO_PESO_E;
+
+    private transient float[][] tablaSCache, tablaECache;
+
+    /** Tabla de menas de Serpulo del mundo. Se calcula en el primer uso: los ajustes ya están sellados entonces. */
+    float[][] tablaSerpulo(){
+        if(tablaSCache == null){
+            tablaSCache = new float[][]{
+                {MundoInfinitoMod.Muestreo.D_COBRE, 0, 30}, {MundoInfinitoMod.Muestreo.D_PLOMO, 0, 28},
+                {MundoInfinitoMod.Muestreo.D_CHATARRA, 40, 9}, {MundoInfinitoMod.Muestreo.D_CARBON, 60, 13},
+                {MundoInfinitoMod.Muestreo.D_TITANIO, 140, 11}, {MundoInfinitoMod.Muestreo.D_TORIO, torioDistS, torioPesoS}};
+        }
+        return tablaSCache;
+    }
+
+    /** Tabla de menas de Erekir del mundo (misma regla que la de Serpulo). */
+    float[][] tablaErekir(){
+        if(tablaECache == null){
+            tablaECache = new float[][]{
+                {MundoInfinitoMod.Muestreo.D_BERILIO, 0, 34}, {MundoInfinitoMod.Muestreo.D_GRAFITO, 25, 20},
+                {MundoInfinitoMod.Muestreo.D_TUNGSTENO, 100, 13}, {MundoInfinitoMod.Muestreo.D_TORIO_E, torioDistE, torioPesoE}};
+        }
+        return tablaECache;
+    }
     /** Casillas abiertas mínimas alcanzables para que un muro sea accesible. */
     int menasAccesoMinimo = DEFECTO_MENAS_ACCESO_MINIMO;
     /** Lado (1 a 3) del bloque libre donde cabe el taladro, dentro de la zona conectada. */

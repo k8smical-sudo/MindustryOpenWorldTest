@@ -89,6 +89,18 @@ final class RegistroAjustes{
         registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_MENAS_PARED_PROB, "Probabilidad de depósitos de pared (Erekir)",
             "Probabilidad de que una veta de Erekir que puede tener pared sea depósito de pared. Más alto = más mineral en muros. Por defecto, el reparto calibrado (objetivo 35 % de pared).",
             AjusteMundo.Ambito.GENERACION, ParametrosGeneracion.DEFECTO_MENAS_PARED_PROB, 0.0, 1.0).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
+        registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_TORIO_DIST_S, "Distancia del torio en Serpulo",
+            "Distancia mínima al origen (casillas) a la que aparece el torio en Serpulo. Más bajo = torio más cerca del spawn.",
+            AjusteMundo.Ambito.GENERACION, ParametrosGeneracion.DEFECTO_TORIO_DIST_S, 0, 400).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
+        registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_TORIO_PESO_S, "Peso del torio en Serpulo",
+            "Peso del torio en la tabla de menas de suelo de Serpulo. Más alto = más torio (objetivo por defecto: ~10 % de las menas de suelo).",
+            AjusteMundo.Ambito.GENERACION, ParametrosGeneracion.DEFECTO_TORIO_PESO_S, 0, 60).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
+        registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_TORIO_DIST_E, "Distancia del torio-cristal en Erekir",
+            "Distancia mínima al origen (casillas) a la que aparece el torio-cristal en Erekir.",
+            AjusteMundo.Ambito.GENERACION, ParametrosGeneracion.DEFECTO_TORIO_DIST_E, 0, 400).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
+        registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_TORIO_PESO_E, "Peso del torio-cristal en Erekir",
+            "Peso del torio-cristal en la tabla de menas de Erekir.",
+            AjusteMundo.Ambito.GENERACION, ParametrosGeneracion.DEFECTO_TORIO_PESO_E, 0, 60).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
         registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_MENAS_TALADRO, "Tamaño del hueco del taladro (menas de pared)",
             "Lado del bloque libre donde cabe el taladro, dentro de la zona conectada al muro. 1 = un tile (pasillos estrechos), 2 = 2x2, 3 = 3x3.",
             AjusteMundo.Ambito.GENERACION, ParametrosGeneracion.DEFECTO_MENAS_TALADRO, 1, 3).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));

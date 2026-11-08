@@ -101,7 +101,7 @@ public class MundoInfinitoMod extends Mod{
     public static final int REGION_CHUNKS = 16;             // 16x16 chunks por archivo de región (512x512 tiles)
     public static final String URL_SEMILLAS = "https://raw.githubusercontent.com/TU_USUARIO/mundo-infinito-semillas/main/semillas/actual.json"; // TODO: URL real
     public static final int TIMEOUT_HTTP_MS = 4000;
-    public static final int GEN_ACTUAL = 10;   // 8 = reparto de pared calibrado (35 % en Erekir); 7 = menas de pared accesibles (radio y espacio abierto mínimo configurables)                 // 6 = respiraderos de Erekir según la ficha física del planeta del lugar (plan v9, P9). La 5 y anteriores conservan su terreno exacto.
+    public static final int GEN_ACTUAL = 11;   // 8 = reparto de pared calibrado (35 % en Erekir); 7 = menas de pared accesibles (radio y espacio abierto mínimo configurables)                 // 6 = respiraderos de Erekir según la ficha física del planeta del lugar (plan v9, P9). La 5 y anteriores conservan su terreno exacto.
     public static final int GEN_FICHA = 6;                  // primera generación en la que la ficha física (tamaño del planeta) modula los respiraderos
     public static final int GEN_MENAS = 5;                  // primera generación con el efecto de las menas cercanas en los respiraderos (FuentesWorldgen)
     public static final int GEN_ANTERIOR = 3;               // 3 = dos dimensiones (Serpulo/Erekir) con la generación anterior: conserva su terreno exacto.
@@ -1175,10 +1175,17 @@ public class MundoInfinitoMod extends Mod{
         };
 
         /** @return tipo*1000 + distancia normalizada*100, o -1. aux = {along, across, forma, rot, flag} (flag: 0 suelo, 2 pared). */
+        /** Tabla de menas del mundo actual: torio y sus umbrales son ajustes del mundo; sin mundo, las tablas de referencia. */
+        static float[][] tablaMenas(boolean ere){
+            final ParametrosGeneracion pg = Nucleo.parametros();
+            if(pg == null) return ere ? TABLA_MENAS_E : TABLA_MENAS_S;
+            return ere ? pg.tablaErekir() : pg.tablaSerpulo();
+        }
+
         static int enDepositoGlobal(int s, int x, int y, boolean ere, float dist, float[] aux){
             if(dist < 30f) return -1;
             int ci = Math.floorDiv(x, CELDA_MENA), cj = Math.floorDiv(y, CELDA_MENA);
-            float[][] tabla = ere ? TABLA_MENAS_E : TABLA_MENAS_S;
+            float[][] tabla = tablaMenas(ere);
             float[] par = new float[3];
             for(int di = -1; di <= 1; di++){
                 for(int dj = -1; dj <= 1; dj++){

@@ -382,7 +382,7 @@ public final class Corpus{
     private static boolean iguales(ParametrosGeneracion x, ParametrosGeneracion y){
         return x.estirarAlturaSerpulo == y.estirarAlturaSerpulo && x.estirarTemperaturaSerpulo == y.estirarTemperaturaSerpulo
             && x.estirarHumedadSerpulo == y.estirarHumedadSerpulo && x.distanciaMinimaFenomenos == y.distanciaMinimaFenomenos
-            && x.presupuestoTerrenoPct == y.presupuestoTerrenoPct && x.murosUmbral == y.murosUmbral && x.murosPasillo == y.murosPasillo && x.menasAccesoRadio == y.menasAccesoRadio && x.menasAccesoMinimo == y.menasAccesoMinimo && x.menasParedProb == y.menasParedProb;
+            && x.presupuestoTerrenoPct == y.presupuestoTerrenoPct && x.murosUmbral == y.murosUmbral && x.murosPasillo == y.murosPasillo && x.menasAccesoRadio == y.menasAccesoRadio && x.menasAccesoMinimo == y.menasAccesoMinimo && x.menasParedProb == y.menasParedProb && x.menasTaladroTamano == y.menasTaladroTamano && x.menasEspacioLocal == y.menasEspacioLocal && x.torioDistS == y.torioDistS && x.torioPesoS == y.torioPesoS && x.torioDistE == y.torioDistE && x.torioPesoE == y.torioPesoE;
     }
 
     private static Jval archivoDe(PerfilMundo p){

@@ -125,6 +125,10 @@ final class PerfilMundo{
         p.murosUmbral = (float)valorLegado(ParametrosGeneracion.ID_MUROS_UMBRAL, ParametrosGeneracion.LEGADO_MUROS_UMBRAL);
         p.murosPasillo = (float)valorLegado(ParametrosGeneracion.ID_MUROS_PASILLO, ParametrosGeneracion.LEGADO_MUROS_PASILLO);
         p.menasParedProb = (float)valorLegado(ParametrosGeneracion.ID_MENAS_PARED_PROB, ParametrosGeneracion.DEFECTO_MENAS_PARED_PROB);
+        p.torioDistS = (float)valorLegado(ParametrosGeneracion.ID_TORIO_DIST_S, ParametrosGeneracion.DEFECTO_TORIO_DIST_S);
+        p.torioPesoS = (float)valorLegado(ParametrosGeneracion.ID_TORIO_PESO_S, ParametrosGeneracion.DEFECTO_TORIO_PESO_S);
+        p.torioDistE = (float)valorLegado(ParametrosGeneracion.ID_TORIO_DIST_E, ParametrosGeneracion.DEFECTO_TORIO_DIST_E);
+        p.torioPesoE = (float)valorLegado(ParametrosGeneracion.ID_TORIO_PESO_E, ParametrosGeneracion.DEFECTO_TORIO_PESO_E);
         p.menasTaladroTamano = (int)Math.round(valorLegado(ParametrosGeneracion.ID_MENAS_TALADRO, ParametrosGeneracion.DEFECTO_MENAS_TALADRO));
         p.menasEspacioLocal = (int)Math.round(valorLegado(ParametrosGeneracion.ID_MENAS_ESPACIO_LOCAL, ParametrosGeneracion.DEFECTO_MENAS_ESPACIO_LOCAL));
         p.menasAccesoRadio = (int)Math.round(valorLegado(ParametrosGeneracion.ID_MENAS_ACCESO_RADIO, ParametrosGeneracion.DEFECTO_MENAS_ACCESO_RADIO));

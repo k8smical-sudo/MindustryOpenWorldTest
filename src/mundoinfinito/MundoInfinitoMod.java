@@ -1588,6 +1588,50 @@ public class MundoInfinitoMod extends Mod{
             return true;
         }
 
+        /** Muro de una casilla con la misma fórmula que CeldaBase.iniciar y la etapa de muros (predicado base, sin pasillos ni forzados). */
+        static boolean muroEn(int s, int x, int y, Spawn sp){
+            final float dist = (float)Math.sqrt((double)x * x + (double)y * y);
+            final double wx = x + (fbm(sem(s, 50), 90f, 3, x, y) - 0.5) * 70.0;
+            final double wy = y + (fbm(sem(s, 51), 90f, 3, x + 500.0, y + 500.0) - 0.5) * 70.0;
+            return hayMuro(s, x, y, wx, wy, dist, esE(s, x, y, sp), sp);
+        }
+
+        /**
+         * Accesible: desde la casilla de muro (x, y), un recorrido por casillas abiertas dentro de un cuadro de radio {@code radio}
+         * alcanza al menos {@code minimo} casillas abiertas. La propia casilla no cuenta. Determinista: solo depende de la semilla
+         * y de las coordenadas.
+         */
+        static boolean accesible(int s, int x, int y, Spawn sp, int radio, int minimo){
+            final int lado = 2 * radio + 1, n = lado * lado;
+            final int[] fila = new int[n];
+            final boolean[] vis = new boolean[n];
+            final int centro = radio * lado + radio;
+            vis[centro] = true;
+            int cab = 0, fin = 0, abiertas = 0;
+            for(int d = 0; d < 4; d++){
+                final int dxr = DX4[d] + radio, dyr = DY4[d] + radio;
+                final int j = dyr * lado + dxr;
+                if(vis[j] || muroEn(s, x + DX4[d], y + DY4[d], sp)){ vis[j] = true; continue; }
+                vis[j] = true;
+                fila[fin++] = j;
+            }
+            while(cab < fin && abiertas < minimo){
+                final int idx = fila[cab++];
+                abiertas++;
+                final int cx = idx % lado, cy = idx / lado;
+                for(int d = 0; d < 4; d++){
+                    final int nx = cx + DX4[d], ny = cy + DY4[d];
+                    if(nx < 0 || ny < 0 || nx >= lado || ny >= lado) continue;
+                    final int j = ny * lado + nx;
+                    if(vis[j]) continue;
+                    vis[j] = true;
+                    if(muroEn(s, x + nx - radio, y + ny - radio, sp)) continue;
+                    fila[fin++] = j;
+                }
+            }
+            return abiertas >= minimo;
+        }
+
         static boolean expuesto(int s, int x, int y, Spawn sp){
             for(int d = 0; d < 4; d++){
                 int dx = DX4[d], dy = DY4[d], lx = -dy, ly = dx;

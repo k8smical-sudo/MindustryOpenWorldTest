@@ -29,6 +29,8 @@ final class ParametrosGeneracion{
     /** Multiplicador del umbral de terreno abierto (menor = más respiraderos). */
     static final String ID_RESP_UMBRAL = "mundo-infinito:respiraderos-umbral";
     static final String ID_MUROS_UMBRAL = "mundo-infinito:muros-umbral", ID_MUROS_PASILLO = "mundo-infinito:muros-pasillo";
+    static final String ID_MENAS_ACCESO_RADIO = "mundo-infinito:menas-acceso-radio", ID_MENAS_ACCESO_MINIMO = "mundo-infinito:menas-acceso-minimo";
+    static final int DEFECTO_MENAS_ACCESO_RADIO = 4, DEFECTO_MENAS_ACCESO_MINIMO = 16;
 
     static final int LEGADO_SEPARACION_RESPIRADEROS = 48;
     static final float LEGADO_MEZCLA_RESPIRADEROS = 1f;
@@ -61,6 +63,10 @@ final class ParametrosGeneracion{
     float murosUmbral = LEGADO_MUROS_UMBRAL;
     /** Anchura base de los pasillos que cortan los macizos. No es final por la misma razón. */
     float murosPasillo = LEGADO_MUROS_PASILLO;
+    /** Radio del cuadro en el que se busca espacio abierto para una mena de pared. */
+    int menasAccesoRadio = DEFECTO_MENAS_ACCESO_RADIO;
+    /** Casillas abiertas mínimas alcanzables para que un muro sea accesible. */
+    int menasAccesoMinimo = DEFECTO_MENAS_ACCESO_MINIMO;
 
     ParametrosGeneracion(float estirarAlturaSerpulo, float estirarTemperaturaSerpulo, float estirarHumedadSerpulo){
         this(estirarAlturaSerpulo, estirarTemperaturaSerpulo, estirarHumedadSerpulo, 0, 100);

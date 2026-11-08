@@ -86,6 +86,12 @@ final class RegistroAjustes{
         registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_MUROS_UMBRAL, "Umbral de muros (más alto = más abierto)",
             "Nivel de la roca de los macizos. Más alto = menos muros y mundo más abierto; más bajo = más roca y mundo más cerrado. Por defecto, el del mundo base.",
             AjusteMundo.Ambito.GENERACION, ParametrosGeneracion.LEGADO_MUROS_UMBRAL, 0.44, 0.60).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
+        registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_MENAS_ACCESO_RADIO, "Radio de acceso a las menas de pared",
+            "Radio del cuadro en el que se busca espacio abierto junto a un muro. Más alto = el acceso se busca más lejos.",
+            AjusteMundo.Ambito.GENERACION, ParametrosGeneracion.DEFECTO_MENAS_ACCESO_RADIO, 2, 8).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
+        registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_MENAS_ACCESO_MINIMO, "Espacio abierto mínimo para una mena de pared",
+            "Casillas abiertas que deben alcanzarse desde un muro para que una mena de pared se coloque allí. Más alto = menos menas de pared, en zonas más abiertas.",
+            AjusteMundo.Ambito.GENERACION, ParametrosGeneracion.DEFECTO_MENAS_ACCESO_MINIMO, 4, 60).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
         registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_MUROS_PASILLO, "Anchura de los pasillos entre macizos",
             "Anchura base de los pasillos que cortan la roca. Más ancho = más paso libre entre muros. Por defecto, el del mundo base.",
             AjusteMundo.Ambito.GENERACION, ParametrosGeneracion.LEGADO_MUROS_PASILLO, 0.0, 0.05).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));

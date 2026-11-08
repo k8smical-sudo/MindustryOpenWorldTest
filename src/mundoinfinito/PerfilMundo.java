@@ -124,6 +124,8 @@ final class PerfilMundo{
             (float)valorLegado(ParametrosGeneracion.ID_RESP_UMBRAL, 1d));
         p.murosUmbral = (float)valorLegado(ParametrosGeneracion.ID_MUROS_UMBRAL, ParametrosGeneracion.LEGADO_MUROS_UMBRAL);
         p.murosPasillo = (float)valorLegado(ParametrosGeneracion.ID_MUROS_PASILLO, ParametrosGeneracion.LEGADO_MUROS_PASILLO);
+        p.menasAccesoRadio = (int)Math.round(valorLegado(ParametrosGeneracion.ID_MENAS_ACCESO_RADIO, ParametrosGeneracion.DEFECTO_MENAS_ACCESO_RADIO));
+        p.menasAccesoMinimo = (int)Math.round(valorLegado(ParametrosGeneracion.ID_MENAS_ACCESO_MINIMO, ParametrosGeneracion.DEFECTO_MENAS_ACCESO_MINIMO));
         return p;
     }
 

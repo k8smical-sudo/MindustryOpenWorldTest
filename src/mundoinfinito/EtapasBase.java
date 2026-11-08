@@ -317,8 +317,7 @@ final class EtapasBase{
 
             // los depósitos iniciales de suelo nunca quedan tapados por muros
             if(ce.inicial && !ce.depPared && ce.tipoDep != D_GRAFITO && ce.radN < 100) ce.muro = 0;
-            // depósito de pared: la zona entera (mena + borde) es roca
-            if(ce.depPared && !liq && !ce.spawn) ce.muro = 1;
+            // depósito de pared: la mena va en los muros naturales de la zona (ya no se fuerza roca)
         }
     }
 
@@ -356,16 +355,17 @@ final class EtapasBase{
                     case D_CARBON: if(!enMuro) mena = O_CARBON; break;
                     case D_TITANIO: if(!enMuro) mena = O_TITANIO; break;
                     case D_TORIO: if(!enMuro) mena = O_TORIO; break;
-                    case D_BERILIO: mena = depPared ? (radN < 100 ? O_BERILIO_MURO : 0) : (enMuro ? O_BERILIO_MURO : O_BERILIO); break;
-                    case D_TUNGSTENO: mena = depPared ? (radN < 100 ? O_TUNGSTENO_MURO : 0) : (enMuro ? O_TUNGSTENO_MURO : O_TUNGSTENO); break;
-                    case D_TORIO_E: mena = depPared ? (radN < 100 ? O_TORIO_MURO : 0) : (enMuro ? O_TORIO_MURO : O_TORIO_CRISTAL); break;
+                    case D_BERILIO: mena = depPared ? (enMuro && radN < 100 ? O_BERILIO_MURO : 0) : (enMuro ? O_BERILIO_MURO : O_BERILIO); break;
+                    case D_TUNGSTENO: mena = depPared ? (enMuro && radN < 100 ? O_TUNGSTENO_MURO : 0) : (enMuro ? O_TUNGSTENO_MURO : O_TUNGSTENO); break;
+                    case D_TORIO_E: mena = depPared ? (enMuro && radN < 100 ? O_TORIO_MURO : 0) : (enMuro ? O_TORIO_MURO : O_TORIO_CRISTAL); break;
                     default: break;
                 }
             }
 
-            // menas de pared: solo si un taladro puede llegar a ellas
+            // menas de pared: solo si un taladro puede llegar a ellas Y el muro da a un espacio abierto de tamaño suficiente
             if(mena == O_BERILIO_MURO || mena == O_TUNGSTENO_MURO || mena == O_TORIO_MURO || muro == 2){
-                if(!expuesto(s, x, y, ce.sp)){
+                final ParametrosGeneracion pg = Nucleo.parametros();
+                if(!expuesto(s, x, y, ce.sp) || !accesible(s, x, y, ce.sp, pg.menasAccesoRadio, pg.menasAccesoMinimo)){
                     if(muro == 2) muro = 1;        // grafito enterrado: roca normal
                     if(mena >= O_TORIO_MURO) mena = 0;
                 }

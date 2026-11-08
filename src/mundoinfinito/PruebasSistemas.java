@@ -237,9 +237,9 @@ final class PruebasSistemas{
                 && ApiFisica.GRANDE.equals(ApiFisica.categoria(8f)) && "".equals(ApiFisica.categoria(Float.NaN)));
         fallos += chequear("estimación de Mindustry: planeta de diámetro 2, sol de diámetro 8",
             ApiFisica.DIAMETRO_PLANETA == 2f && ApiFisica.DIAMETRO_ESTRELLA == 8f);
-        fallos += chequear("órbitas estimadas: Erekir 17 y Serpulo 31; otro planeta sin dato (0)",
+        fallos += chequear("órbitas estimadas (campaign de Mindustry): Erekir 17 y Serpulo 57,24; otro planeta sin dato (0)",
             cerca(ApiFisica.estimadaPlaneta("erekir", 2f).distancia(FichaFisica.DIST_ESTRELLA), 17)
-                && cerca(ApiFisica.estimadaPlaneta("serpulo", 2f).distancia(FichaFisica.DIST_ESTRELLA), 31)
+                && cerca(ApiFisica.estimadaPlaneta("serpulo", 2f).distancia(FichaFisica.DIST_ESTRELLA), 57.24)
                 && cerca(ApiFisica.estimadaPlaneta("otro", 2f).distancia(FichaFisica.DIST_ESTRELLA), 0));
 
         final FichaFisica f1 = ApiFisica.estimada(ApiFisica.TIPO_PLANETA, 12f), f2 = ApiFisica.estimada(ApiFisica.TIPO_PLANETA, 12f);

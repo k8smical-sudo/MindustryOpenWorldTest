@@ -382,7 +382,7 @@ public final class Corpus{
     private static boolean iguales(ParametrosGeneracion x, ParametrosGeneracion y){
         return x.estirarAlturaSerpulo == y.estirarAlturaSerpulo && x.estirarTemperaturaSerpulo == y.estirarTemperaturaSerpulo
             && x.estirarHumedadSerpulo == y.estirarHumedadSerpulo && x.distanciaMinimaFenomenos == y.distanciaMinimaFenomenos
-            && x.presupuestoTerrenoPct == y.presupuestoTerrenoPct && x.murosUmbral == y.murosUmbral && x.murosPasillo == y.murosPasillo && x.menasAccesoRadio == y.menasAccesoRadio && x.menasAccesoMinimo == y.menasAccesoMinimo && x.menasParedProb == y.menasParedProb && x.menasTaladroTamano == y.menasTaladroTamano && x.menasEspacioLocal == y.menasEspacioLocal && x.torioDistS == y.torioDistS && x.torioPesoS == y.torioPesoS && x.torioDistE == y.torioDistE && x.torioPesoE == y.torioPesoE;
+            && x.presupuestoTerrenoPct == y.presupuestoTerrenoPct && x.murosUmbral == y.murosUmbral && x.murosPasillo == y.murosPasillo && x.menasAccesoRadio == y.menasAccesoRadio && x.menasAccesoMinimo == y.menasAccesoMinimo && x.menasParedProb == y.menasParedProb && x.menasTaladroTamano == y.menasTaladroTamano && x.menasEspacioLocal == y.menasEspacioLocal && x.torioDistS == y.torioDistS && x.torioPesoS == y.torioPesoS && x.torioDistE == y.torioDistE && x.torioPesoE == y.torioPesoE && x.pesoCobre == y.pesoCobre && x.pesoPlomo == y.pesoPlomo && x.pesoChatarra == y.pesoChatarra && x.pesoCarbon == y.pesoCarbon && x.pesoTitanio == y.pesoTitanio;
     }
 
     private static Jval archivoDe(PerfilMundo p){
@@ -2574,7 +2574,6 @@ public final class Corpus{
             else if(modo.equals("verificar") && args.length > 1) rc = verificar(args[1]);
             else if(modo.equals("assets")) rc = ApiAsset.informe(args);
             else if(modo.equals("planetas")) rc = ApiAsset.informePlanetas(args);
-            else if(modo.equals("barrido")) rc = ApiBarridoPared.barrido(args);
             else if(modo.equals("embudo")) rc = ApiDiagnosticoPared.embudo(args);
             else if(modo.equals("comprobar")) rc = comprobar();
             else if(modo.equals("base") && args.length > 1) rc = base(args[1]);

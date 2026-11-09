@@ -89,6 +89,21 @@ final class RegistroAjustes{
         registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_MENAS_PARED_PROB, "Probabilidad de depósitos de pared (Erekir)",
             "Probabilidad de que una veta de Erekir que puede tener pared sea depósito de pared. Más alto = más mineral en muros. Por defecto, el reparto calibrado (objetivo 35 % de pared).",
             AjusteMundo.Ambito.GENERACION, ParametrosGeneracion.DEFECTO_MENAS_PARED_PROB, 0.0, 1.0).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
+        registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_PESO_COBRE, "Peso del cobre en Serpulo",
+            "Peso del cobre en la tabla de menas de Serpulo. Calibrado contra los mapas de la campaña (cobre ~17 % de las menas de suelo).",
+            AjusteMundo.Ambito.GENERACION, ParametrosGeneracion.DEFECTO_PESO_COBRE, 0, 60).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
+        registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_PESO_PLOMO, "Peso del plomo en Serpulo",
+            "Peso del plomo en la tabla de menas de Serpulo (plomo ~30 % en la campaña).",
+            AjusteMundo.Ambito.GENERACION, ParametrosGeneracion.DEFECTO_PESO_PLOMO, 0, 60).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
+        registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_PESO_CHATARRA, "Peso de la chatarra en Serpulo",
+            "Peso de la chatarra en la tabla de menas de Serpulo (chatarra ~7 % en la campaña).",
+            AjusteMundo.Ambito.GENERACION, ParametrosGeneracion.DEFECTO_PESO_CHATARRA, 0, 60).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
+        registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_PESO_CARBON, "Peso del carbón en Serpulo",
+            "Peso del carbón en la tabla de menas de Serpulo (carbón ~22 % en la campaña).",
+            AjusteMundo.Ambito.GENERACION, ParametrosGeneracion.DEFECTO_PESO_CARBON, 0, 60).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
+        registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_PESO_TITANIO, "Peso del titanio en Serpulo",
+            "Peso del titanio en la tabla de menas de Serpulo (titanio ~15 % en la campaña).",
+            AjusteMundo.Ambito.GENERACION, ParametrosGeneracion.DEFECTO_PESO_TITANIO, 0, 60).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
         registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_TORIO_DIST_S, "Distancia del torio en Serpulo",
             "Distancia mínima al origen (casillas) a la que aparece el torio en Serpulo. Más bajo = torio más cerca del spawn.",
             AjusteMundo.Ambito.GENERACION, ParametrosGeneracion.DEFECTO_TORIO_DIST_S, 0, 400).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));

@@ -101,7 +101,7 @@ public class MundoInfinitoMod extends Mod{
     public static final int REGION_CHUNKS = 16;             // 16x16 chunks por archivo de región (512x512 tiles)
     public static final String URL_SEMILLAS = "https://raw.githubusercontent.com/TU_USUARIO/mundo-infinito-semillas/main/semillas/actual.json"; // TODO: URL real
     public static final int TIMEOUT_HTTP_MS = 4000;
-    public static final int GEN_ACTUAL = 14;   // 8 = reparto de pared calibrado (35 % en Erekir); 7 = menas de pared accesibles (radio y espacio abierto mínimo configurables)                 // 6 = respiraderos de Erekir según la ficha física del planeta del lugar (plan v9, P9). La 5 y anteriores conservan su terreno exacto.
+    public static final int GEN_ACTUAL = 15;   // 8 = reparto de pared calibrado (35 % en Erekir); 7 = menas de pared accesibles (radio y espacio abierto mínimo configurables)                 // 6 = respiraderos de Erekir según la ficha física del planeta del lugar (plan v9, P9). La 5 y anteriores conservan su terreno exacto.
     public static final int GEN_FICHA = 6;                  // primera generación en la que la ficha física (tamaño del planeta) modula los respiraderos
     public static final int GEN_MENAS = 5;                  // primera generación con el efecto de las menas cercanas en los respiraderos (FuentesWorldgen)
     public static final int GEN_ANTERIOR = 3;               // 3 = dos dimensiones (Serpulo/Erekir) con la generación anterior: conserva su terreno exacto.

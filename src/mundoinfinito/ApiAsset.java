@@ -266,12 +266,12 @@ public final class ApiAsset{
 
     static {
         // Serpulo (sin pared): reparto con torio al 10 % de las menas.
-        registrarObjetivo("serpulo", "mindustry:cobre", 27f);
-        registrarObjetivo("serpulo", "mindustry:plomo", 22.5f);
-        registrarObjetivo("serpulo", "mindustry:carbon", 18f);
-        registrarObjetivo("serpulo", "mindustry:chatarra", 13.5f);
-        registrarObjetivo("serpulo", "mindustry:titanio", 9f);
-        registrarObjetivo("serpulo", "mindustry:torio", 10f);
+        registrarObjetivo("serpulo", "mindustry:cobre", 17f);   // mapas de campaña (mediana normalizada)
+        registrarObjetivo("serpulo", "mindustry:plomo", 30f);
+        registrarObjetivo("serpulo", "mindustry:carbon", 22f);
+        registrarObjetivo("serpulo", "mindustry:chatarra", 7f);
+        registrarObjetivo("serpulo", "mindustry:titanio", 15f);
+        registrarObjetivo("serpulo", "mindustry:torio", 9f);
         registrarObjetivo("serpulo", "mindustry:berilio", 0f);
         registrarObjetivo("serpulo", "mindustry:tungsteno", 0f);
         registrarObjetivo("serpulo", "mindustry:torio-cristal", 0f);

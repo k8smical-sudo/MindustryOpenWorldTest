@@ -125,6 +125,11 @@ final class PerfilMundo{
         p.murosUmbral = (float)valorLegado(ParametrosGeneracion.ID_MUROS_UMBRAL, ParametrosGeneracion.LEGADO_MUROS_UMBRAL);
         p.murosPasillo = (float)valorLegado(ParametrosGeneracion.ID_MUROS_PASILLO, ParametrosGeneracion.LEGADO_MUROS_PASILLO);
         p.menasParedProb = (float)valorLegado(ParametrosGeneracion.ID_MENAS_PARED_PROB, ParametrosGeneracion.DEFECTO_MENAS_PARED_PROB);
+        p.pesoCobre = (float)valorLegado(ParametrosGeneracion.ID_PESO_COBRE, ParametrosGeneracion.DEFECTO_PESO_COBRE);
+        p.pesoPlomo = (float)valorLegado(ParametrosGeneracion.ID_PESO_PLOMO, ParametrosGeneracion.DEFECTO_PESO_PLOMO);
+        p.pesoChatarra = (float)valorLegado(ParametrosGeneracion.ID_PESO_CHATARRA, ParametrosGeneracion.DEFECTO_PESO_CHATARRA);
+        p.pesoCarbon = (float)valorLegado(ParametrosGeneracion.ID_PESO_CARBON, ParametrosGeneracion.DEFECTO_PESO_CARBON);
+        p.pesoTitanio = (float)valorLegado(ParametrosGeneracion.ID_PESO_TITANIO, ParametrosGeneracion.DEFECTO_PESO_TITANIO);
         p.torioDistS = (float)valorLegado(ParametrosGeneracion.ID_TORIO_DIST_S, ParametrosGeneracion.DEFECTO_TORIO_DIST_S);
         p.torioPesoS = (float)valorLegado(ParametrosGeneracion.ID_TORIO_PESO_S, ParametrosGeneracion.DEFECTO_TORIO_PESO_S);
         p.torioDistE = (float)valorLegado(ParametrosGeneracion.ID_TORIO_DIST_E, ParametrosGeneracion.DEFECTO_TORIO_DIST_E);

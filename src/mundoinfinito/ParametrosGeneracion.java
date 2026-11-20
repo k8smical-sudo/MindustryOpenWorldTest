@@ -30,7 +30,7 @@ final class ParametrosGeneracion{
     static final String ID_RESP_UMBRAL = "mundo-infinito:respiraderos-umbral";
     static final String ID_MUROS_UMBRAL = "mundo-infinito:muros-umbral", ID_MUROS_PASILLO = "mundo-infinito:muros-pasillo";
     static final String ID_MENAS_PARED_PROB = "mundo-infinito:menas-pared-prob";
-    static final float DEFECTO_MENAS_PARED_PROB = 0.75f;
+    static final float DEFECTO_MENAS_PARED_PROB = 0.86f;
     static final String ID_MENAS_ACCESO_RADIO = "mundo-infinito:menas-acceso-radio", ID_MENAS_ACCESO_MINIMO = "mundo-infinito:menas-acceso-minimo";
     static final int DEFECTO_MENAS_ACCESO_RADIO = 6, DEFECTO_MENAS_ACCESO_MINIMO = 16;
     static final String ID_MENAS_TALADRO = "mundo-infinito:menas-taladro-tamano", ID_MENAS_ESPACIO_LOCAL = "mundo-infinito:menas-espacio-local";
@@ -81,8 +81,8 @@ final class ParametrosGeneracion{
     static final String ID_PESO_COBRE = "mundo-infinito:peso-cobre-serpulo", ID_PESO_PLOMO = "mundo-infinito:peso-plomo-serpulo",
         ID_PESO_CHATARRA = "mundo-infinito:peso-chatarra-serpulo", ID_PESO_CARBON = "mundo-infinito:peso-carbon-serpulo",
         ID_PESO_TITANIO = "mundo-infinito:peso-titanio-serpulo";
-    static final float DEFECTO_PESO_COBRE = 16f, DEFECTO_PESO_PLOMO = 30f, DEFECTO_PESO_CHATARRA = 5f,
-        DEFECTO_PESO_CARBON = 28f, DEFECTO_PESO_TITANIO = 26f;
+    static final float DEFECTO_PESO_COBRE = 14f, DEFECTO_PESO_PLOMO = 30f, DEFECTO_PESO_CHATARRA = 4f,
+        DEFECTO_PESO_CARBON = 28f, DEFECTO_PESO_TITANIO = 33f;
     float pesoCobre = DEFECTO_PESO_COBRE, pesoPlomo = DEFECTO_PESO_PLOMO, pesoChatarra = DEFECTO_PESO_CHATARRA,
         pesoCarbon = DEFECTO_PESO_CARBON, pesoTitanio = DEFECTO_PESO_TITANIO;
     float torioDistS = DEFECTO_TORIO_DIST_S, torioPesoS = DEFECTO_TORIO_PESO_S;

@@ -51,7 +51,20 @@ final class Hilos{
     static final String K_HILOS = "ow-hilos";
     /** Lo mismo como propiedad de la JVM, para pruebas y CI: -Dmow.hilos=1 (tiene prioridad sobre el ajuste). */
     static final String PROP_HILOS = "mow.hilos";
-    static final int MAX_HILOS = 8, MAX_AUTO = 4;
+    /** Techo absoluto de hilos (lo que admite el pool y los arrays de trabajadores) y techo de la configuración automática. */
+    static final int MAX_HILOS = 16, MAX_AUTO = 8;
+    /** Núcleos que se dejan libres para el hilo de juego y el de render. En móvil el techo automático es menor (calor y batería). */
+    static final int RESERVA_NUCLEOS = 2, MAX_AUTO_MOVIL = 3;
+
+    /**
+     * Hilos automáticos para una sección: usa los núcleos sobrantes tras la reserva, con techo {@link #MAX_AUTO} (o
+     * {@link #MAX_AUTO_MOVIL} en móvil). Con un solo núcleo, 1.
+     */
+    static int automatico(boolean movil){
+        final int libres = nucleos() - RESERVA_NUCLEOS;
+        final int techo = movil ? MAX_AUTO_MOVIL : MAX_AUTO;
+        return Math.max(1, Math.min(techo, libres));
+    }
 
     private static final int NC = Carril.values().length;
 

@@ -2417,7 +2417,7 @@ public class MundoInfinitoMod extends Mod{
         static float restauroDesde = -1f;   // Time.time en que empezó la restauración inicial (-1 = no empezó)
         static int totalRestaurar = 1;
         static Datos datosPendientes;
-        static final Thread[] trabajadores = new Thread[8];
+        static final Thread[] trabajadores = new Thread[Hilos.MAX_HILOS];
         static volatile int hilosObjetivo = 1;
         /** Precarga de terreno a la caché (sin publicar): cola de baja prioridad, protegida por 'cola'. */
         static final ArrayDeque<Long> colaBaja = new ArrayDeque<>();

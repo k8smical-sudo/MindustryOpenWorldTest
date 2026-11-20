@@ -89,6 +89,9 @@ final class RegistroAjustes{
         registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_MENAS_PARED_PROB, "Probabilidad de depósitos de pared (Erekir)",
             "Probabilidad de que una veta de Erekir que puede tener pared sea depósito de pared. Más alto = más mineral en muros. Por defecto, el reparto calibrado (objetivo 35 % de pared).",
             AjusteMundo.Ambito.GENERACION, ParametrosGeneracion.DEFECTO_MENAS_PARED_PROB, 0.0, 1.0).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
+        registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_DIST_CHATARRA_S, "Distancia de la chatarra en Serpulo",
+            "Distancia mínima al origen (casillas) a la que aparece la chatarra en Serpulo. Más alto = chatarra más lejos del spawn.",
+            AjusteMundo.Ambito.GENERACION, ParametrosGeneracion.DEFECTO_DIST_CHATARRA_S, 0, 400).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
         registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_PESO_COBRE, "Peso del cobre en Serpulo",
             "Peso del cobre en la tabla de menas de Serpulo. Calibrado contra los mapas de la campaña (cobre ~17 % de las menas de suelo).",
             AjusteMundo.Ambito.GENERACION, ParametrosGeneracion.DEFECTO_PESO_COBRE, 0, 60).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));

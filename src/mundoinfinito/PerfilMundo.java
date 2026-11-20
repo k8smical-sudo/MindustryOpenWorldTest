@@ -125,6 +125,7 @@ final class PerfilMundo{
         p.murosUmbral = (float)valorLegado(ParametrosGeneracion.ID_MUROS_UMBRAL, ParametrosGeneracion.LEGADO_MUROS_UMBRAL);
         p.murosPasillo = (float)valorLegado(ParametrosGeneracion.ID_MUROS_PASILLO, ParametrosGeneracion.LEGADO_MUROS_PASILLO);
         p.menasParedProb = (float)valorLegado(ParametrosGeneracion.ID_MENAS_PARED_PROB, ParametrosGeneracion.DEFECTO_MENAS_PARED_PROB);
+        p.distChatarraS = (float)valorLegado(ParametrosGeneracion.ID_DIST_CHATARRA_S, ParametrosGeneracion.DEFECTO_DIST_CHATARRA_S);
         p.pesoCobre = (float)valorLegado(ParametrosGeneracion.ID_PESO_COBRE, ParametrosGeneracion.DEFECTO_PESO_COBRE);
         p.pesoPlomo = (float)valorLegado(ParametrosGeneracion.ID_PESO_PLOMO, ParametrosGeneracion.DEFECTO_PESO_PLOMO);
         p.pesoChatarra = (float)valorLegado(ParametrosGeneracion.ID_PESO_CHATARRA, ParametrosGeneracion.DEFECTO_PESO_CHATARRA);

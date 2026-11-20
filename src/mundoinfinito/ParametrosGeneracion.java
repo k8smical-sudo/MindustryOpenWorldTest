@@ -83,6 +83,10 @@ final class ParametrosGeneracion{
         ID_PESO_TITANIO = "mundo-infinito:peso-titanio-serpulo";
     static final float DEFECTO_PESO_COBRE = 14f, DEFECTO_PESO_PLOMO = 30f, DEFECTO_PESO_CHATARRA = 4f,
         DEFECTO_PESO_CARBON = 28f, DEFECTO_PESO_TITANIO = 33f;
+    /** Distancia mínima al origen (casillas) de la chatarra en Serpulo. */
+    static final String ID_DIST_CHATARRA_S = "mundo-infinito:dist-chatarra-serpulo";
+    static final float DEFECTO_DIST_CHATARRA_S = 90f;
+    float distChatarraS = DEFECTO_DIST_CHATARRA_S;
     float pesoCobre = DEFECTO_PESO_COBRE, pesoPlomo = DEFECTO_PESO_PLOMO, pesoChatarra = DEFECTO_PESO_CHATARRA,
         pesoCarbon = DEFECTO_PESO_CARBON, pesoTitanio = DEFECTO_PESO_TITANIO;
     float torioDistS = DEFECTO_TORIO_DIST_S, torioPesoS = DEFECTO_TORIO_PESO_S;
@@ -95,7 +99,7 @@ final class ParametrosGeneracion{
         if(tablaSCache == null){
             tablaSCache = new float[][]{
                 {MundoInfinitoMod.Muestreo.D_COBRE, 0, pesoCobre}, {MundoInfinitoMod.Muestreo.D_PLOMO, 0, pesoPlomo},
-                {MundoInfinitoMod.Muestreo.D_CHATARRA, 40, pesoChatarra}, {MundoInfinitoMod.Muestreo.D_CARBON, 60, pesoCarbon},
+                {MundoInfinitoMod.Muestreo.D_CHATARRA, distChatarraS, pesoChatarra}, {MundoInfinitoMod.Muestreo.D_CARBON, 60, pesoCarbon},
                 {MundoInfinitoMod.Muestreo.D_TITANIO, 140, pesoTitanio}, {MundoInfinitoMod.Muestreo.D_TORIO, torioDistS, torioPesoS}};
         }
         return tablaSCache;

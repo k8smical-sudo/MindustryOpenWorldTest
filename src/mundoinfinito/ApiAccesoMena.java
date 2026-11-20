@@ -135,7 +135,10 @@ public final class ApiAccesoMena {
                 for(int by = 0; by < T && libre; by++)
                     for(int bx = 0; bx < T && libre; bx++)
                         if(est[(ty + by + R) * lado + (tx + bx + R)] != 1) libre = false;
-                if(libre) return true;
+                if(libre){
+                    ApiDiagnosticoPared.contar(ApiDiagnosticoPared.EXPUESTO);   // medición: taladro posible (solo cuenta en modo embudo)
+                    return true;
+                }
             }
         }
         return false;

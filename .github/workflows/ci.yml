@@ -228,6 +228,11 @@ jobs:
         run: |
           mkdir -p build/corpus
           java -cp "build/classes/java/main:libs/MindustryX-Desktop.jar" mundoinfinito.Corpus barrido 2>&1 | tee build/corpus/barrido.txt
+      - name: Zonas - decision por celda de deposito (diagnostico, solo lee)
+        continue-on-error: true
+        run: |
+          mkdir -p build/corpus
+          java -cp "build/classes/java/main:libs/MindustryX-Desktop.jar" mundoinfinito.Corpus zonas 8 2>&1 | tee build/corpus/zonas.txt
       - name: Embudo de menas de pared (diagnostico, solo lee)
         continue-on-error: true
         run: |

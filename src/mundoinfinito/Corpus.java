@@ -237,17 +237,6 @@ public final class Corpus{
 
     // ================================================================== modos
 
-    /** Modo "perfiles": imprime el perfil de assets de cada planeta (capa, suelos y densidades). Solo lee. */
-    static int imprimirPerfiles(){
-        for(ApiPerfilPlaneta.Perfil p : ApiPerfilPlaneta.todos()){
-            System.out.println("[Perfiles] " + p.planeta + " assets=" + p.colocaciones.size());
-            for(ApiPerfilPlaneta.Colocacion c : p.colocaciones){
-                System.out.println("[Perfiles]   " + c.asset + " capa=" + c.capa + " suelos=" + c.suelos + " (" + c.origen + ")");
-            }
-        }
-        return 0;
-    }
-
     static int congelar(String archivo) throws Exception{
         final List<int[]> es = entradas();
         olvidarCaches();
@@ -393,7 +382,7 @@ public final class Corpus{
     private static boolean iguales(ParametrosGeneracion x, ParametrosGeneracion y){
         return x.estirarAlturaSerpulo == y.estirarAlturaSerpulo && x.estirarTemperaturaSerpulo == y.estirarTemperaturaSerpulo
             && x.estirarHumedadSerpulo == y.estirarHumedadSerpulo && x.distanciaMinimaFenomenos == y.distanciaMinimaFenomenos
-            && x.presupuestoTerrenoPct == y.presupuestoTerrenoPct && x.murosUmbral == y.murosUmbral && x.murosPasillo == y.murosPasillo && x.menasAccesoRadio == y.menasAccesoRadio && x.menasAccesoMinimo == y.menasAccesoMinimo && x.menasParedProb == y.menasParedProb && x.menasTaladroTamano == y.menasTaladroTamano && x.menasEspacioLocal == y.menasEspacioLocal && x.torioDistS == y.torioDistS && x.torioPesoS == y.torioPesoS && x.torioDistE == y.torioDistE && x.torioPesoE == y.torioPesoE;
+            && x.presupuestoTerrenoPct == y.presupuestoTerrenoPct && x.murosUmbral == y.murosUmbral && x.murosPasillo == y.murosPasillo && x.menasAccesoRadio == y.menasAccesoRadio && x.menasAccesoMinimo == y.menasAccesoMinimo && x.menasParedProb == y.menasParedProb && x.menasTaladroTamano == y.menasTaladroTamano && x.menasEspacioLocal == y.menasEspacioLocal && x.torioDistS == y.torioDistS && x.torioPesoS == y.torioPesoS && x.torioDistE == y.torioDistE && x.torioPesoE == y.torioPesoE && x.pesoCobre == y.pesoCobre && x.pesoPlomo == y.pesoPlomo && x.pesoChatarra == y.pesoChatarra && x.pesoCarbon == y.pesoCarbon && x.pesoTitanio == y.pesoTitanio && x.distChatarraS == y.distChatarraS && x.pesoBerilioE == y.pesoBerilioE && x.pesoTungstenoE == y.pesoTungstenoE;
     }
 
     private static Jval archivoDe(PerfilMundo p){
@@ -2585,9 +2574,6 @@ public final class Corpus{
             else if(modo.equals("verificar") && args.length > 1) rc = verificar(args[1]);
             else if(modo.equals("assets")) rc = ApiAsset.informe(args);
             else if(modo.equals("planetas")) rc = ApiAsset.informePlanetas(args);
-            else if(modo.equals("barrido")) rc = ApiBarridoPared.barrido(args);
-            else if(modo.equals("perfiles")) rc = imprimirPerfiles();
-            else if(modo.equals("zonas")) rc = ApiDiagnosticoPared.zonas(args);
             else if(modo.equals("embudo")) rc = ApiDiagnosticoPared.embudo(args);
             else if(modo.equals("comprobar")) rc = comprobar();
             else if(modo.equals("base") && args.length > 1) rc = base(args[1]);

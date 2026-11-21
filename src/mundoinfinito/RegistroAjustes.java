@@ -107,6 +107,12 @@ final class RegistroAjustes{
         registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_PESO_TITANIO, "Peso del titanio en Serpulo",
             "Peso del titanio en la tabla de menas de Serpulo (titanio ~15 % en la campaña).",
             AjusteMundo.Ambito.GENERACION, ParametrosGeneracion.DEFECTO_PESO_TITANIO, 0, 60).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
+        registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_PESO_BERILIO_E, "Peso del berilio en Erekir",
+            "Peso del berilio en la tabla de menas de suelo de Erekir. Calibrado contra la campaña (berilio ~17 % de las menas de suelo).",
+            AjusteMundo.Ambito.GENERACION, ParametrosGeneracion.DEFECTO_PESO_BERILIO_E, 0, 60).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
+        registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_PESO_TUNGSTENO_E, "Peso del tungsteno en Erekir",
+            "Peso del tungsteno en la tabla de menas de suelo de Erekir. Calibrado contra la campaña (tungsteno ~52 % de las menas de suelo).",
+            AjusteMundo.Ambito.GENERACION, ParametrosGeneracion.DEFECTO_PESO_TUNGSTENO_E, 0, 60).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
         registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_TORIO_DIST_S, "Distancia del torio en Serpulo",
             "Distancia mínima al origen (casillas) a la que aparece el torio en Serpulo. Más bajo = torio más cerca del spawn.",
             AjusteMundo.Ambito.GENERACION, ParametrosGeneracion.DEFECTO_TORIO_DIST_S, 0, 400).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));

@@ -76,7 +76,11 @@ final class ParametrosGeneracion{
     static final float DEFECTO_TORIO_DIST_S = 150f, DEFECTO_TORIO_PESO_S = 39f;   // peso 39: ~10 % de las menas de suelo de Serpulo (medido 8,1 % con 32)
     /** Torio-cristal de Erekir: distancia mínima y peso. */
     static final String ID_TORIO_DIST_E = "mundo-infinito:torio-dist-erekir", ID_TORIO_PESO_E = "mundo-infinito:torio-peso-erekir";
-    static final float DEFECTO_TORIO_DIST_E = 200f, DEFECTO_TORIO_PESO_E = 23f;   // peso 23: ~10 % de las menas de suelo de Erekir (medido 8,3 % con 19)
+    static final float DEFECTO_TORIO_DIST_E = 200f, DEFECTO_TORIO_PESO_E = 1f;   // peso 1: torio-cristal ~0 % en la campaña de Erekir (objetivo 0)
+    /** Pesos de berilio y tungsteno de suelo de Erekir (ajustes del mundo). Defecto: calibrados contra la campaña de Erekir. */
+    static final String ID_PESO_BERILIO_E = "mundo-infinito:peso-berilio-erekir", ID_PESO_TUNGSTENO_E = "mundo-infinito:peso-tungsteno-erekir";
+    static final float DEFECTO_PESO_BERILIO_E = 13f, DEFECTO_PESO_TUNGSTENO_E = 44f;
+    float pesoBerilioE = DEFECTO_PESO_BERILIO_E, pesoTungstenoE = DEFECTO_PESO_TUNGSTENO_E;
     /** Pesos de las menas de suelo de Serpulo (ajustes del mundo). Defecto: calibrados contra los mapas de campaña. */
     static final String ID_PESO_COBRE = "mundo-infinito:peso-cobre-serpulo", ID_PESO_PLOMO = "mundo-infinito:peso-plomo-serpulo",
         ID_PESO_CHATARRA = "mundo-infinito:peso-chatarra-serpulo", ID_PESO_CARBON = "mundo-infinito:peso-carbon-serpulo",
@@ -109,8 +113,8 @@ final class ParametrosGeneracion{
     float[][] tablaErekir(){
         if(tablaECache == null){
             tablaECache = new float[][]{
-                {MundoInfinitoMod.Muestreo.D_BERILIO, 0, 34}, {MundoInfinitoMod.Muestreo.D_GRAFITO, 25, 20},
-                {MundoInfinitoMod.Muestreo.D_TUNGSTENO, 100, 13}, {MundoInfinitoMod.Muestreo.D_TORIO_E, torioDistE, torioPesoE}};
+                {MundoInfinitoMod.Muestreo.D_BERILIO, 0, pesoBerilioE}, {MundoInfinitoMod.Muestreo.D_GRAFITO, 25, 20},
+                {MundoInfinitoMod.Muestreo.D_TUNGSTENO, 100, pesoTungstenoE}, {MundoInfinitoMod.Muestreo.D_TORIO_E, torioDistE, torioPesoE}};
         }
         return tablaECache;
     }

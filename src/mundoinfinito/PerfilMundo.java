@@ -131,6 +131,8 @@ final class PerfilMundo{
         p.pesoChatarra = (float)valorLegado(ParametrosGeneracion.ID_PESO_CHATARRA, ParametrosGeneracion.DEFECTO_PESO_CHATARRA);
         p.pesoCarbon = (float)valorLegado(ParametrosGeneracion.ID_PESO_CARBON, ParametrosGeneracion.DEFECTO_PESO_CARBON);
         p.pesoTitanio = (float)valorLegado(ParametrosGeneracion.ID_PESO_TITANIO, ParametrosGeneracion.DEFECTO_PESO_TITANIO);
+        p.pesoBerilioE = (float)valorLegado(ParametrosGeneracion.ID_PESO_BERILIO_E, ParametrosGeneracion.DEFECTO_PESO_BERILIO_E);
+        p.pesoTungstenoE = (float)valorLegado(ParametrosGeneracion.ID_PESO_TUNGSTENO_E, ParametrosGeneracion.DEFECTO_PESO_TUNGSTENO_E);
         p.torioDistS = (float)valorLegado(ParametrosGeneracion.ID_TORIO_DIST_S, ParametrosGeneracion.DEFECTO_TORIO_DIST_S);
         p.torioPesoS = (float)valorLegado(ParametrosGeneracion.ID_TORIO_PESO_S, ParametrosGeneracion.DEFECTO_TORIO_PESO_S);
         p.torioDistE = (float)valorLegado(ParametrosGeneracion.ID_TORIO_DIST_E, ParametrosGeneracion.DEFECTO_TORIO_DIST_E);

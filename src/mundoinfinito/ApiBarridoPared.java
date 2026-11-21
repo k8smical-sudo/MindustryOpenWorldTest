@@ -24,9 +24,9 @@ public final class ApiBarridoPared {
     // (2) reglas de acceso, sobre la mejor combinación de (1)
     static final float FIJO_PROB_BERILIO = 0.86f, FIJO_PROB_TUNGSTENO = 0.40f;
     static final int FIJO_PESO_BERILIO = 18, FIJO_PESO_TUNGSTENO = 35;
-    static final int[] RADIOS = {4, 6, 8};
-    static final int[] CAMINOS = {8, 16, 24};
-    static final int[] ESPACIOS_LOCALES = {4, 8, 12};
+    static final int[] RADIOS = {4};
+    static final int[] CAMINOS = {8, 16};
+    static final int[] ESPACIOS_LOCALES = {0, 2, 4};
     static final int[] TALADROS = {1, 2};
 
     static boolean esPared(int codigo){
@@ -84,21 +84,8 @@ public final class ApiBarridoPared {
         final EtapaBase[] etapas = PipelineBase.etapasBase();
         System.out.println("[Barrido] erekir lado=" + LADO_EREKIR + " semillas=" + SEMILLAS);
         try{
-            System.out.println("[Barrido] --- (1) pesos y probabilidades de pared (32 combinaciones)");
-            String mejorEtiqueta = null;
-            double mejorError = Double.MAX_VALUE;
-            float mB = 0, mT = 0; int mWB = 0, mWT = 0;
-            for(float pB : PROB_BERILIO) for(float pT : PROB_TUNGSTENO) for(int wB : PESO_BERILIO) for(int wT : PESO_TUNGSTENO){
-                final ParametrosGeneracion par = new PerfilMundo().parametros();
-                par.paredProbBerilio = pB; par.paredProbTungsteno = pT; par.pesoBerilioE = wB; par.pesoTungstenoE = wT;
-                final String etiqueta = String.format("pB=%.2f pT=%.2f wB=%d wT=%d", pB, pT, wB, wT);
-                final String linea = medir(par, etiqueta, ap, etapas);
-                System.out.println(linea);
-                final double err = Double.parseDouble(linea.substring(linea.lastIndexOf("error=") + 6).trim());
-                if(err < mejorError){ mejorError = err; mejorEtiqueta = etiqueta; mB = pB; mT = pT; mWB = wB; mWT = wT; }
-            }
-            System.out.println("[Barrido] --- mejor de (1): " + mejorEtiqueta);
-            System.out.println("[Barrido] --- (2) reglas de acceso con la mejor de (1) fijada (54 combinaciones)");
+            final float mB = FIJO_PROB_BERILIO, mT = FIJO_PROB_TUNGSTENO; final int mWB = FIJO_PESO_BERILIO, mWT = FIJO_PESO_TUNGSTENO;
+            System.out.println("[Barrido] --- (2) espacio local corto: 12 combinaciones con la mejor de (1) fijada");
             for(int radio : RADIOS) for(int camino : CAMINOS) for(int espacio : ESPACIOS_LOCALES) for(int tal : TALADROS){
                 final ParametrosGeneracion par = new PerfilMundo().parametros();
                 par.paredProbBerilio = mB; par.paredProbTungsteno = mT; par.pesoBerilioE = mWB; par.pesoTungstenoE = mWT;

@@ -1,23 +1,33 @@
 package mundoinfinito;
 
 /**
- * Barrido de Erekir: prueba combinaciones de probabilidad de pared por tipo (berilio, tungsteno) y de peso de suelo
- * (berilio, tungsteno). Cada combinación se instala como parámetros del mundo solo durante la medición y se mide con
- * 10 semillas en la región de tamaño de Erekir. Muestra el reparto medido y un error total frente a los objetivos.
- * Solo lee: no cambia los valores por defecto.
+ * Barridos de Erekir, solo lectura (cada combinación se instala como parámetros del mundo durante la medición):
+ *  1) Pesos y probabilidades de pared por tipo (32 combinaciones).
+ *  2) Reglas de acceso de la mena de pared con la mejor combinación de (1) fijada (54 combinaciones):
+ *     radio, camino mínimo, espacio local y tamaño del taladro.
+ * Cada línea muestra el reparto medido y el error frente a los objetivos de Erekir. 10 semillas por combinación.
  */
 public final class ApiBarridoPared {
     private ApiBarridoPared(){}
 
     static final int SEMILLAS = 10;
     static final int LADO_EREKIR = 512;
+    static final String[] OBJ_NOMBRES = {"berilio", "tungsteno", "torio-cristal", "berilio-pared", "tungsteno-pared", "torio-pared"};
+    static final float[] OBJETIVOS = {16.7f, 52.3f, 0f, 26f, 3f, 2f};
+
+    // (1) pesos y probabilidades
     static final float[] PROB_BERILIO = {0.3f, 0.6f, 0.86f, 1.0f};
     static final float[] PROB_TUNGSTENO = {0.12f, 0.4f};
     static final int[] PESO_BERILIO = {13, 18};
     static final int[] PESO_TUNGSTENO = {35, 44};
-    /** Objetivos de Erekir (% del total de menas), en el orden de OBJ_NOMBRES. */
-    static final String[] OBJ_NOMBRES = {"berilio", "tungsteno", "torio-cristal", "berilio-pared", "tungsteno-pared", "torio-pared"};
-    static final float[] OBJETIVOS = {16.7f, 52.3f, 0f, 26f, 3f, 2f};
+
+    // (2) reglas de acceso, sobre la mejor combinación de (1)
+    static final float FIJO_PROB_BERILIO = 0.86f, FIJO_PROB_TUNGSTENO = 0.40f;
+    static final int FIJO_PESO_BERILIO = 18, FIJO_PESO_TUNGSTENO = 35;
+    static final int[] RADIOS = {4, 6, 8};
+    static final int[] CAMINOS = {8, 16, 24};
+    static final int[] ESPACIOS_LOCALES = {4, 8, 12};
+    static final int[] TALADROS = {1, 2};
 
     static boolean esPared(int codigo){
         return codigo == MundoInfinitoMod.Muestreo.O_BERILIO_MURO
@@ -25,11 +35,9 @@ public final class ApiBarridoPared {
             || codigo == MundoInfinitoMod.Muestreo.O_TORIO_MURO;
     }
 
-    /** Índice en OBJ_NOMBRES de un código de mena de Erekir, o -1 si no es uno de los seis. */
     static int indice(int codigo){
-        final int M = MundoInfinitoMod.Muestreo.O_BERILIO, T = MundoInfinitoMod.Muestreo.O_TUNGSTENO;
-        if(codigo == M) return 0;
-        if(codigo == T) return 1;
+        if(codigo == MundoInfinitoMod.Muestreo.O_BERILIO) return 0;
+        if(codigo == MundoInfinitoMod.Muestreo.O_TUNGSTENO) return 1;
         if(codigo == MundoInfinitoMod.Muestreo.O_TORIO_CRISTAL) return 2;
         if(codigo == MundoInfinitoMod.Muestreo.O_BERILIO_MURO) return 3;
         if(codigo == MundoInfinitoMod.Muestreo.O_TUNGSTENO_MURO) return 4;
@@ -37,51 +45,66 @@ public final class ApiBarridoPared {
         return -1;
     }
 
-    /** Barrido completo de Erekir: una línea por combinación, con el reparto medido y el error frente a objetivos. */
-    public static int barrido(String[] args){
+    /** Ejecuta un conjunto de parámetros y devuelve el reparto medido y el error. */
+    private static String medir(ParametrosGeneracion par, String etiqueta, AporteTerreno ap, EtapaBase[] etapas){
         final int T = AporteTerreno.T;
         final int n = (LADO_EREKIR + T - 1) / T;
         final int desde = -(n / 2), hasta = n - n / 2 - 1;
+        Nucleo.alReiniciarMundo(par);
+        final long[] cuenta = new long[OBJETIVOS.length];
+        long total = 0, pared = 0;
+        for(int i = 0; i < SEMILLAS; i++){
+            final int sem = 12345 + 1000 * i;
+            for(int cy = desde; cy <= hasta; cy++)
+            for(int cx = desde; cx <= hasta; cx++){
+                PipelineBase.ejecutar(new ContextoAporte(sem, 1, cx * T, cy * T, cx, cy, par), ap, etapas);
+                for(int j = 0; j < AporteTerreno.N; j++){
+                    final int code = ap.mena[j];
+                    if(code == 0) continue;
+                    total++;
+                    final int k = indice(code);
+                    if(k >= 0) cuenta[k]++;
+                    if(esPared(code)) pared++;
+                }
+            }
+        }
+        double error = 0;
+        final double[] pct = new double[OBJETIVOS.length];
+        for(int k = 0; k < OBJETIVOS.length; k++){
+            pct[k] = total == 0 ? 0 : 100.0 * cuenta[k] / total;
+            error += Math.abs(pct[k] - OBJETIVOS[k]);
+        }
+        return String.format("[Barrido] %s | suelo: berilio %5.1f tungsteno %5.1f torio-c %4.1f | pared: berilio %5.1f tungsteno %5.1f torio %4.1f | pared total %5.1f | error=%6.1f",
+            etiqueta, pct[0], pct[1], pct[2], pct[3], pct[4], pct[5], total == 0 ? 0 : 100.0 * pared / total, error);
+    }
+
+    /** Barrido completo: (1) pesos y probabilidades, luego (2) reglas de acceso sobre la mejor de (1). */
+    public static int barrido(String[] args){
         final AporteTerreno ap = new AporteTerreno();
         final EtapaBase[] etapas = PipelineBase.etapasBase();
-        System.out.println("[Barrido] erekir lado=" + LADO_EREKIR + " chunks=" + (n * n) + " semillas=" + SEMILLAS
-            + " combinaciones=" + (PROB_BERILIO.length * PROB_TUNGSTENO.length * PESO_BERILIO.length * PESO_TUNGSTENO.length));
+        System.out.println("[Barrido] erekir lado=" + LADO_EREKIR + " semillas=" + SEMILLAS);
         try{
-            for(float pB : PROB_BERILIO)
-            for(float pT : PROB_TUNGSTENO)
-            for(int wB : PESO_BERILIO)
-            for(int wT : PESO_TUNGSTENO){
+            System.out.println("[Barrido] --- (1) pesos y probabilidades de pared (32 combinaciones)");
+            String mejorEtiqueta = null;
+            double mejorError = Double.MAX_VALUE;
+            float mB = 0, mT = 0; int mWB = 0, mWT = 0;
+            for(float pB : PROB_BERILIO) for(float pT : PROB_TUNGSTENO) for(int wB : PESO_BERILIO) for(int wT : PESO_TUNGSTENO){
                 final ParametrosGeneracion par = new PerfilMundo().parametros();
-                par.paredProbBerilio = pB;
-                par.paredProbTungsteno = pT;
-                par.pesoBerilioE = wB;
-                par.pesoTungstenoE = wT;
-                Nucleo.alReiniciarMundo(par);
-                final double[] pct = new double[OBJETIVOS.length];
-                long total = 0;
-                final long[] cuenta = new long[OBJETIVOS.length];
-                for(int i = 0; i < SEMILLAS; i++){
-                    final int sem = 12345 + 1000 * i;
-                    for(int cy = desde; cy <= hasta; cy++)
-                    for(int cx = desde; cx <= hasta; cx++){
-                        PipelineBase.ejecutar(new ContextoAporte(sem, 1, cx * T, cy * T, cx, cy, par), ap, etapas);
-                        for(int j = 0; j < AporteTerreno.N; j++){
-                            final int code = ap.mena[j];
-                            if(code == 0) continue;
-                            total++;
-                            final int k = indice(code);
-                            if(k >= 0) cuenta[k]++;
-                        }
-                    }
-                }
-                double error = 0;
-                for(int k = 0; k < OBJETIVOS.length; k++){
-                    pct[k] = total == 0 ? 0 : 100.0 * cuenta[k] / total;
-                    error += Math.abs(pct[k] - OBJETIVOS[k]);
-                }
-                System.out.println(String.format(
-                    "[Barrido] pB=%.2f pT=%.2f wB=%d wT=%d | suelo: berilio %5.1f tungsteno %5.1f torio-c %4.1f | pared: berilio %5.1f tungsteno %5.1f torio %4.1f | error=%6.1f",
-                    pB, pT, wB, wT, pct[0], pct[1], pct[2], pct[3], pct[4], pct[5], error));
+                par.paredProbBerilio = pB; par.paredProbTungsteno = pT; par.pesoBerilioE = wB; par.pesoTungstenoE = wT;
+                final String etiqueta = String.format("pB=%.2f pT=%.2f wB=%d wT=%d", pB, pT, wB, wT);
+                final String linea = medir(par, etiqueta, ap, etapas);
+                System.out.println(linea);
+                final double err = Double.parseDouble(linea.substring(linea.lastIndexOf("error=") + 6).trim());
+                if(err < mejorError){ mejorError = err; mejorEtiqueta = etiqueta; mB = pB; mT = pT; mWB = wB; mWT = wT; }
+            }
+            System.out.println("[Barrido] --- mejor de (1): " + mejorEtiqueta);
+            System.out.println("[Barrido] --- (2) reglas de acceso con la mejor de (1) fijada (54 combinaciones)");
+            for(int radio : RADIOS) for(int camino : CAMINOS) for(int espacio : ESPACIOS_LOCALES) for(int tal : TALADROS){
+                final ParametrosGeneracion par = new PerfilMundo().parametros();
+                par.paredProbBerilio = mB; par.paredProbTungsteno = mT; par.pesoBerilioE = mWB; par.pesoTungstenoE = mWT;
+                par.menasAccesoRadio = radio; par.menasAccesoMinimo = camino; par.menasEspacioLocal = espacio; par.menasTaladroTamano = tal;
+                final String etiqueta = String.format("radio=%d camino=%d espacio=%d taladro=%d", radio, camino, espacio, tal);
+                System.out.println(medir(par, etiqueta, ap, etapas));
             }
         }finally{
             Nucleo.alReiniciarMundo(null);

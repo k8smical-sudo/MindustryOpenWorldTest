@@ -266,25 +266,27 @@ public final class ApiAsset{
 
     static {
         // Serpulo (sin pared): reparto con torio al 10 % de las menas.
-        registrarObjetivo("serpulo", "mindustry:cobre", 17f);   // mapas de campaña (mediana normalizada)
-        registrarObjetivo("serpulo", "mindustry:plomo", 30f);
-        registrarObjetivo("serpulo", "mindustry:carbon", 22f);
-        registrarObjetivo("serpulo", "mindustry:chatarra", 7f);
-        registrarObjetivo("serpulo", "mindustry:titanio", 15f);
-        registrarObjetivo("serpulo", "mindustry:torio", 9f);
+        registrarObjetivo("serpulo", "mindustry:cobre", 27f);
+        registrarObjetivo("serpulo", "mindustry:plomo", 22.5f);
+        registrarObjetivo("serpulo", "mindustry:carbon", 18f);
+        registrarObjetivo("serpulo", "mindustry:chatarra", 13.5f);
+        registrarObjetivo("serpulo", "mindustry:titanio", 9f);
+        registrarObjetivo("serpulo", "mindustry:torio", 10f);
         registrarObjetivo("serpulo", "mindustry:berilio", 0f);
         registrarObjetivo("serpulo", "mindustry:tungsteno", 0f);
         registrarObjetivo("serpulo", "mindustry:torio-cristal", 0f);
         registrarObjetivo("serpulo", "mindustry:berilio-pared", 0f);
         registrarObjetivo("serpulo", "mindustry:tungsteno-pared", 0f);
         registrarObjetivo("serpulo", "mindustry:torio-pared", 0f);
-        // Erekir: pared al 35 % (suelo 65 %), con sus porcentajes internos.
-        registrarObjetivo("erekir", "mindustry:berilio", 39f);
-        registrarObjetivo("erekir", "mindustry:tungsteno", 19.5f);
-        registrarObjetivo("erekir", "mindustry:torio-cristal", 6.5f);
-        registrarObjetivo("erekir", "mindustry:berilio-pared", 19.25f);
-        registrarObjetivo("erekir", "mindustry:tungsteno-pared", 12.25f);
-        registrarObjetivo("erekir", "mindustry:torio-pared", 3.5f);
+        // Erekir: calibrado con la mediana de los 17 mapas de campaña (pared 31 %, suelo 69 %).
+        // Suelo normalizado: berilio 15,3 / tungsteno 48,0 / torio-cristal 0,0 (sobre 63,3) => 16,7 / 52,3 / 0.
+        // Pared: berilio-pared domina (23,4 %); tungsteno y torio de pared están en una minoría de mapas => 26 / 3 / 2.
+        registrarObjetivo("erekir", "mindustry:berilio", 16.7f);
+        registrarObjetivo("erekir", "mindustry:tungsteno", 52.3f);
+        registrarObjetivo("erekir", "mindustry:torio-cristal", 0f);
+        registrarObjetivo("erekir", "mindustry:berilio-pared", 26f);
+        registrarObjetivo("erekir", "mindustry:tungsteno-pared", 3f);
+        registrarObjetivo("erekir", "mindustry:torio-pared", 2f);
         registrarObjetivo("erekir", "mindustry:cobre", 0f);
         registrarObjetivo("erekir", "mindustry:plomo", 0f);
         registrarObjetivo("erekir", "mindustry:chatarra", 0f);

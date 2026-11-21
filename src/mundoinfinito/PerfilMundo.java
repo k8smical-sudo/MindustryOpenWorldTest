@@ -131,6 +131,7 @@ final class PerfilMundo{
         p.pesoChatarra = (float)valorLegado(ParametrosGeneracion.ID_PESO_CHATARRA, ParametrosGeneracion.DEFECTO_PESO_CHATARRA);
         p.pesoCarbon = (float)valorLegado(ParametrosGeneracion.ID_PESO_CARBON, ParametrosGeneracion.DEFECTO_PESO_CARBON);
         p.pesoTitanio = (float)valorLegado(ParametrosGeneracion.ID_PESO_TITANIO, ParametrosGeneracion.DEFECTO_PESO_TITANIO);
+        p.menasZonaInterior = (int)Math.round(valorLegado(ParametrosGeneracion.ID_ZONA_INTERIOR, ParametrosGeneracion.DEFECTO_ZONA_INTERIOR));
         p.paredProbBerilio = (float)valorLegado(ParametrosGeneracion.ID_PARED_PROB_BERILIO, ParametrosGeneracion.DEFECTO_PARED_PROB_BERILIO);
         p.paredProbTungsteno = (float)valorLegado(ParametrosGeneracion.ID_PARED_PROB_TUNGSTENO, ParametrosGeneracion.DEFECTO_PARED_PROB_TUNGSTENO);
         p.pesoBerilioE = (float)valorLegado(ParametrosGeneracion.ID_PESO_BERILIO_E, ParametrosGeneracion.DEFECTO_PESO_BERILIO_E);

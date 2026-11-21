@@ -107,6 +107,9 @@ final class RegistroAjustes{
         registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_PESO_TITANIO, "Peso del titanio en Serpulo",
             "Peso del titanio en la tabla de menas de Serpulo (titanio ~15 % en la campaña).",
             AjusteMundo.Ambito.GENERACION, ParametrosGeneracion.DEFECTO_PESO_TITANIO, 0, 60).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
+        registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_ZONA_INTERIOR, "Zona interior de la pared (Erekir)",
+            "Hasta qué radio interior de la veta puede haber mena de pared. Más alto = más muro con mineral (100 = comportamiento por defecto).",
+            AjusteMundo.Ambito.GENERACION, ParametrosGeneracion.DEFECTO_ZONA_INTERIOR, 50, 1000).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
         registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_PARED_PROB_BERILIO, "Probabilidad de pared del berilio (Erekir)",
             "Probabilidad de que un depósito de berilio sea de pared. Más alto = más berilio de pared.",
             AjusteMundo.Ambito.GENERACION, ParametrosGeneracion.DEFECTO_PARED_PROB_BERILIO, 0.0, 1.0).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));

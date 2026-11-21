@@ -25,9 +25,10 @@ public final class ApiBarridoPared {
     static final float FIJO_PROB_BERILIO = 0.86f, FIJO_PROB_TUNGSTENO = 0.40f;
     static final int FIJO_PESO_BERILIO = 18, FIJO_PESO_TUNGSTENO = 35;
     static final int[] RADIOS = {4};
-    static final int[] CAMINOS = {8, 16};
-    static final int[] ESPACIOS_LOCALES = {0, 2, 4};
+    static final int[] CAMINOS = {8};
+    static final int[] ESPACIOS_LOCALES = {4};
     static final int[] TALADROS = {1, 2};
+    static final int[] ZONAS_INTERIOR = {100, 200, 400, 1000};
 
     static boolean esPared(int codigo){
         return codigo == MundoInfinitoMod.Muestreo.O_BERILIO_MURO
@@ -86,11 +87,12 @@ public final class ApiBarridoPared {
         try{
             final float mB = FIJO_PROB_BERILIO, mT = FIJO_PROB_TUNGSTENO; final int mWB = FIJO_PESO_BERILIO, mWT = FIJO_PESO_TUNGSTENO;
             System.out.println("[Barrido] --- (2) espacio local corto: 12 combinaciones con la mejor de (1) fijada");
-            for(int radio : RADIOS) for(int camino : CAMINOS) for(int espacio : ESPACIOS_LOCALES) for(int tal : TALADROS){
+            for(int zona : ZONAS_INTERIOR) for(int radio : RADIOS) for(int camino : CAMINOS) for(int espacio : ESPACIOS_LOCALES) for(int tal : TALADROS){
                 final ParametrosGeneracion par = new PerfilMundo().parametros();
                 par.paredProbBerilio = mB; par.paredProbTungsteno = mT; par.pesoBerilioE = mWB; par.pesoTungstenoE = mWT;
+                par.menasZonaInterior = zona;
                 par.menasAccesoRadio = radio; par.menasAccesoMinimo = camino; par.menasEspacioLocal = espacio; par.menasTaladroTamano = tal;
-                final String etiqueta = String.format("radio=%d camino=%d espacio=%d taladro=%d", radio, camino, espacio, tal);
+                final String etiqueta = String.format("zona=%d radio=%d camino=%d espacio=%d taladro=%d", zona, radio, camino, espacio, tal);
                 System.out.println(medir(par, etiqueta, ap, etapas));
             }
         }finally{

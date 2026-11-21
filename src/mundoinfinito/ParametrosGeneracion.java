@@ -84,6 +84,10 @@ final class ParametrosGeneracion{
     static final String ID_PARED_PROB_BERILIO = "mundo-infinito:pared-prob-berilio", ID_PARED_PROB_TUNGSTENO = "mundo-infinito:pared-prob-tungsteno";
     static final float DEFECTO_PARED_PROB_BERILIO = 1.0f, DEFECTO_PARED_PROB_TUNGSTENO = 0.12f;
     float paredProbBerilio = DEFECTO_PARED_PROB_BERILIO, paredProbTungsteno = DEFECTO_PARED_PROB_TUNGSTENO;
+    /** Límite de la zona interior de una veta de pared (radN): las casillas de muro por debajo de él pueden dar mena. Defecto 100 = comportamiento actual. */
+    static final String ID_ZONA_INTERIOR = "mundo-infinito:zona-interior-pared";
+    static final int DEFECTO_ZONA_INTERIOR = 100;
+    int menasZonaInterior = DEFECTO_ZONA_INTERIOR;
     float pesoBerilioE = DEFECTO_PESO_BERILIO_E, pesoTungstenoE = DEFECTO_PESO_TUNGSTENO_E;
     /** Pesos de las menas de suelo de Serpulo (ajustes del mundo). Defecto: calibrados contra los mapas de campaña. */
     static final String ID_PESO_COBRE = "mundo-infinito:peso-cobre-serpulo", ID_PESO_PLOMO = "mundo-infinito:peso-plomo-serpulo",

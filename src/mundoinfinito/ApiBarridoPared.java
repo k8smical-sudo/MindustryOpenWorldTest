@@ -28,7 +28,7 @@ public final class ApiBarridoPared {
     static final int[] CAMINOS = {8};
     static final int[] ESPACIOS_LOCALES = {4};
     static final int[] TALADROS = {1, 2};
-    static final int[] ZONAS_INTERIOR = {100, 200, 400, 1000};
+    static final int[] ZONAS_INTERIOR = {16, 64, 128, 256};
 
     static boolean esPared(int codigo){
         return codigo == MundoInfinitoMod.Muestreo.O_BERILIO_MURO
@@ -90,9 +90,9 @@ public final class ApiBarridoPared {
             for(int zona : ZONAS_INTERIOR) for(int radio : RADIOS) for(int camino : CAMINOS) for(int espacio : ESPACIOS_LOCALES) for(int tal : TALADROS){
                 final ParametrosGeneracion par = new PerfilMundo().parametros();
                 par.paredProbBerilio = mB; par.paredProbTungsteno = mT; par.pesoBerilioE = mWB; par.pesoTungstenoE = mWT;
-                par.menasZonaInterior = zona;
+                par.menasUmbralZona = zona;
                 par.menasAccesoRadio = radio; par.menasAccesoMinimo = camino; par.menasEspacioLocal = espacio; par.menasTaladroTamano = tal;
-                final String etiqueta = String.format("zona=%d radio=%d camino=%d espacio=%d taladro=%d", zona, radio, camino, espacio, tal);
+                final String etiqueta = String.format("umbral=%d radio=%d camino=%d espacio=%d taladro=%d", zona, radio, camino, espacio, tal);
                 System.out.println(medir(par, etiqueta, ap, etapas));
             }
         }finally{

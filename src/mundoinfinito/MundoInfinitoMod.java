@@ -101,7 +101,7 @@ public class MundoInfinitoMod extends Mod{
     public static final int REGION_CHUNKS = 16;             // 16x16 chunks por archivo de región (512x512 tiles)
     public static final String URL_SEMILLAS = "https://raw.githubusercontent.com/TU_USUARIO/mundo-infinito-semillas/main/semillas/actual.json"; // TODO: URL real
     public static final int TIMEOUT_HTTP_MS = 4000;
-    public static final int GEN_ACTUAL = 19;   // 8 = reparto de pared calibrado (35 % en Erekir); 7 = menas de pared accesibles (radio y espacio abierto mínimo configurables)                 // 6 = respiraderos de Erekir según la ficha física del planeta del lugar (plan v9, P9). La 5 y anteriores conservan su terreno exacto.
+    public static final int GEN_ACTUAL = 20;   // 8 = reparto de pared calibrado (35 % en Erekir); 7 = menas de pared accesibles (radio y espacio abierto mínimo configurables)                 // 6 = respiraderos de Erekir según la ficha física del planeta del lugar (plan v9, P9). La 5 y anteriores conservan su terreno exacto.
     public static final int GEN_FICHA = 6;                  // primera generación en la que la ficha física (tamaño del planeta) modula los respiraderos
     public static final int GEN_MENAS = 5;                  // primera generación con el efecto de las menas cercanas en los respiraderos (FuentesWorldgen)
     public static final int GEN_ANTERIOR = 3;               // 3 = dos dimensiones (Serpulo/Erekir) con la generación anterior: conserva su terreno exacto.
@@ -1609,6 +1609,32 @@ public class MundoInfinitoMod extends Mod{
 
         /** Probabilidad de depósito de pared del mundo actual (ajuste sellado; el defecto es el reparto calibrado). */
         /** Probabilidad de pared de un depósito según su tipo: berilio y tungsteno tienen la suya; el resto, menasParedProb. */
+        /**
+         * Decisión por zona (generación 20): una celda de depósito de pared (CELDA_MENA casillas) es de pared si, muestreando
+         * sus muros, hay suficientes que dan a espacio abierto. Estimación = muros con frente abierto muestreados x 16 (paso 4).
+         * Es una función pura de (semilla, celda, parámetros): el resultado no depende del orden de generación de los chunks.
+         */
+        static final ThreadLocal<Object[]> ZONA_CACHE = ThreadLocal.withInitial(() -> new Object[]{null, 0, 0, 0, null, false});
+
+        static boolean zonaEsPared(int s, int x, int y, Spawn sp, ParametrosGeneracion pg){
+            final int lado = CELDA_MENA;
+            final int cx = Math.floorDiv(x, lado), cy = Math.floorDiv(y, lado);
+            final Object[] c = ZONA_CACHE.get();
+            if(c[0] != null && (Integer)c[1] == s && (Integer)c[2] == cx && (Integer)c[3] == cy && c[4] == pg) return (Boolean)c[5];
+            final int ox = cx * lado, oy = cy * lado;
+            int frente = 0;
+            for(int dy = 0; dy < lado; dy += 4){
+                for(int dx = 0; dx < lado; dx += 4){
+                    final int tx = ox + dx, ty = oy + dy;
+                    if(!muroEn(s, tx, ty, sp)) continue;
+                    if(!muroEn(s, tx + 1, ty, sp) || !muroEn(s, tx - 1, ty, sp) || !muroEn(s, tx, ty + 1, sp) || !muroEn(s, tx, ty - 1, sp)) frente++;
+                }
+            }
+            final boolean res = frente * 16 >= pg.menasUmbralZona;
+            c[0] = Boolean.TRUE; c[1] = s; c[2] = cx; c[3] = cy; c[4] = pg; c[5] = res;
+            return res;
+        }
+
         static float paredProb(int tipo){
             final ParametrosGeneracion pg = Nucleo.parametros();
             if(pg == null) return paredProb();

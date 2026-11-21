@@ -355,6 +355,8 @@ final class EtapasBase{
                     if(!enMuro) ApiDiagnosticoPared.contar(ApiDiagnosticoPared.SUELO_PERDIDO);
                 }
                 final int zonaInt = Nucleo.parametros().menasZonaInterior;   // límite de la zona interior de la veta (defecto 100)
+                final ParametrosGeneracion pgZona = Nucleo.parametros();
+                final boolean zonaPared = depPared && MundoInfinitoMod.Muestreo.zonaEsPared(s, x, y, ce.sp, pgZona);
                 switch(tipoDep){
                     case D_COBRE: if(!enMuro) mena = O_COBRE; break;
                     case D_PLOMO: if(!enMuro) mena = O_PLOMO; break;
@@ -362,9 +364,9 @@ final class EtapasBase{
                     case D_CARBON: if(!enMuro) mena = O_CARBON; break;
                     case D_TITANIO: if(!enMuro) mena = O_TITANIO; break;
                     case D_TORIO: if(!enMuro) mena = O_TORIO; break;
-                    case D_BERILIO: mena = depPared ? (enMuro && radN < zonaInt ? O_BERILIO_MURO : 0) : (enMuro ? O_BERILIO_MURO : O_BERILIO); break;
-                    case D_TUNGSTENO: mena = depPared ? (enMuro && radN < zonaInt ? O_TUNGSTENO_MURO : 0) : (enMuro ? O_TUNGSTENO_MURO : O_TUNGSTENO); break;
-                    case D_TORIO_E: mena = depPared ? (enMuro && radN < zonaInt ? O_TORIO_MURO : 0) : (enMuro ? O_TORIO_MURO : O_TORIO_CRISTAL); break;
+                    case D_BERILIO: mena = depPared ? (enMuro ? (zonaPared && radN < zonaInt ? O_BERILIO_MURO : 0) : O_BERILIO) : (enMuro ? O_BERILIO_MURO : O_BERILIO); break;
+                    case D_TUNGSTENO: mena = depPared ? (enMuro ? (zonaPared && radN < zonaInt ? O_TUNGSTENO_MURO : 0) : O_TUNGSTENO) : (enMuro ? O_TUNGSTENO_MURO : O_TUNGSTENO); break;
+                    case D_TORIO_E: mena = depPared ? (enMuro ? (zonaPared && radN < zonaInt ? O_TORIO_MURO : 0) : O_TORIO_CRISTAL) : (enMuro ? O_TORIO_MURO : O_TORIO_CRISTAL); break;
                     default: break;
                 }
             }

@@ -375,6 +375,7 @@ final class EtapasBase{
                 if(mena == O_BERILIO_MURO || mena == O_TUNGSTENO_MURO || mena == O_TORIO_MURO){
                     if(ac) ApiDiagnosticoPared.contar(ApiDiagnosticoPared.ACCESIBLE);
                     if(ac) ApiDiagnosticoPared.contar(ApiDiagnosticoPared.COLOCADA);
+                    ApiDiagnosticoPared.zona(x, y, ac);   // medición por zona (solo activa en modo zonas)
                 }
                 if(!ac){
                     if(muro == 2) muro = 1;        // grafito enterrado: roca normal

@@ -42,4 +42,51 @@ public final class ApiDiagnosticoPared {
         }
         return 0;
     }
+
+    /** Zonas observadas (celda de depósito de 40 casillas): clave = celda, valor = {candidatas, accesibles}. Solo en modo zonas. */
+    static final java.util.Map<Long, int[]> ZONAS = new java.util.HashMap<Long, int[]>();
+
+    static void zona(int x, int y, boolean accesible){
+        if(!activo) return;
+        final int lado = MundoInfinitoMod.Muestreo.CELDA_MENA;
+        final long clave = ((long)Math.floorDiv(x, lado) << 32) ^ (Math.floorDiv(y, lado) & 0xffffffffL);
+        int[] v = ZONAS.get(clave);
+        if(v == null){ v = new int[2]; ZONAS.put(clave, v); }
+        v[0]++;
+        if(accesible) v[1]++;
+    }
+
+    /**
+     * Modo "zonas": por semilla, cuántas celdas de depósito de pared hay y cuántas casillas accesibles tiene cada una.
+     * Para cada umbral k muestra qué fracción de zonas lo alcanza y qué fracción de las accesibles retiene, es decir,
+     * el efecto de decidir pared o suelo por zona. Solo lee.
+     */
+    public static int zonas(String[] args){
+        final int radio = args.length > 1 ? Math.max(0, Integer.parseInt(args[1])) : 8;
+        final int T = AporteTerreno.T;
+        final AporteTerreno ap = new AporteTerreno();
+        final EtapaBase[] etapas = PipelineBase.etapasBase();
+        final int[] umbrales = {1, 2, 4, 8, 16, 24};
+        System.out.println("[Zonas] erekir radio=" + radio + " (zona = celda de " + MundoInfinitoMod.Muestreo.CELDA_MENA + " casillas)");
+        for(int i = 0; i < 10; i++){
+            final int sem = 12345 + 1000 * i;
+            ZONAS.clear();
+            activo = true;
+            final ParametrosGeneracion par = Nucleo.parametros();
+            for(int cy = -radio; cy <= radio; cy++)
+                for(int cx = -radio; cx <= radio; cx++)
+                    PipelineBase.ejecutar(new ContextoAporte(sem, 1, cx * T, cy * T, cx, cy, par), ap, etapas);
+            activo = false;
+            long zonas = ZONAS.size(), cand = 0, acc = 0;
+            for(int[] v : ZONAS.values()){ cand += v[0]; acc += v[1]; }
+            System.out.println(String.format("[Zonas] semilla=%d zonas=%d candidatas=%d accesibles=%d", sem, zonas, cand, acc));
+            for(int k : umbrales){
+                long zonasOk = 0, accRetenidas = 0;
+                for(int[] v : ZONAS.values()) if(v[1] >= k){ zonasOk++; accRetenidas += v[1]; }
+                System.out.println(String.format("[Zonas]   k>=%2d: zonas %5.1f%%  accesibles retenidas %5.1f%%", k,
+                    zonas == 0 ? 0 : 100.0 * zonasOk / zonas, acc == 0 ? 0 : 100.0 * accRetenidas / acc));
+            }
+        }
+        return 0;
+    }
 }

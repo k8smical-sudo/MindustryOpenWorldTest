@@ -101,7 +101,7 @@ public class MundoInfinitoMod extends Mod{
     public static final int REGION_CHUNKS = 16;             // 16x16 chunks por archivo de región (512x512 tiles)
     public static final String URL_SEMILLAS = "https://raw.githubusercontent.com/TU_USUARIO/mundo-infinito-semillas/main/semillas/actual.json"; // TODO: URL real
     public static final int TIMEOUT_HTTP_MS = 4000;
-    public static final int GEN_ACTUAL = 18;   // 8 = reparto de pared calibrado (35 % en Erekir); 7 = menas de pared accesibles (radio y espacio abierto mínimo configurables)                 // 6 = respiraderos de Erekir según la ficha física del planeta del lugar (plan v9, P9). La 5 y anteriores conservan su terreno exacto.
+    public static final int GEN_ACTUAL = 19;   // 8 = reparto de pared calibrado (35 % en Erekir); 7 = menas de pared accesibles (radio y espacio abierto mínimo configurables)                 // 6 = respiraderos de Erekir según la ficha física del planeta del lugar (plan v9, P9). La 5 y anteriores conservan su terreno exacto.
     public static final int GEN_FICHA = 6;                  // primera generación en la que la ficha física (tamaño del planeta) modula los respiraderos
     public static final int GEN_MENAS = 5;                  // primera generación con el efecto de las menas cercanas en los respiraderos (FuentesWorldgen)
     public static final int GEN_ANTERIOR = 3;               // 3 = dos dimensiones (Serpulo/Erekir) con la generación anterior: conserva su terreno exacto.
@@ -1216,7 +1216,7 @@ public class MundoInfinitoMod extends Mod{
                     float py = j * CELDA_MENA + mx + rnd(i, j, sem(s, 7012)) * (CELDA_MENA - 2 * mx);
                     float dx = x - px, dy = y - py, R = alcance(morf, par[0], par[1]);
                     if(dx * dx + dy * dy > R * R) continue;
-                    boolean pared = ere && tieneMuro(tipo) && morf != M_DISPERSA && paredCuota(i, j, s) < paredProb();
+                    boolean pared = ere && tieneMuro(tipo) && morf != M_DISPERSA && paredCuota(i, j, s) < paredProb(tipo);
                     float rot = rnd(i, j, sem(s, 7006)) * 6.2831853f;
                     int id = hash(i, j, sem(s, 7008));
                     float dn = forma(morf, dx, dy, par[0], par[1], rot, par[2], id, x, y, s, 0f, aux);
@@ -1608,6 +1608,15 @@ public class MundoInfinitoMod extends Mod{
         }
 
         /** Probabilidad de depósito de pared del mundo actual (ajuste sellado; el defecto es el reparto calibrado). */
+        /** Probabilidad de pared de un depósito según su tipo: berilio y tungsteno tienen la suya; el resto, menasParedProb. */
+        static float paredProb(int tipo){
+            final ParametrosGeneracion pg = Nucleo.parametros();
+            if(pg == null) return paredProb();
+            if(tipo == D_BERILIO) return pg.paredProbBerilio;
+            if(tipo == D_TUNGSTENO) return pg.paredProbTungsteno;
+            return pg.menasParedProb;
+        }
+
         static float paredProb(){
             final ParametrosGeneracion pg = Nucleo.parametros();
             return pg == null ? ParametrosGeneracion.DEFECTO_MENAS_PARED_PROB : pg.menasParedProb;

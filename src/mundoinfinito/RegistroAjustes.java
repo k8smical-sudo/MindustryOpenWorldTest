@@ -107,6 +107,12 @@ final class RegistroAjustes{
         registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_PESO_TITANIO, "Peso del titanio en Serpulo",
             "Peso del titanio en la tabla de menas de Serpulo (titanio ~15 % en la campaña).",
             AjusteMundo.Ambito.GENERACION, ParametrosGeneracion.DEFECTO_PESO_TITANIO, 0, 60).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
+        registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_PARED_PROB_BERILIO, "Probabilidad de pared del berilio (Erekir)",
+            "Probabilidad de que un depósito de berilio sea de pared. Más alto = más berilio de pared.",
+            AjusteMundo.Ambito.GENERACION, ParametrosGeneracion.DEFECTO_PARED_PROB_BERILIO, 0.0, 1.0).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
+        registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_PARED_PROB_TUNGSTENO, "Probabilidad de pared del tungsteno (Erekir)",
+            "Probabilidad de que un depósito de tungsteno sea de pared. Bajo = el tungsteno queda casi todo en suelo, como en la campaña.",
+            AjusteMundo.Ambito.GENERACION, ParametrosGeneracion.DEFECTO_PARED_PROB_TUNGSTENO, 0.0, 1.0).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));
         registrar(AjusteMundo.decimal(ParametrosGeneracion.ID_PESO_BERILIO_E, "Peso del berilio en Erekir",
             "Peso del berilio en la tabla de menas de suelo de Erekir. Calibrado contra la campaña (berilio ~17 % de las menas de suelo).",
             AjusteMundo.Ambito.GENERACION, ParametrosGeneracion.DEFECTO_PESO_BERILIO_E, 0, 60).conPolitica(AjusteMundo.Politica.MEDIA_PONDERADA));

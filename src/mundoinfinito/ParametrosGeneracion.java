@@ -79,7 +79,11 @@ final class ParametrosGeneracion{
     static final float DEFECTO_TORIO_DIST_E = 200f, DEFECTO_TORIO_PESO_E = 1f;   // peso 1: torio-cristal ~0 % en la campaña de Erekir (objetivo 0)
     /** Pesos de berilio y tungsteno de suelo de Erekir (ajustes del mundo). Defecto: calibrados contra la campaña de Erekir. */
     static final String ID_PESO_BERILIO_E = "mundo-infinito:peso-berilio-erekir", ID_PESO_TUNGSTENO_E = "mundo-infinito:peso-tungsteno-erekir";
-    static final float DEFECTO_PESO_BERILIO_E = 13f, DEFECTO_PESO_TUNGSTENO_E = 44f;
+    static final float DEFECTO_PESO_BERILIO_E = 18f, DEFECTO_PESO_TUNGSTENO_E = 35f;
+    /** Probabilidad de que un depósito de pared sea pared, por tipo (ajustes del mundo). El resto usa menasParedProb. */
+    static final String ID_PARED_PROB_BERILIO = "mundo-infinito:pared-prob-berilio", ID_PARED_PROB_TUNGSTENO = "mundo-infinito:pared-prob-tungsteno";
+    static final float DEFECTO_PARED_PROB_BERILIO = 1.0f, DEFECTO_PARED_PROB_TUNGSTENO = 0.12f;
+    float paredProbBerilio = DEFECTO_PARED_PROB_BERILIO, paredProbTungsteno = DEFECTO_PARED_PROB_TUNGSTENO;
     float pesoBerilioE = DEFECTO_PESO_BERILIO_E, pesoTungstenoE = DEFECTO_PESO_TUNGSTENO_E;
     /** Pesos de las menas de suelo de Serpulo (ajustes del mundo). Defecto: calibrados contra los mapas de campaña. */
     static final String ID_PESO_COBRE = "mundo-infinito:peso-cobre-serpulo", ID_PESO_PLOMO = "mundo-infinito:peso-plomo-serpulo",

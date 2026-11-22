@@ -90,7 +90,7 @@ final class ParametrosGeneracion{
     int menasZonaInterior = DEFECTO_ZONA_INTERIOR;
     /** Umbral de la decisión por zona (generación 20): estimación de muros con frente abierto que hace pared a una celda. 0 = siempre pared. */
     static final String ID_UMBRAL_ZONA = "mundo-infinito:umbral-zona-pared";
-    static final int DEFECTO_UMBRAL_ZONA = 64;
+    static final int DEFECTO_UMBRAL_ZONA = 0;   // 0 = todas las zonas son de pared: mismo terreno que la generacion 19
     int menasUmbralZona = DEFECTO_UMBRAL_ZONA;
     float pesoBerilioE = DEFECTO_PESO_BERILIO_E, pesoTungstenoE = DEFECTO_PESO_TUNGSTENO_E;
     /** Pesos de las menas de suelo de Serpulo (ajustes del mundo). Defecto: calibrados contra los mapas de campaña. */
